@@ -39,26 +39,10 @@ Devuelve este JSON:
   "confidence": 0
 }`;
 
-interface OpenAIResponse {
-  output_text?: string;
-  output?: Array<{
-    type?: string;
-    content?: Array<{
-      type?: string;
-      text?: string;
-    }>;
-  }>;
-}
-
-function extractText(response: OpenAIResponse): string {
-  if (response.output_text) return response.output_text;
-
-  for (const item of response.output ?? []) {
-    for (const content of item.content ?? []) {
-      if (typeof content.text === 'string') return content.text;
-    }
+function extractText(response: any): string {
+  if (response.choices && response.choices.length > 0) {
+    return response.choices[0].message?.content || '';
   }
-
   return '';
 }
 
@@ -105,7 +89,7 @@ export async function summarizeLead(lead: LeadPayload): Promise<AISummary> {
     JSON.stringify(lead, null, 2),
   );
 
-  const response = await fetch('https://api.openai.com/v1/responses', {
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${env('OPENAI_API_KEY')}`,
@@ -113,16 +97,12 @@ export async function summarizeLead(lead: LeadPayload): Promise<AISummary> {
     },
     body: JSON.stringify({
       model: env('OPENAI_MODEL_SUMMARY'),
-      input: prompt,
-      text: {
-        format: { type: 'json_object' },
-      },
+      messages: [{ role: 'system', content: prompt }],
+      response_format: { type: 'json_object' },
     }),
   });
 
-  const body = (await response.json()) as OpenAIResponse & {
-    error?: { message?: string };
-  };
+  const body = await response.json();
 
   if (!response.ok) {
     throw new Error(body.error?.message ?? `OpenAI error ${response.status}`);
@@ -239,15 +219,13 @@ export async function askAnalyst(
   systemPrompt: string,
   conversationHistory: Array<{ role: 'user' | 'assistant'; text: string }> = []
 ): Promise<string> {
-  let historyString = "";
-  if (conversationHistory && conversationHistory.length > 0) {
-    historyString = "════════════════════════════════════════\nHISTORIAL DE CONVERSACIÓN RECIENTE\n════════════════════════════════════════\n" + 
-      conversationHistory.map(m => `${m.role === 'user' ? 'Usuario' : 'Analista'}: ${m.text}`).join('\n\n') + "\n\n";
-  }
+  const messages = [
+    { role: 'system', content: systemPrompt },
+    ...conversationHistory.map(m => ({ role: m.role, content: m.text })),
+    { role: 'user', content: question }
+  ];
 
-  const promptInput = `${systemPrompt}\n\n${historyString}════════════════════════════════════════\nPREGUNTA ACTUAL DEL USUARIO\n════════════════════════════════════════\n${question}`;
-
-  const response = await fetch('https://api.openai.com/v1/responses', {
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${env('OPENAI_API_KEY')}`,
@@ -255,13 +233,11 @@ export async function askAnalyst(
     },
     body: JSON.stringify({
       model: env('OPENAI_MODEL_ANALYST'),
-      input: promptInput,
+      messages,
     }),
   });
 
-  const body = (await response.json()) as OpenAIResponse & {
-    error?: { message?: string };
-  };
+  const body = await response.json();
 
   if (!response.ok) {
     throw new Error(body.error?.message ?? `OpenAI error ${response.status}`);
