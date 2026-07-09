@@ -18,7 +18,7 @@ export default async function DataBrainHome() {
     try {
       [leads, events, queue] = await Promise.all([
         selectRows('leads', 'select=id,lead_classification,lead_magnet,lead_score,created_at,payload,delivery_status&order=created_at.desc'),
-        selectRows('events', 'select=event_name,anonymous_id,properties'),
+        selectRows('events', 'select=*&order=created_at.desc&limit=5000'),
         selectRows('delivery_queue', 'select=status')
       ]);
     } catch (err) {
