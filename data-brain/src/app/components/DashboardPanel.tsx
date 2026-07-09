@@ -713,20 +713,43 @@ export function DashboardPanel({ initialData }: DashboardPanelProps) {
       { code: 'A', name: 'Checklist PDF (A)', slug: 'checklist' },
       { code: 'B', name: 'Calculadora (B)', slug: 'calculator' },
       { code: 'C', name: 'Webinar (C)', slug: 'webinar' },
-      { code: 'D', name: 'Revisión Rápida (D)', slug: 'revision' },
-      { code: 'E', name: 'Diagnóstico (E)', slug: 'diagnostic' }
+      { code: 'D', name: 'Revisión Rápida (D)', slug: 'diagnostic' },
+      { code: 'E', name: 'Diagnóstico (E)', slug: 'interactive_checklist' }
     ];
 
-    const funnelData = magnetsList.map(magnet => {
-      const views = new Set(
-        filteredEvents
-          .filter(e => e.event_name === 'section_view' && e.properties?.section_name === magnet.slug && e.session_id)
-          .map(e => e.session_id)
-      ).size;
+    const sectionNameMap: Record<string, string> = {
+      'checklist': 'checklist',
+      'calculator': 'calculator',
+      'webinar': 'webinar',
+      'solutions': 'diagnostic',
+      'diagnostic': 'diagnostic',
+      'interactive-checklist': 'interactive_checklist'
+    };
 
+    const funnelData = magnetsList.map(magnet => {
+      // Vistas: Count sessions where the user landed on the URL variant OR scrolled to the section
+      const views = new Set([
+        ...filteredEvents
+          .filter(e => {
+            if (e.event_name !== 'section_view') return false;
+            const sec = e.properties?.section_name;
+            const mapped = sectionNameMap[sec] || sec;
+            return mapped === magnet.slug;
+          })
+          .map(e => e.session_id),
+        ...filteredEvents
+          .filter(e => (e.lead_magnet === magnet.slug || e.context?.lead_magnet === magnet.slug) && e.session_id)
+          .map(e => e.session_id)
+      ]).size;
+
+      // Clics: Count sessions that clicked a CTA related to this resource
       const clicks = new Set(
         filteredEvents
-          .filter(e => e.event_name === 'cta_click' && e.properties?.cta_name?.includes(magnet.slug) && e.session_id)
+          .filter(e => {
+            if (e.event_name !== 'cta_click') return false;
+            const cta = (e.properties?.cta_name || '').toLowerCase();
+            return cta.includes(magnet.slug) || cta.includes(magnet.code.toLowerCase());
+          })
           .map(e => e.session_id)
       ).size;
 
