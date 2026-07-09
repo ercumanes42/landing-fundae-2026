@@ -1,0 +1,6 @@
+{
+  "name": "GestiónFUNDAE Landing",
+  "description": "Premium B2B landing page for capturing leads regarding FUNDAE credits in Spain. Features lead scoring, calculators, and automated webhooks.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

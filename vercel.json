@@ -1,0 +1,9 @@
+{
+  "rewrites": [
+    { "source": "/calculadora", "destination": "/index.html" },
+    { "source": "/checklist-10-errores", "destination": "/index.html" },
+    { "source": "/autodiagnostico", "destination": "/index.html" },
+    { "source": "/webinar", "destination": "/index.html" },
+    { "source": "/diagnostico", "destination": "/index.html" }
+  ]
+}
