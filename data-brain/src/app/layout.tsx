@@ -3,8 +3,8 @@ import type { ReactNode } from 'react';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Data Brain FUNDAE',
-  description: 'Panel interno de inteligencia comercial para la landing FUNDAE',
+  title: 'Data Brain — Inteligencia Comercial FUNDAE',
+  description: 'Dashboard de inteligencia comercial, análisis de datos y lead scoring para campañas FUNDAE',
 };
 
 export default function RootLayout({
