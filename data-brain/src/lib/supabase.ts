@@ -63,6 +63,21 @@ export async function insertRow<T = JsonRecord>(
   return rows[0];
 }
 
+export async function insertRows<T = JsonRecord>(
+  table: string,
+  rows: JsonRecord[],
+): Promise<T[]> {
+  assertEnv();
+
+  const response = await fetch(supabaseUrl(table), {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify(rows),
+  });
+
+  return parseSupabaseResponse<T[]>(response);
+}
+
 export async function updateById<T = JsonRecord>(
   table: string,
   id: string,

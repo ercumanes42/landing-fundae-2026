@@ -658,6 +658,146 @@ export function DashboardPanel({ initialData }: DashboardPanelProps) {
     };
   }, [filteredEvents, filteredLeads]);
 
+  const godModeAnalytics = useMemo(() => {
+    const sessionIds = new Set<string>();
+    filteredEvents.forEach((e: any) => {
+      if (e.session_id) sessionIds.add(e.session_id);
+    });
+    const totalSessions = sessionIds.size || 1;
+
+    const scrollMilestones = { 25: 0, 50: 0, 75: 0, 100: 0 };
+    const maxScrollBySession: Record<string, number> = {};
+
+    filteredEvents.forEach((e: any) => {
+      if (e.event_name === 'scroll_milestone' && e.session_id) {
+        const depth = Number(e.properties?.depth_pct) || 0;
+        maxScrollBySession[e.session_id] = Math.max(maxScrollBySession[e.session_id] || 0, depth);
+      }
+    });
+
+    Object.values(maxScrollBySession).forEach(maxDepth => {
+      if (maxDepth >= 25) scrollMilestones[25]++;
+      if (maxDepth >= 50) scrollMilestones[50]++;
+      if (maxDepth >= 75) scrollMilestones[75]++;
+      if (maxDepth >= 100) scrollMilestones[100]++;
+    });
+
+    const scrollRates = {
+      25: Math.round((scrollMilestones[25] / totalSessions) * 100),
+      50: Math.round((scrollMilestones[50] / totalSessions) * 100),
+      75: Math.round((scrollMilestones[75] / totalSessions) * 100),
+      100: Math.round((scrollMilestones[100] / totalSessions) * 100),
+    };
+
+    const activeTimes: Record<string, number> = {};
+    const idleTimes: Record<string, number> = {};
+
+    filteredEvents.forEach((e: any) => {
+      if (e.session_id) {
+        const active = Number(e.properties?.active_seconds) || 0;
+        const idle = Number(e.properties?.idle_seconds) || 0;
+        
+        activeTimes[e.session_id] = Math.max(activeTimes[e.session_id] || 0, active);
+        idleTimes[e.session_id] = Math.max(idleTimes[e.session_id] || 0, idle);
+      }
+    });
+
+    const totalActive = Object.values(activeTimes).reduce((acc, curr) => acc + curr, 0);
+    const totalIdle = Object.values(idleTimes).reduce((acc, curr) => acc + curr, 0);
+    const numSessions = Object.keys(activeTimes).length || 1;
+
+    const avgActive = Math.round(totalActive / numSessions);
+    const avgIdle = Math.round(totalIdle / numSessions);
+
+    const magnetsList = [
+      { code: 'A', name: 'Checklist PDF (A)', slug: 'checklist' },
+      { code: 'B', name: 'Calculadora (B)', slug: 'calculator' },
+      { code: 'C', name: 'Webinar (C)', slug: 'webinar' },
+      { code: 'D', name: 'Revisión Rápida (D)', slug: 'revision' },
+      { code: 'E', name: 'Diagnóstico (E)', slug: 'diagnostic' }
+    ];
+
+    const funnelData = magnetsList.map(magnet => {
+      const views = new Set(
+        filteredEvents
+          .filter(e => e.event_name === 'section_view' && e.properties?.section_name === magnet.slug && e.session_id)
+          .map(e => e.session_id)
+      ).size;
+
+      const clicks = new Set(
+        filteredEvents
+          .filter(e => e.event_name === 'cta_click' && e.properties?.cta_name?.includes(magnet.slug) && e.session_id)
+          .map(e => e.session_id)
+      ).size;
+
+      const completed = filteredLeads.filter((l: any) => l.lead_magnet === magnet.slug).length;
+      const conv = views > 0 ? Math.round((completed / views) * 100) : 0;
+
+      return {
+        ...magnet,
+        views,
+        clicks,
+        completed,
+        conv
+      };
+    });
+
+    const videoImpressions = new Set(
+      filteredEvents.filter(e => e.event_name === 'video_impression' && e.session_id).map(e => e.session_id)
+    ).size;
+
+    const videoPlays = new Set(
+      filteredEvents.filter((e: any) => (e.event_name === 'video_progress' || e.event_name === 'video_play') && e.session_id).map(e => e.session_id)
+    ).size;
+
+    const videoTimes = filteredEvents
+      .filter((e: any) => e.event_name === 'video_progress' && e.properties?.seconds_watched)
+      .map(e => Number(e.properties.seconds_watched) || 0);
+
+    const avgVideoTime = videoTimes.length > 0 ? Math.round(videoTimes.reduce((a, b) => a + b, 0) / videoTimes.length) : 0;
+
+    const utmSessions: Record<string, { sessions: Set<string>; conversions: number }> = {};
+    
+    filteredEvents.forEach((e: any) => {
+      if (e.event_name === 'session_start' && e.session_id) {
+        const src = e.properties?.utm_source || 'direct';
+        const med = e.properties?.utm_medium || 'none';
+        const key = `${src} / ${med}`;
+        if (!utmSessions[key]) {
+          utmSessions[key] = { sessions: new Set(), conversions: 0 };
+        }
+        utmSessions[key].sessions.add(e.session_id);
+      }
+    });
+
+    filteredLeads.forEach((l: any) => {
+      const src = l.first_utm_source || l.payload?.utm_source || 'direct';
+      const med = l.first_utm_medium || l.payload?.utm_medium || 'none';
+      const key = `${src} / ${med}`;
+      if (!utmSessions[key]) {
+        utmSessions[key] = { sessions: new Set(), conversions: 0 };
+      }
+      utmSessions[key].conversions++;
+    });
+
+    const utmList = Object.entries(utmSessions).map(([key, data]) => ({
+      sourceMedium: key,
+      sessions: data.sessions.size,
+      conversions: data.conversions
+    })).sort((a, b) => b.sessions - a.sessions).slice(0, 10);
+
+    return {
+      scrollRates,
+      avgActive,
+      avgIdle,
+      funnelData,
+      videoImpressions,
+      videoPlays,
+      avgVideoTime,
+      utmList
+    };
+  }, [filteredEvents, filteredLeads]);
+
   const testConnection = async () => {
     setPingStatus('testing');
     const start = performance.now();
@@ -1728,8 +1868,7 @@ export function DashboardPanel({ initialData }: DashboardPanelProps) {
                       <h3>Profundidad de Scroll</h3>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                         {[25, 50, 75, 100].map(pct => {
-                          // TODO: compute from events
-                          const reached = 0; 
+                          const reached = (godModeAnalytics.scrollRates as any)[pct] || 0; 
                           return (
                             <div key={pct}>
                               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '6px' }}>
@@ -1751,10 +1890,10 @@ export function DashboardPanel({ initialData }: DashboardPanelProps) {
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', padding: '20px' }}>
                         <div style={{ textAlign: 'center' }}>
                           <div style={{ fontSize: '32px', fontWeight: 800, color: 'var(--cyan)', fontFamily: 'JetBrains Mono' }}>
-                            0s <span style={{ fontSize: '14px', color: 'var(--muted)' }}>Activo</span>
+                            {godModeAnalytics.avgActive}s <span style={{ fontSize: '14px', color: 'var(--muted)' }}>Activo</span>
                           </div>
                           <div style={{ fontSize: '20px', fontWeight: 700, color: 'var(--purple)', fontFamily: 'JetBrains Mono', marginTop: '8px' }}>
-                            0s <span style={{ fontSize: '12px', color: 'var(--muted)' }}>Inactivo</span>
+                            {godModeAnalytics.avgIdle}s <span style={{ fontSize: '12px', color: 'var(--muted)' }}>Inactivo</span>
                           </div>
                         </div>
                       </div>
@@ -1777,9 +1916,15 @@ export function DashboardPanel({ initialData }: DashboardPanelProps) {
                             </tr>
                           </thead>
                           <tbody>
-                            <tr>
-                              <td colSpan={5} style={{ textAlign: 'center', color: 'var(--muted)' }}>Esperando datos de la campaña activa...</td>
-                            </tr>
+                            {godModeAnalytics.funnelData.map(row => (
+                              <tr key={row.code}>
+                                <td style={{ fontWeight: 600, color: 'var(--text)' }}>{row.name}</td>
+                                <td style={{ fontFamily: 'JetBrains Mono' }}>{row.views}</td>
+                                <td style={{ fontFamily: 'JetBrains Mono' }}>{row.clicks}</td>
+                                <td style={{ fontFamily: 'JetBrains Mono' }}>{row.completed}</td>
+                                <td style={{ fontWeight: 700, color: 'var(--cyan)', fontFamily: 'JetBrains Mono' }}>{row.conv}%</td>
+                              </tr>
+                            ))}
                           </tbody>
                         </table>
                       </div>
@@ -1793,15 +1938,15 @@ export function DashboardPanel({ initialData }: DashboardPanelProps) {
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--panel-border)', paddingBottom: '8px' }}>
                             <span className="muted">Impresiones (Visto en pantalla)</span>
-                            <strong style={{ color: 'var(--text)' }}>0</strong>
+                            <strong style={{ color: 'var(--text)' }}>{godModeAnalytics.videoImpressions}</strong>
                           </div>
                           <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--panel-border)', paddingBottom: '8px' }}>
                             <span className="muted">Reproducciones (Plays)</span>
-                            <strong style={{ color: 'var(--text)' }}>0</strong>
+                            <strong style={{ color: 'var(--text)' }}>{godModeAnalytics.videoPlays}</strong>
                           </div>
                           <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--panel-border)', paddingBottom: '8px' }}>
                             <span className="muted">Tiempo Medio Visto</span>
-                            <strong style={{ color: 'var(--cyan)' }}>0s</strong>
+                            <strong style={{ color: 'var(--cyan)' }}>{godModeAnalytics.avgVideoTime}s</strong>
                           </div>
                       </div>
                     </div>
@@ -1819,9 +1964,19 @@ export function DashboardPanel({ initialData }: DashboardPanelProps) {
                             </tr>
                           </thead>
                           <tbody>
-                            <tr>
-                              <td colSpan={3} style={{ textAlign: 'center', color: 'var(--muted)' }}>Sin datos UTM</td>
-                            </tr>
+                            {godModeAnalytics.utmList.length === 0 ? (
+                              <tr>
+                                <td colSpan={3} style={{ textAlign: 'center', color: 'var(--muted)' }}>Sin datos UTM</td>
+                              </tr>
+                            ) : (
+                              godModeAnalytics.utmList.map((row, idx) => (
+                                <tr key={idx}>
+                                  <td style={{ fontWeight: 500, color: 'var(--text)' }}>{row.sourceMedium}</td>
+                                  <td style={{ fontFamily: 'JetBrains Mono' }}>{row.sessions}</td>
+                                  <td style={{ fontFamily: 'JetBrains Mono', color: 'var(--cyan)' }}>{row.conversions}</td>
+                                </tr>
+                              ))
+                            )}
                           </tbody>
                         </table>
                       </div>
