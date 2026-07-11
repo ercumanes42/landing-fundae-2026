@@ -64,6 +64,11 @@ export interface TrackingContext {
   readonly consent_state: 'unknown' | 'accepted' | 'rejected';
 }
 
+export interface CampaignTrackingContext {
+  readonly campaign_external_id: string;
+  readonly contact_id: string;
+}
+
 export type TrackingEvent =
   | 'page_view'
   | 'section_view'
@@ -246,6 +251,7 @@ export interface LeadData {
   first_touch?: TouchAttribution;
   last_touch?: TouchAttribution;
   tracking_context?: TrackingContext;
+  campaign_context?: CampaignTrackingContext;
   lead_score: number;
   lead_status: LeadStatus;
   lead_classification: LeadClassification;
@@ -281,6 +287,7 @@ export interface LeadData {
 
 export interface Config {
   readonly dataBrainIngestUrl: string;
+  readonly campaignExternalId: string;
   readonly checklistWebhookUrl: string;
   readonly interactiveChecklistWebhookUrl: string;
   readonly calculatorWebhookUrl: string;

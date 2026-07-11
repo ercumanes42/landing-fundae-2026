@@ -78,6 +78,25 @@ export async function insertRows<T = JsonRecord>(
   return parseSupabaseResponse<T[]>(response);
 }
 
+export async function upsertRows<T = JsonRecord>(
+  table: string,
+  rows: JsonRecord[],
+  onConflict: string,
+): Promise<T[]> {
+  assertEnv();
+
+  const response = await fetch(
+    supabaseUrl(`${table}?on_conflict=${encodeURIComponent(onConflict)}`),
+    {
+      method: 'POST',
+      headers: headers({ Prefer: 'resolution=merge-duplicates,return=representation' }),
+      body: JSON.stringify(rows),
+    },
+  );
+
+  return parseSupabaseResponse<T[]>(response);
+}
+
 export async function updateById<T = JsonRecord>(
   table: string,
   id: string,
@@ -128,4 +147,19 @@ export async function selectRows<T = JsonRecord>(
   });
 
   return parseSupabaseResponse<T[]>(response);
+}
+
+export async function callRpc<T = JsonRecord>(
+  functionName: string,
+  args: JsonRecord,
+): Promise<T> {
+  assertEnv();
+
+  const response = await fetch(supabaseUrl(`rpc/${functionName}`), {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify(args),
+  });
+
+  return parseSupabaseResponse<T>(response);
 }

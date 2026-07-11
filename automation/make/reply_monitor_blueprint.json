@@ -1,0 +1,11 @@
+{
+  "name": "FUNDAE 2026 Reply Monitor",
+  "importable": false,
+  "modules": [
+    "Microsoft 365 Email Watch Emails",
+    "Google Sheets Search Row by conversation_id",
+    "Response classifier",
+    "Google Sheets Update Row STOPPED",
+    "HTTP signed Data Brain operation"
+  ]
+}

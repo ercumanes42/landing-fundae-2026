@@ -9,12 +9,11 @@ Este proyecto mantiene la landing actual en Vite + React y añade una app separa
 
 ## Imanes confirmados
 
-- Calculadora: `/calculadora` -> `#calculadora`
 - Checklist PDF 10 errores: `/checklist-10-errores` -> `#checklist`
-- Autodiagnostico: `/autodiagnostico` -> `#interactive-checklist`
+- Calculadora: `/calculadora` -> `#calculadora`
 - Webinar: `/webinar` -> `#webinar`
-- Diagnostico one-to-one: `/diagnostico` -> `#diagnostico`
-- Calendly: evento de alta intencion, no iman independiente
+- Revision rapida: `/autodiagnostico` -> `#interactive-checklist`
+- Diagnostico / Calendly: conversion comercial comun, no iman independiente
 
 ## Landing
 
@@ -36,7 +35,7 @@ VITE_WEBINAR_DATE
 VITE_WEBINAR_TIME
 ```
 
-La landing envia eventos anonimos a PostHog y `/api/events/ingest`. Los formularios completos van a `/api/leads/ingest`.
+La analitica opcional solo se activa tras el consentimiento del visitante. Los formularios completos van a `/api/leads/ingest`; los enlaces de campana con `cid` se atribuyen a `/api/campaign/events` sin enviar PII a PostHog.
 
 ## Data Brain
 
@@ -63,6 +62,12 @@ MAKE_WEBHOOK_URL
 AIRTABLE_API_KEY
 AIRTABLE_BASE_ID
 POSTHOG_PROJECT_API_KEY
+LANDING_ALLOWED_ORIGINS
+CAMPAIGN_IMPORT_SECRET
+MAKE_WEBHOOK_SECRET
+HUBSPOT_WEBHOOK_SECRET
+HUBSPOT_ACCESS_TOKEN
+HUBSPOT_PORTAL_ID
 ```
 
 Los defaults de arranque son `gpt-4o-mini` para resumen y `gpt-4o` para analista:
@@ -103,13 +108,17 @@ if (summary.confidence < 0.5) {
 
 Ejecuta `data-brain/supabase/schema.sql` antes de operar el sistema.
 
+## Campana FUNDAE 2026
+
+El Excel maestro se mantiene fuera de Git en `data-private/`. Consulta [automation/README.md](automation/README.md) antes de importar o configurar Make. Los comandos locales validan el fichero, sus UTMs, los 104 contactos secundarios y la preparacion de la cola antes de cualquier activacion.
+
 ## Test plan
 
 - Validar JSON estructurado en `/api/ai/lead-summary`.
 - Validar `confidence < 0.5` -> `revisar_manual`.
 - Validar error claro si faltan envs criticas.
 - Validar que PostHog no recibe PII.
-- Enviar formularios de los cinco imanes.
+- Enviar formularios de los cuatro imanes.
 - Simular fallo de Make y confirmar retries + `dead_letter`.
 - Validar scoring `cold`, `warm`, `hot` y `priority`.
 - Validar rutas sin UTMs: `direct / none / unattributed`.

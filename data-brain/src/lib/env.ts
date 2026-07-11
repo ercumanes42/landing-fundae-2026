@@ -9,6 +9,14 @@ type EnvKey =
   | 'DATA_BRAIN_ADMIN_USER'
   | 'DATA_BRAIN_ADMIN_PASSWORD'
   | 'DATA_BRAIN_ALLOWED_IPS'
+  | 'LANDING_ALLOWED_ORIGINS'
+  | 'CAMPAIGN_IMPORT_SECRET'
+  | 'MAKE_WEBHOOK_SECRET'
+  | 'HUBSPOT_WEBHOOK_SECRET'
+  | 'CAMPAIGN_DEFAULT_EXTERNAL_ID'
+  | 'HUBSPOT_ACCESS_TOKEN'
+  | 'HUBSPOT_PORTAL_ID'
+  | 'HUBSPOT_API_VERSION'
   | 'MAKE_WEBHOOK_URL'
   | 'AIRTABLE_API_KEY'
   | 'AIRTABLE_BASE_ID'
@@ -27,6 +35,9 @@ const REQUIRED_ENV: EnvKey[] = [
 const DEFAULTS: Partial<Record<EnvKey, string>> = {
   OPENAI_MODEL_SUMMARY: 'gpt-4o-mini',
   OPENAI_MODEL_ANALYST: 'gpt-4o',
+  HUBSPOT_API_VERSION: '2026-03',
+  CAMPAIGN_DEFAULT_EXTERNAL_ID: 'FUNDAE_2026_EMAIL_V1',
+  LANDING_ALLOWED_ORIGINS: 'http://localhost:3001',
 };
 
 export function env(key: EnvKey): string {
@@ -49,10 +60,16 @@ export function assertEnv(): void {
   }
 }
 
-export function optionalIntegrationStatus(): { make: boolean; airtable: boolean; posthog: boolean } {
+export function optionalIntegrationStatus(): {
+  make: boolean;
+  airtable: boolean;
+  posthog: boolean;
+  hubspot: boolean;
+} {
   return {
     make: Boolean(env('MAKE_WEBHOOK_URL')),
     airtable: Boolean(env('AIRTABLE_API_KEY') && env('AIRTABLE_BASE_ID')),
     posthog: Boolean(env('POSTHOG_PROJECT_API_KEY')),
+    hubspot: Boolean(env('HUBSPOT_ACCESS_TOKEN')),
   };
 }

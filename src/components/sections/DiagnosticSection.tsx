@@ -5,7 +5,7 @@ import { Select } from "../ui/Select";
 import { useFormSubmit } from "../../hooks/useFormSubmit";
 import { config } from "../../config";
 import { SECTORS } from "../../config/constants";
-import { trackCalendlyRedirect, trackFormStart } from "../../lib/tracking";
+import { getCampaignAwareUrl, trackCalendlyRedirect, trackFormStart } from "../../lib/tracking";
 
 export function DiagnosticSection() {
   const { state, error, submit } = useFormSubmit();
@@ -20,7 +20,7 @@ export function DiagnosticSection() {
 
   React.useEffect(() => {
     if (state === "success") {
-      const calendlyUrl = config.calendlyUrl;
+      const calendlyUrl = getCampaignAwareUrl(config.calendlyUrl);
       if (calendlyUrl) {
         trackCalendlyRedirect("diagnostic");
         window.location.href = calendlyUrl;
@@ -75,7 +75,7 @@ export function DiagnosticSection() {
                   size="lg"
                   onClick={() => {
                     trackCalendlyRedirect("diagnostic");
-                    window.location.href = config.calendlyUrl;
+                    window.location.href = getCampaignAwareUrl(config.calendlyUrl);
                   }}
                 >
                   Ir al calendario

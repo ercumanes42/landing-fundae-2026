@@ -8,7 +8,11 @@
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "campaign:validate": "node automation/scripts/validate-campaign.mjs",
+    "campaign:tracking": "node automation/scripts/test-tracking-urls.mjs",
+    "campaign:rebalance": "node automation/scripts/rebalance-report.mjs",
+    "campaign:import": "node automation/scripts/import-campaign.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
@@ -33,6 +37,7 @@
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
-    "vite": "^6.2.3"
+    "vite": "^6.2.3",
+    "xlsx": "^0.18.5"
   }
 }

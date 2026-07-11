@@ -176,10 +176,10 @@ export async function getContextSummary(): Promise<ContextSummary> {
   const bySource = groupAndCount(mappedDataForGrouping, 'utm_source');
   const scoringAverages = computeAverages(mappedDataForGrouping);
 
-  // CRM KPI Calculations & Mock Fallbacks
-  let avgSpeedToLead = 240; // 4 minutes
-  let dealsByStage = { 'MQL': 12, 'SQL': 6, 'Propuesta': 4, 'Cerrado-Ganado': 3, 'Cerrado-Perdido': 2 };
-  let totalRevenueWon = 15800.00;
+  // CRM metrics remain empty/zero until HubSpot has delivered actual data.
+  let avgSpeedToLead = 0;
+  let dealsByStage: Record<string, number> = {};
+  let totalRevenueWon = 0;
 
   if (crmDeals.length > 0) {
     let speedSum = 0, speedCount = 0;
@@ -195,16 +195,15 @@ export async function getContextSummary(): Promise<ContextSummary> {
         speedCount++;
       }
     });
-    avgSpeedToLead = speedCount > 0 ? Math.round(speedSum / speedCount) : 240;
-    dealsByStage = Object.keys(stages).length > 0 ? (stages as any) : dealsByStage;
-    totalRevenueWon = revenueSum || 15800.00;
+    avgSpeedToLead = speedCount > 0 ? Math.round(speedSum / speedCount) : 0;
+    dealsByStage = stages;
+    totalRevenueWon = revenueSum;
   }
 
-  // Form Friction & Mock Fallbacks
-  let questionDropoffs = { 'intro': 120, 'q1': 112, 'q2': 105, 'q3': 102, 'q4': 98, 'q5': 92, 'q6': 88, 'q7': 85, 'q8': 49, 'q9': 45, 'q10': 42 };
-  let criticalFrictionQuestion = 'q8';
-  let totalValidationErrors = 28;
-  let rageClicksDetected = 14;
+  let questionDropoffs: Record<string, number> = {};
+  let criticalFrictionQuestion = '';
+  let totalValidationErrors = 0;
+  let rageClicksDetected = 0;
 
   if (rawEvents.length > 0) {
     const qCounts: Record<string, number> = {};
@@ -223,7 +222,7 @@ export async function getContextSummary(): Promise<ContextSummary> {
     if (Object.keys(qCounts).length > 0) {
       questionDropoffs = qCounts as any;
       let maxDrop = 0;
-      let worstQ = 'q8';
+      let worstQ = '';
       const steps = ['intro', 'q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'q7', 'q8', 'q9', 'q10'];
       for (let i = 0; i < steps.length - 1; i++) {
         const curr = qCounts[steps[i]] || 0;
@@ -236,13 +235,12 @@ export async function getContextSummary(): Promise<ContextSummary> {
       }
       criticalFrictionQuestion = worstQ;
     }
-    totalValidationErrors = valErrors || 28;
-    rageClicksDetected = rClicks || 14;
+    totalValidationErrors = valErrors;
+    rageClicksDetected = rClicks;
   }
 
-  // Session stats & Mock Fallbacks
-  let avgSessionDuration = 185; // seconds
-  let conversionsByDevice = { 'desktop': 21, 'mobile': 11, 'tablet': 2 };
+  let avgSessionDuration = 0;
+  let conversionsByDevice: Record<string, number> = {};
 
   if (sessions.length > 0) {
     let durSum = 0, durCount = 0;
@@ -256,8 +254,8 @@ export async function getContextSummary(): Promise<ContextSummary> {
         devices[s.device_type] = (devices[s.device_type] || 0) + 1;
       }
     });
-    avgSessionDuration = durCount > 0 ? Math.round(durSum / durCount) : 185;
-    conversionsByDevice = Object.keys(devices).length > 0 ? (devices as any) : conversionsByDevice;
+    avgSessionDuration = durCount > 0 ? Math.round(durSum / durCount) : 0;
+    conversionsByDevice = devices;
   }
 
   return {

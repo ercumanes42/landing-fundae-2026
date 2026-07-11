@@ -1,0 +1,17 @@
+{
+  "name": "FUNDAE 2026 Email Sender",
+  "importable": false,
+  "reason": "Make exports include account-specific module identifiers and connection IDs. Use MAKE_SETUP.md to configure this scenario exactly.",
+  "modules": [
+    "Scheduler",
+    "Google Sheets Search Rows",
+    "Make Data Store Get Record",
+    "Conditional primary-contact filter",
+    "Google Sheets Update Row LOCKED",
+    "Microsoft 365 Email Send or Reply",
+    "Make Data Store Put Record",
+    "Google Sheets Update Row result",
+    "HTTP signed Data Brain operation",
+    "Sleep 45 seconds"
+  ]
+}

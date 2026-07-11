@@ -13,6 +13,7 @@ export interface AppConfig {
   readonly webinarWebhookUrl: string;
   readonly diagnosticWebhookUrl: string;
   readonly dataBrainIngestUrl: string;
+  readonly campaignExternalId: string;
 
   // ── External links ────────────────────────────────────────────────────
   readonly calendlyUrl: string;
@@ -51,6 +52,7 @@ export const config: AppConfig = {
   webinarWebhookUrl: env('VITE_WEBINAR_WEBHOOK_URL'),
   diagnosticWebhookUrl: env('VITE_DIAGNOSTIC_WEBHOOK_URL'),
   dataBrainIngestUrl: env('VITE_DATA_BRAIN_INGEST_URL'),
+  campaignExternalId: env('VITE_CAMPAIGN_EXTERNAL_ID', 'FUNDAE_2026_EMAIL_V1'),
 
   // External links
   calendlyUrl: env('VITE_CALENDLY_URL'),

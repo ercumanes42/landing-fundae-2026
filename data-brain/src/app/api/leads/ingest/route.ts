@@ -7,6 +7,7 @@ import { summarizeLead } from '@/lib/openai';
 import { calculateLeadScoreBreakdown, classifyLead } from '@/lib/scoring';
 import { insertRow, updateById } from '@/lib/supabase';
 import type { AISummary, LeadPayload, LeadScoringInput } from '@/lib/types';
+import { corsHeaders, isAllowedLandingOrigin, limitRequest } from '@/lib/security';
 
 export const runtime = 'nodejs';
 
@@ -14,14 +15,6 @@ interface LeadRow {
   id: string;
   lead_id: string;
   delivery_status?: string;
-}
-
-function corsHeaders(): HeadersInit {
-  return {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
-  };
 }
 
 function statusFromScore(score: number): string {
@@ -64,11 +57,23 @@ function fallbackSummary(error: unknown): AISummary {
   };
 }
 
-export function OPTIONS() {
-  return new NextResponse(null, { status: 204, headers: corsHeaders() });
+export function OPTIONS(request: Request) {
+  return new NextResponse(null, { status: 204, headers: corsHeaders(request) });
 }
 
 export async function POST(request: Request) {
+  const headers = corsHeaders(request);
+  if (!isAllowedLandingOrigin(request)) {
+    return NextResponse.json({ error: 'Origin not allowed' }, { status: 403, headers });
+  }
+  const rate = limitRequest(request, 'lead-ingest', 15, 15 * 60_000);
+  if (!rate.allowed) {
+    return NextResponse.json(
+      { error: 'Too many requests' },
+      { status: 429, headers: { ...headers, 'Retry-After': String(rate.retryAfterSeconds) } },
+    );
+  }
+
   try {
     assertEnv();
     const input = (await request.json()) as LeadPayload;
@@ -76,7 +81,7 @@ export async function POST(request: Request) {
     if (!input?.contact?.email || !input?.form_type) {
       return NextResponse.json(
         { error: 'Invalid lead payload: contact.email and form_type are required' },
-        { status: 400, headers: corsHeaders() },
+        { status: 400, headers },
       );
     }
 
@@ -157,12 +162,12 @@ export async function POST(request: Request) {
         ai_summary: summary,
         delivery_status: deliveryStatus,
       },
-      { headers: corsHeaders() },
+      { headers },
     );
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Unknown lead ingest error' },
-      { status: 500, headers: corsHeaders() },
+      { status: 500, headers },
     );
   }
 }

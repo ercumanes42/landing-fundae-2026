@@ -1,7 +1,7 @@
 import * as React from "react";
 import { ChevronDown } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
-import { trackEvent } from "../../lib/tracking";
+import { trackFaqToggle } from "../../lib/tracking";
 
 const faqs = [
   {
@@ -38,7 +38,7 @@ export function FAQSection() {
     setOpenIndex(isOpening ? index : null);
     
     if (isOpening) {
-      trackEvent("faq_open", { question: faqs[index].question });
+      trackFaqToggle(faqs[index].question, true);
     }
   };
 

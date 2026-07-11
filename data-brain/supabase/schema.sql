@@ -142,6 +142,7 @@ CREATE TABLE IF NOT EXISTS public.crm_deals (
 CREATE INDEX IF NOT EXISTS crm_deals_stage_idx ON public.crm_deals (deal_stage);
 CREATE INDEX IF NOT EXISTS crm_deals_value_idx ON public.crm_deals (deal_value DESC);
 
+DROP TRIGGER IF EXISTS crm_deals_touch_updated_at ON public.crm_deals;
 CREATE TRIGGER crm_deals_touch_updated_at
   BEFORE UPDATE ON public.crm_deals
   FOR EACH ROW EXECUTE FUNCTION public.touch_updated_at();
@@ -210,4 +211,118 @@ ALTER TABLE public.events
 UPDATE public.events 
 SET campaign_id = (SELECT id FROM public.campaigns WHERE is_active = true LIMIT 1)
 WHERE campaign_id IS NULL;
+
+-- =========================================================================
+-- CAMPAÃ‘A FUNDAE 2026: OPERACIÃ“N, ATRIBUCIÃ“N Y CRM
+-- =========================================================================
+
+-- The original God Mode table predates the outbound campaign. Keep existing
+-- rows and add a stable external identifier used by Excel, Make and HubSpot.
+ALTER TABLE public.campaigns
+  ADD COLUMN IF NOT EXISTS external_id text,
+  ADD COLUMN IF NOT EXISTS timezone text NOT NULL DEFAULT 'Europe/Madrid',
+  ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'draft',
+  ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now();
+
+UPDATE public.campaigns
+SET external_id = 'legacy_' || replace(id::text, '-', '')
+WHERE external_id IS NULL OR external_id = '';
+
+ALTER TABLE public.campaigns
+  ALTER COLUMN external_id SET NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS campaigns_external_id_idx
+  ON public.campaigns (external_id);
+
+DROP TRIGGER IF EXISTS campaigns_touch_updated_at ON public.campaigns;
+CREATE TRIGGER campaigns_touch_updated_at
+  BEFORE UPDATE ON public.campaigns
+  FOR EACH ROW EXECUTE FUNCTION public.touch_updated_at();
+
+CREATE TABLE IF NOT EXISTS public.campaign_contacts (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  campaign_id uuid NOT NULL REFERENCES public.campaigns(id) ON DELETE CASCADE,
+  external_contact_id text NOT NULL,
+  external_account_id text NOT NULL,
+  email_hash text NOT NULL,
+  contact_data jsonb NOT NULL DEFAULT '{}'::jsonb,
+  variant text NOT NULL,
+  magnet text NOT NULL,
+  lot text NOT NULL,
+  company_size text,
+  current_step integer NOT NULL DEFAULT 1,
+  sequence_status text NOT NULL DEFAULT 'pending',
+  next_delivery_status text NOT NULL DEFAULT 'pending',
+  last_delivery_status text,
+  next_scheduled_at timestamptz,
+  locked_at timestamptz,
+  lock_token text,
+  lock_expires_at timestamptz,
+  attempt_count integer NOT NULL DEFAULT 0,
+  outlook_message_id text,
+  outlook_conversation_id text,
+  last_error_code text,
+  last_error_message text,
+  reply_type text,
+  deal_value numeric(12, 2),
+  parent_external_contact_id text,
+  conditional_delivery boolean NOT NULL DEFAULT false,
+  resource_started_at timestamptz,
+  resource_completed_at timestamptz,
+  meeting_booked_at timestamptz,
+  meeting_completed_at timestamptz,
+  opportunity_created_at timestamptz,
+  last_event_at timestamptz,
+  hubspot_contact_id text,
+  hubspot_sync_status text NOT NULL DEFAULT 'pending',
+  hubspot_synced_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT campaign_contacts_step_range CHECK (current_step BETWEEN 1 AND 6),
+  CONSTRAINT campaign_contacts_external_id_key UNIQUE (campaign_id, external_contact_id)
+);
+
+CREATE INDEX IF NOT EXISTS campaign_contacts_campaign_status_idx
+  ON public.campaign_contacts (campaign_id, sequence_status, next_delivery_status);
+CREATE INDEX IF NOT EXISTS campaign_contacts_external_account_idx
+  ON public.campaign_contacts (campaign_id, external_account_id);
+CREATE INDEX IF NOT EXISTS campaign_contacts_hubspot_id_idx
+  ON public.campaign_contacts (hubspot_contact_id)
+  WHERE hubspot_contact_id IS NOT NULL;
+
+DROP TRIGGER IF EXISTS campaign_contacts_touch_updated_at ON public.campaign_contacts;
+CREATE TRIGGER campaign_contacts_touch_updated_at
+  BEFORE UPDATE ON public.campaign_contacts
+  FOR EACH ROW EXECUTE FUNCTION public.touch_updated_at();
+
+CREATE TABLE IF NOT EXISTS public.campaign_events (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  campaign_id uuid NOT NULL REFERENCES public.campaigns(id) ON DELETE CASCADE,
+  campaign_contact_id uuid NOT NULL REFERENCES public.campaign_contacts(id) ON DELETE CASCADE,
+  source_event_id text,
+  event_name text NOT NULL,
+  occurred_at timestamptz NOT NULL DEFAULT now(),
+  context jsonb NOT NULL DEFAULT '{}'::jsonb,
+  properties jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS campaign_events_source_event_idx
+  ON public.campaign_events (campaign_id, source_event_id)
+  WHERE source_event_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS campaign_events_contact_time_idx
+  ON public.campaign_events (campaign_contact_id, occurred_at DESC);
+CREATE INDEX IF NOT EXISTS campaign_events_campaign_name_idx
+  ON public.campaign_events (campaign_id, event_name, occurred_at DESC);
+
+-- The browser never talks to Supabase directly. RLS keeps campaign PII and
+-- operational records available only to the server-side service role.
+ALTER TABLE public.leads ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.delivery_queue ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.sessions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.crm_deals ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.campaigns ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.campaign_contacts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.campaign_events ENABLE ROW LEVEL SECURITY;
 

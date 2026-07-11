@@ -1,0 +1,11 @@
+{
+  "name": "FUNDAE 2026 Landing Events",
+  "importable": false,
+  "modules": [
+    "Calendly confirmed booking webhook",
+    "Google Sheets Search Row by cid",
+    "Google Sheets Update Row meeting_booked",
+    "HTTP signed Data Brain operation"
+  ],
+  "note": "Passive landing events go directly from the landing to Data Brain. This scenario is only for confirmed third-party events."
+}

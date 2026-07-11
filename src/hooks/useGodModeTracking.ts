@@ -10,7 +10,8 @@ import {
   trackVideoProgress,
   trackVideoAbandoned,
   trackGodModeCtaClick,
-  trackPageExit
+  trackPageExit,
+  getCurrentTrackingContext,
 } from '../lib/tracking';
 
 export function useGodModeTracking() {
@@ -33,25 +34,16 @@ export function useGodModeTracking() {
     const s = sessionRef.current;
     if (typeof window === 'undefined') return;
 
-    let sessionId = sessionStorage.getItem('godmode_session_id');
-    if (!sessionId) {
-      sessionId = s.id;
-      sessionStorage.setItem('godmode_session_id', sessionId);
-    } else {
-      s.id = sessionId; // Restore session if reloaded
-    }
-
-    const params = new URLSearchParams(window.location.search);
+    const trackingContext = getCurrentTrackingContext();
+    s.id = trackingContext.session_id;
     const initPayload = {
       session_id: s.id,
-      utm_source: params.get('utm_source') || 'direct',
-      utm_medium: params.get('utm_medium') || 'none',
-      utm_campaign: params.get('utm_campaign') || 'unattributed',
-      utm_content: params.get('utm_content') || '',
-      utm_term: params.get('utm_term') || '',
-      referrer: document.referrer,
+      utm_source: trackingContext.utm_source,
+      utm_medium: trackingContext.utm_medium,
+      utm_campaign: trackingContext.utm_campaign,
+      utm_content: trackingContext.utm_content,
+      utm_term: trackingContext.utm_term,
       timestamp_start: new Date().toISOString(),
-      user_agent: navigator.userAgent,
       screen_resolution: `${window.screen.width}x${window.screen.height}`,
       viewport_size: `${window.innerWidth}x${window.innerHeight}`
     };

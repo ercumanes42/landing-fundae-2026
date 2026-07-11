@@ -2,6 +2,7 @@ import React from 'react';
 import { selectRows } from '@/lib/supabase';
 import { env, validateEnv, optionalIntegrationStatus } from '@/lib/env';
 import { DashboardPanel } from './components/DashboardPanel';
+import type { CampaignDashboardData } from './components/CampaignDashboard';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,6 +14,7 @@ export default async function DataBrainHome() {
   let events: any[] = [];
   let queue: any[] = [];
   let dbError = false;
+  let campaignData: CampaignDashboardData = { campaigns: [], contacts: [], events: [], error: null };
 
   if (validation.ok) {
     try {
@@ -24,6 +26,22 @@ export default async function DataBrainHome() {
     } catch (err) {
       console.error('[Dashboard] Supabase query failed:', err);
       dbError = true;
+    }
+
+    try {
+      const [campaigns, contacts, campaignEvents] = await Promise.all([
+        selectRows<CampaignDashboardData['campaigns'][number]>('campaigns', 'select=id,external_id,name,status&order=started_at.desc'),
+        selectRows<CampaignDashboardData['contacts'][number]>('campaign_contacts', 'select=id,campaign_id,external_contact_id,variant,magnet,lot,company_size,sequence_status,next_delivery_status,last_delivery_status,reply_type,deal_value,conditional_delivery,locked_at,lock_expires_at,last_error_code&limit=1000'),
+        selectRows<CampaignDashboardData['events'][number]>('campaign_events', 'select=id,campaign_id,campaign_contact_id,event_name,occurred_at&order=occurred_at.desc&limit=10000'),
+      ]);
+      campaignData = { campaigns, contacts, events: campaignEvents, error: null };
+    } catch (error) {
+      campaignData = {
+        campaigns: [],
+        contacts: [],
+        events: [],
+        error: error instanceof Error ? error.message : 'Campaign tables are not available',
+      };
     }
   }
 
@@ -70,7 +88,7 @@ export default async function DataBrainHome() {
   const videoPlayCount = events.filter(e => e.event_name === 'video_play').length;
 
   // Calculate unique visitors from events (fallback to leads count if no events are tracked yet)
-  const uniqueVisitors = new Set(events.map(e => e.anonymous_id)).size || Math.max(1, leadsCount);
+  const uniqueVisitors = new Set(events.map(e => e.anonymous_id).filter(Boolean)).size;
 
   const dashboardData = {
     leadsCount,
@@ -88,6 +106,7 @@ export default async function DataBrainHome() {
     leadsList: leads.slice(0, 50),
     rawLeads: leads,
     rawEvents: events,
+    campaign: campaignData,
   };
 
   return (

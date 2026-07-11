@@ -1,12 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const PUBLIC_PATHS = ['/api/leads/ingest', '/api/events/ingest'];
+const PUBLIC_PATHS = new Set([
+  '/api/leads/ingest',
+  '/api/events/ingest',
+  '/api/events/ingest/batch',
+  '/api/campaign/events',
+  '/api/campaign/operations',
+  '/api/webhooks/hubspot',
+]);
 
 function isPublicPath(pathname: string): boolean {
   return (
     pathname.startsWith('/_next') ||
     pathname === '/favicon.ico' ||
-    PUBLIC_PATHS.some((path) => pathname.startsWith(path))
+    PUBLIC_PATHS.has(pathname)
   );
 }
 

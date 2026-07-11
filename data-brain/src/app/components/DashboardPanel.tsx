@@ -16,6 +16,7 @@ import {
 } from 'chart.js';
 import { Doughnut, Line, Bar } from 'react-chartjs-2';
 import { AnalystChat } from './AnalystChat';
+import { CampaignDashboard, type CampaignDashboardData } from './CampaignDashboard';
 import ResetDataModal from './ResetDataModal';
 
 ChartJS.register(ArcElement, Tooltip, Legend, CategoryScale, LinearScale, PointElement, LineElement, Title, Filler, BarElement);
@@ -27,7 +28,7 @@ interface DashboardPanelProps {
     leadsByClassification: { cold: number; warm: number; hot: number; priority: number };
     leadsByMagnet: { calculator: number; checklist: number; interactive_checklist: number; webinar: number; diagnostic: number; unknown: number };
     queueCounts: { queued: number; delivered: number; retrying: number; dead_letter: number };
-    integrations: { make: boolean; airtable: boolean; posthog: boolean };
+    integrations: { make: boolean; airtable: boolean; posthog: boolean; hubspot: boolean };
     validationOk: boolean;
     missingEnvs: string[];
     avgScroll: number;
@@ -37,18 +38,19 @@ interface DashboardPanelProps {
     leadsList: any[];
     rawLeads: any[];
     rawEvents: any[];
+    campaign: CampaignDashboardData;
   };
 }
 
 export function DashboardPanel({ initialData }: DashboardPanelProps) {
-  const [activeView, setActiveView] = useState<'panel' | 'fuentes' | 'ajustes'>('panel');
+  const [activeView, setActiveView] = useState<'panel' | 'campaign' | 'fuentes' | 'ajustes'>('panel');
   const [activeTab, setActiveTab] = useState<'summary' | 'channels' | 'friction' | 'behavior' | 'godmode' | 'chat'>('summary');
   const [retryResult, setRetryResult] = useState<{ ok: boolean; processed?: number; delivered?: number; dead_letter?: number; error?: string } | null>(null);
   const [loadingRetry, setLoadingRetry] = useState(false);
   const [scoreThresholds, setScoreThresholds] = useState({ cold: 40, warm: 60, hot: 80 });
   const [pingStatus, setPingStatus] = useState<'idle' | 'testing' | 'ok' | 'error'>('idle');
   const [dbLatency, setDbLatency] = useState<number | null>(null);
-  const [selectedAIModel, setSelectedAIModel] = useState('gemini-2.5-flash');
+  const [selectedAIModel, setSelectedAIModel] = useState('gpt-4o');
   const [expandedLeadId, setExpandedLeadId] = useState<string | null>(null);
 
   // ── FILTROS MODO DIOS (DATA SCIENCE) ──────────────────────────────────
@@ -245,10 +247,10 @@ export function DashboardPanel({ initialData }: DashboardPanelProps) {
   const totalLeads = filteredLeads.length;
   const uniqueVisitors = useMemo(() => {
     const ids = new Set(filteredEvents.map((e: any) => e.anonymous_id).filter(Boolean));
-    return ids.size || Math.max(1, totalLeads);
-  }, [filteredEvents, totalLeads]);
+    return ids.size;
+  }, [filteredEvents]);
 
-  const overallConversion = ((totalLeads / uniqueVisitors) * 100).toFixed(1);
+  const overallConversion = uniqueVisitors > 0 ? ((totalLeads / uniqueVisitors) * 100).toFixed(1) : '0.0';
 
   const recentPriorityLeads = useMemo(() => {
     return filteredLeads.filter((l: any) => {
@@ -864,6 +866,10 @@ export function DashboardPanel({ initialData }: DashboardPanelProps) {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>
             Panel de Control
           </button>
+          <button className={`db-nav-btn ${activeView === 'campaign' ? 'active' : ''}`} onClick={() => setActiveView('campaign')}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 19V5M4 19h16M8 16v-4M12 16V8M16 16v-7"/></svg>
+            CampaÃ±a FUNDAE
+          </button>
           <button className={`db-nav-btn ${activeView === 'fuentes' ? 'active' : ''}`} onClick={() => setActiveView('fuentes')}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
             Fuentes de Datos
@@ -886,6 +892,7 @@ export function DashboardPanel({ initialData }: DashboardPanelProps) {
         <div className="db-topbar">
           <h1>
             {activeView === 'panel' && 'Inteligencia Comercial Data Brain'}
+            {activeView === 'campaign' && 'CampaÃ±a FUNDAE 2026'}
             {activeView === 'fuentes' && 'Orquestación de Fuentes de Datos'}
             {activeView === 'ajustes' && 'Ajustes de Parámetros Generales'}
           </h1>
@@ -1919,6 +1926,8 @@ export function DashboardPanel({ initialData }: DashboardPanelProps) {
         {/* ══════════════════════════════════════════════════════════
              FUENTES DE DATOS VIEW
            ══════════════════════════════════════════════════════════ */}
+        {activeView === 'campaign' && <CampaignDashboard data={initialData.campaign} />}
+
         {activeView === 'fuentes' && (
           <div className="db-content">
             <div className="db-grid-2">
@@ -2052,12 +2061,12 @@ export function DashboardPanel({ initialData }: DashboardPanelProps) {
                 <div className="db-settings-row">
                   <label>Modelo Analista IA:</label>
                   <select value={selectedAIModel} onChange={(e) => setSelectedAIModel(e.target.value)} className="db-filter-select">
-                    <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
-                    <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
+                    <option value="gpt-4o">gpt-4o</option>
+                    <option value="gpt-4o-mini">gpt-4o-mini</option>
                   </select>
                 </div>
                 <div style={{ marginTop: 'var(--space-lg)' }}>
-                  <button className="db-btn db-btn-primary" onClick={() => alert('Parámetros guardados')}>Guardar Configuración</button>
+                  <span className="db-settings-note">El modelo activo se configura mediante variables de entorno del servidor.</span>
                 </div>
               </div>
             </div>

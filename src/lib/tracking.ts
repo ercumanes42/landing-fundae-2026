@@ -1,5 +1,6 @@
 import { config } from '../config';
 import type {
+  CampaignTrackingContext,
   FormType,
   LeadMagnet,
   TouchAttribution,
@@ -7,6 +8,7 @@ import type {
   TrackingEvent,
   TrackingEventData,
 } from '../types';
+import { getAnalyticsConsent, hasAnalyticsConsent } from './consent';
 
 declare global {
   interface Window {
@@ -24,6 +26,7 @@ const IDENTITY_KEY = 'fundae_identity_v1';
 const SESSION_KEY = 'fundae_session_v1';
 const FIRST_TOUCH_KEY = 'fundae_first_touch_v1';
 const LAST_TOUCH_KEY = 'fundae_last_touch_v1';
+const CAMPAIGN_CONTEXT_KEY = 'fundae_campaign_context_v1';
 const IDENTITY_TTL_MS = 180 * 24 * 60 * 60 * 1000;
 const SESSION_IDLE_MS = 30 * 60 * 1000;
 const EVENT_VERSION = '1.0' as const;
@@ -53,7 +56,25 @@ const PII_KEYS = new Set([
   'message',
   'contact',
   'answers',
+  'cid',
+  'campaign_contact_id',
+  'campaign_id',
 ]);
+
+const CAMPAIGN_CONTACT_ID_PATTERN = /^[A-Za-z0-9_-]{3,100}$/;
+const CAMPAIGN_EVENT_MAP: Partial<Record<TrackingEvent, string>> = {
+  page_view: 'landing_visit',
+  checklist_completed: 'resource_completed',
+  calculator_completed: 'calculator_completed',
+  webinar_registered: 'webinar_registered',
+  diagnostic_requested: 'review_submitted',
+  pdf_downloaded: 'checklist_downloaded',
+};
+
+type DataBrainPath =
+  | '/api/events/ingest'
+  | '/api/events/ingest/batch'
+  | '/api/campaign/events';
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -91,6 +112,31 @@ function getLocalStorage(): Storage | undefined {
 
 function getSessionStorage(): Storage | undefined {
   return typeof window === 'undefined' ? undefined : window.sessionStorage;
+}
+
+export function getCampaignTrackingContext(): CampaignTrackingContext | null {
+  if (typeof window === 'undefined') return null;
+
+  const params = new URLSearchParams(window.location.search);
+  const cidFromUrl = params.get('cid')?.trim() || '';
+  const campaignFromUrl = params.get('campaign_id')?.trim() || '';
+  const storage = getSessionStorage();
+  const stored = safeRead<CampaignTrackingContext>(storage, CAMPAIGN_CONTEXT_KEY);
+
+  if (CAMPAIGN_CONTACT_ID_PATTERN.test(cidFromUrl)) {
+    const context: CampaignTrackingContext = {
+      contact_id: cidFromUrl,
+      campaign_external_id: campaignFromUrl || config.campaignExternalId,
+    };
+    safeWrite(storage, CAMPAIGN_CONTEXT_KEY, context);
+    return context;
+  }
+
+  if (stored && CAMPAIGN_CONTACT_ID_PATTERN.test(stored.contact_id)) {
+    return stored;
+  }
+
+  return null;
 }
 
 function normalizePath(pathname: string): string {
@@ -333,7 +379,7 @@ export function buildTrackingContext(data?: TrackingEventData): TrackingContext 
     consent_state:
       data?.consent_state === 'accepted' || data?.consent_state === 'rejected'
         ? data.consent_state
-        : 'unknown',
+        : getAnalyticsConsent(),
   };
 }
 
@@ -347,16 +393,36 @@ function sanitizeForAnalytics(data?: TrackingEventData): Record<string, unknown>
   return clean;
 }
 
-function buildApiUrl(path: '/api/events/ingest'): string {
+function buildApiUrl(path: DataBrainPath): string {
   const base = config.dataBrainIngestUrl.trim();
   if (!base) return '';
 
-  if (base.endsWith('/api/events/ingest')) return base;
-  if (base.endsWith('/api/leads/ingest')) {
-    return base.replace('/api/leads/ingest', path);
+  const apiMarker = base.indexOf('/api/');
+  if (apiMarker >= 0) {
+    return `${base.slice(0, apiMarker)}${path}`;
   }
 
   return `${base.replace(/\/+$/, '')}${path}`;
+}
+
+export function getCampaignAwareUrl(rawUrl: string): string {
+  const campaign = getCampaignTrackingContext();
+  if (!rawUrl || !campaign || typeof window === 'undefined') return rawUrl;
+
+  try {
+    const url = new URL(rawUrl, window.location.origin);
+    url.searchParams.set('cid', campaign.contact_id);
+    if (!url.searchParams.get('campaign_id')) {
+      url.searchParams.set('campaign_id', campaign.campaign_external_id);
+    }
+    return url.toString();
+  } catch {
+    return rawUrl;
+  }
+}
+
+function analyticsAllowed(): boolean {
+  return config.enableAnalytics && hasAnalyticsConsent();
 }
 
 function fireGA4(name: string, data: Record<string, unknown>): void {
@@ -408,7 +474,7 @@ function sendBehaviorEvent(
   data: Record<string, unknown>,
 ): void {
   const url = buildApiUrl('/api/events/ingest');
-  if (!url || !config.enableAnalytics) return;
+  if (!url || !analyticsAllowed()) return;
 
   try {
     fetch(url, {
@@ -424,6 +490,52 @@ function sendBehaviorEvent(
   } catch {
     // Fire and forget.
   }
+}
+
+export function trackCampaignEvent(
+  eventName: string,
+  data: Record<string, unknown> = {},
+  context = buildTrackingContext(),
+): void {
+  const campaign = getCampaignTrackingContext();
+  const url = buildApiUrl('/api/campaign/events');
+  if (!campaign || !url) return;
+
+  try {
+    fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      keepalive: true,
+      body: JSON.stringify({
+        campaign_external_id: campaign.campaign_external_id,
+        contact_id: campaign.contact_id,
+        event_name: eventName,
+        occurred_at: context.occurred_at,
+        source_event_id: context.event_id,
+        context: {
+          anonymous_id: context.anonymous_id,
+          session_id: context.session_id,
+          lead_magnet: context.lead_magnet,
+          source_url: context.source_url,
+          utm_source: context.utm_source,
+          utm_medium: context.utm_medium,
+          utm_campaign: context.utm_campaign,
+        },
+        properties: sanitizeForAnalytics(data),
+      }),
+    }).catch(() => undefined);
+  } catch {
+    // Campaign attribution is intentionally non-blocking for the visitor.
+  }
+}
+
+function trackMappedCampaignEvent(
+  name: TrackingEvent,
+  context: TrackingContext,
+  data: Record<string, unknown>,
+): void {
+  const campaignEventName = CAMPAIGN_EVENT_MAP[name];
+  if (campaignEventName) trackCampaignEvent(campaignEventName, data, context);
 }
 
 function logDev(name: string, data: Record<string, unknown>): void {
@@ -458,7 +570,9 @@ export function trackEvent(name: TrackingEvent, data?: TrackingEventData): void 
 
   logDev(name, enriched);
 
-  if (config.enableAnalytics) {
+  trackMappedCampaignEvent(name, context, publicData);
+
+  if (analyticsAllowed()) {
     fireGA4(name, enriched);
     firePostHog(name, enriched);
     fireLinkedIn(name);
@@ -491,6 +605,7 @@ export function trackCtaClick(ctaId: string, location: string): void {
 
 export function trackFormStart(formType: FormType): void {
   trackEvent('form_start', { form_type: formType, consent_state: 'unknown' });
+  trackCampaignEvent('resource_started', { form_type: formType });
 }
 
 export function trackFormStep(formType: FormType, step: number): void {
@@ -555,7 +670,7 @@ function flushGodModeQueue() {
   godModeQueue = [];
   
   const url = buildApiUrl('/api/events/ingest/batch');
-  if (!url || !config.enableAnalytics) return;
+  if (!url || !analyticsAllowed()) return;
 
   try {
     fetch(url, {
@@ -568,7 +683,7 @@ function flushGodModeQueue() {
 }
 
 function queueGodModeEvent(name: string, data: any, forceBeacon = false) {
-  if (typeof window === 'undefined') return;
+  if (typeof window === 'undefined' || !analyticsAllowed()) return;
   const ctx = buildTrackingContext();
   
   const eventPayload = {
@@ -584,7 +699,7 @@ function queueGodModeEvent(name: string, data: any, forceBeacon = false) {
 
   if (forceBeacon) {
     const url = buildApiUrl('/api/events/ingest');
-    if (url && config.enableAnalytics && navigator.sendBeacon) {
+    if (url && navigator.sendBeacon) {
       navigator.sendBeacon(url, JSON.stringify({
         event_name: name,
         context: ctx,

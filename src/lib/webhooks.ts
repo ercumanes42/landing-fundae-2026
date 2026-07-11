@@ -11,7 +11,7 @@ import {
   classifyLead,
   getLeadStatus,
 } from './leadScoring';
-import { getCurrentTrackingContext, inferLeadMagnet, trackEvent } from './tracking';
+import { getCampaignTrackingContext, getCurrentTrackingContext, inferLeadMagnet, trackEvent } from './tracking';
 import { config, getWebhookUrl } from '../config';
 
 const TIMEOUT_MS = 10_000;
@@ -142,6 +142,7 @@ function buildPayload(formType: FormType, data: Record<string, unknown>): LeadDa
     form_type: formType,
     consent_state: getBool(data, 'privacy_accepted') ? 'accepted' : 'unknown',
   });
+  const campaignContext = getCampaignTrackingContext();
 
   const scoringInput: LeadScoringInput = {
     employee_range: getString(data, 'employee_range'),
@@ -178,6 +179,7 @@ function buildPayload(formType: FormType, data: Record<string, unknown>): LeadDa
     first_touch: trackingContext.first_touch,
     last_touch: trackingContext.last_touch,
     tracking_context: trackingContext,
+    campaign_context: campaignContext ?? undefined,
     lead_score: score,
     lead_status: getLeadStatus(score),
     lead_classification: classification,

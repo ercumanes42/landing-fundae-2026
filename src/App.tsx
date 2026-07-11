@@ -15,6 +15,7 @@ import { HowItWorksSection } from "./components/sections/HowItWorksSection";
 import { FAQSection } from "./components/sections/FAQSection";
 import { FinalCTASection } from "./components/sections/FinalCTASection";
 import { Footer } from "./components/sections/Footer";
+import { CookieConsentBanner } from "./components/CookieConsentBanner";
 import { useEffect } from "react";
 import { trackEvent } from "./lib/tracking";
 import { flushPendingLeads } from "./lib/webhooks";
@@ -71,6 +72,7 @@ export default function App() {
         <div data-section="final-cta"><FinalCTASection /></div>
       </main>
       <div data-section="footer"><Footer /></div>
+      <CookieConsentBanner />
       
       {/* Mobile sticky bottom CTA */}
       <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] lg:hidden z-50">

@@ -18,6 +18,10 @@ Preparar la **documentación y estructura de datos** necesarias para conectar la
 
 > **Nota**: Este agente NO implementa código en la landing. Produce documentación técnica para configurar Make/n8n externamente.
 
+## Override: FUNDAE 2026 Campaign
+
+For the approved campaign, the source workbook remains immutable, Google Sheets is the visible Make queue, Outlook 365 sends five emails, HubSpot is the CRM, and Data Brain receives signed operational events. The agent must follow `automation/MAKE_SETUP.md` and must not treat a Calendly click as a booked meeting. Secondary contacts only activate after their primary contact remains eligible.
+
 ---
 
 ## Responsabilidades

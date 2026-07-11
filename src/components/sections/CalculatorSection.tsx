@@ -19,7 +19,7 @@ import {
   CALCULATOR_RESULTS 
 } from "../../config/constants";
 import { config } from "../../config";
-import { trackCalendlyRedirect, trackEvent, trackFormStart, trackFormStep } from "../../lib/tracking";
+import { getCampaignAwareUrl, trackCalendlyRedirect, trackEvent, trackFormStart, trackFormStep } from "../../lib/tracking";
 
 export function CalculatorSection() {
   const [step, setStep] = React.useState(1);
@@ -294,7 +294,7 @@ export function CalculatorSection() {
                   className="w-full sm:w-auto px-8 py-6 text-lg shadow-lg shadow-blue-200"
                   onClick={() => {
                     trackCalendlyRedirect("calculator");
-                    window.open(config.calendlyUrl, "_blank");
+                    window.open(getCampaignAwareUrl(config.calendlyUrl), "_blank");
                   }}
                 >
                   Agendar Diagnóstico Gratuito para calcular la cifra exacta

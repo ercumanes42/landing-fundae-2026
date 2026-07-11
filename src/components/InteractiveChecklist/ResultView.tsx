@@ -5,7 +5,7 @@ import { ChecklistResultLevel, checklistQuestions, introQuestion } from "../../l
 import { useFormSubmit } from "../../hooks/useFormSubmit";
 import { generateDiagnosticPDF } from "../../lib/pdfGenerator";
 import { config } from "../../config";
-import { trackCalendlyRedirect, trackFormStart, trackPdfDownload } from "../../lib/tracking";
+import { getCampaignAwareUrl, trackCalendlyRedirect, trackFormStart, trackPdfDownload } from "../../lib/tracking";
 
 interface ResultViewProps {
   score: number;
@@ -25,7 +25,7 @@ export function ResultView({ score, resultLevel, recommendations, answers, onRes
   
   const [isDownloading, setIsDownloading] = useState(false);
   const hasTrackedStart = useRef(false);
-  const { state, submit } = useFormSubmit();
+  const { state, submit, error } = useFormSubmit();
 
   const maxScore = (checklistQuestions.length * 2) + 2; // max per question is 2, plus intro max 2
 
@@ -220,7 +220,7 @@ export function ResultView({ score, resultLevel, recommendations, answers, onRes
               </button>
 
               <a
-                href={config.calendlyUrl || "#"}
+                href={getCampaignAwareUrl(config.calendlyUrl) || "#"}
                 target="_blank"
                 rel="noopener noreferrer"
                 onClick={() => trackCalendlyRedirect("interactive_checklist")}

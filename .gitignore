@@ -9,3 +9,9 @@ coverage/
 !data-brain/.env.example
 .next/
 data-brain/.next/
+*.tsbuildinfo
+
+# Private campaign data and generated operational queues
+data-private/
+*.xlsx
+automation/.runtime/
