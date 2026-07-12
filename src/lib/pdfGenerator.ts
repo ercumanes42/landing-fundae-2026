@@ -265,11 +265,7 @@ export function generateDiagnosticPDF(data: PDFReportData): void {
   pdf.setTextColor(...colors.white);
   pdf.setFontSize(12);
   pdf.setFont('helvetica', 'bold');
-  pdf.text('¿Quieres que analicemos tu caso en profundidad?', pageWidth / 2, y + 9, { align: 'center' });
-
-  pdf.setFontSize(9);
-  pdf.setFont('helvetica', 'normal');
-  pdf.text('Agenda un diagnóstico ejecutivo gratuito de 15 minutos en fundae.tuempresa.com', pageWidth / 2, y + 16, { align: 'center' });
+  pdf.text('Agenda tu diagnóstico de 15 minutos para que podamos ayudarte.', pageWidth / 2, y + 13, { align: 'center' });
 
   // ── Confidentiality footer ──────────────────────────────────────
   pdf.setTextColor(...colors.medium);
