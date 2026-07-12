@@ -5,6 +5,26 @@
 export type EmployeeRange = '1-5' | '6-9' | '10-49' | '50-249' | '+249' | '';
 
 export type LeadStatus = 'frio' | 'templado' | 'caliente' | 'prioritario';
+export type FundaeCalculationMode =
+  | 'fp_quota'
+  | 'other_contributions_base'
+  | 'no_data';
+
+export type FundaeCreditCalculationSource =
+  | 'minimum_credit'
+  | 'fp_quota'
+  | 'other_contributions_base'
+  | 'insufficient_data';
+
+export interface FundaeCreditEstimate {
+  readonly amount: number | null;
+  readonly currency: 'EUR';
+  readonly calculation_mode: FundaeCalculationMode;
+  readonly calculation_source: FundaeCreditCalculationSource;
+  readonly applied_percentage: number;
+  readonly requires_manual_review: boolean;
+}
+
 export type LeadClassification = 'cold' | 'warm' | 'hot' | 'priority';
 
 export type FormType =
@@ -131,11 +151,10 @@ export interface ChecklistFormData {
 
 export interface CalculatorFormData {
   readonly employee_range: EmployeeRange;
-  readonly province: string;
-  readonly sector: string;
-  readonly used_fundae_before: string;
-  readonly knows_credit: string;
-  readonly training_area: string;
+  readonly calculation_mode: FundaeCalculationMode;
+  readonly prior_year_fp_quota?: string;
+  readonly prior_year_other_contributions_base?: string;
+  readonly special_situation: 'no' | 'yes' | 'unknown';
   readonly name: string;
   readonly company: string;
   readonly role?: string;
@@ -264,6 +283,10 @@ export interface LeadData {
     used_fundae_before?: string;
     knows_credit?: string;
     current_training_provider?: string;
+    credit_calculation_mode?: FundaeCalculationMode;
+    prior_year_fp_quota?: number;
+    prior_year_other_contributions_base?: number;
+    special_situation?: 'no' | 'yes' | 'unknown';
   };
   interest?: {
     training_area?: string;
@@ -275,6 +298,7 @@ export interface LeadData {
     risk_level: string;
     answers: Record<string, string>;
   };
+  credit_estimate?: FundaeCreditEstimate;
   journey?: LeadJourneyInput;
   consent: {
     privacy_accepted: boolean;
@@ -315,6 +339,6 @@ export interface SubmitResult {
 export interface UseFormSubmitReturn {
   readonly state: FormState;
   readonly error: string | null;
-  readonly submit: (formType: FormType, data: Record<string, unknown>) => Promise<void>;
+  readonly submit: (formType: FormType, data: Record<string, unknown>) => Promise<SubmitResult>;
   readonly reset: () => void;
 }

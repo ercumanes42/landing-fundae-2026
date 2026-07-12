@@ -1,6 +1,8 @@
 import type {
   FormType,
   LeadData,
+  FundaeCalculationMode,
+  FundaeCreditEstimate,
   LeadJourneyInput,
   LeadScoringInput,
   SubmitResult,
@@ -20,6 +22,32 @@ const LOCAL_STORAGE_KEY = 'fundae_pending_leads';
 function getString(data: Record<string, unknown>, key: string): string | undefined {
   const value = data[key];
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function getNumber(data: Record<string, unknown>, key: string): number | undefined {
+  const raw = data[key];
+  const numeric =
+    typeof raw === 'number'
+      ? raw
+      : typeof raw === 'string'
+        ? Number(raw.replace(',', '.'))
+        : Number.NaN;
+  return Number.isFinite(numeric) && numeric > 0
+    ? numeric
+    : undefined;
+}
+
+function getCalculationMode(data: Record<string, unknown>): FundaeCalculationMode | undefined {
+  const value = getString(data, 'calculation_mode');
+  return value === 'fp_quota' || value === 'other_contributions_base' || value === 'no_data'
+    ? value
+    : undefined;
+}
+
+function getCreditEstimate(data: Record<string, unknown>): FundaeCreditEstimate | undefined {
+  const raw = data.credit_estimate;
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return undefined;
+  return raw as FundaeCreditEstimate;
 }
 
 function getBool(data: Record<string, unknown>, key: string, fallback = false): boolean {
@@ -198,6 +226,10 @@ function buildPayload(formType: FormType, data: Record<string, unknown>): LeadDa
       used_fundae_before: getString(data, 'used_fundae_before'),
       knows_credit: getString(data, 'knows_credit'),
       current_training_provider: getString(data, 'current_training_provider'),
+      credit_calculation_mode: getCalculationMode(data),
+      prior_year_fp_quota: getNumber(data, 'prior_year_fp_quota'),
+      prior_year_other_contributions_base: getNumber(data, 'prior_year_other_contributions_base'),
+      special_situation: getString(data, 'special_situation') as 'no' | 'yes' | 'unknown' | undefined,
     },
     interest: {
       training_area: getString(data, 'training_area'),
@@ -215,6 +247,7 @@ function buildPayload(formType: FormType, data: Record<string, unknown>): LeadDa
                 : {},
           }
         : undefined,
+    credit_estimate: getCreditEstimate(data),
     journey,
     consent: {
       privacy_accepted: getBool(data, 'privacy_accepted', true),

@@ -13,27 +13,29 @@ export function CookieConsentBanner() {
 
   return (
     <aside
-      className="fixed bottom-4 left-4 right-4 z-[60] border border-slate-200 bg-white p-4 shadow-2xl sm:left-auto sm:right-6 sm:w-[25rem]"
+      className="border-b border-slate-200 bg-white shadow-sm"
       aria-label="Preferencias de cookies"
     >
-      <p className="text-sm leading-6 text-slate-700">
-        Usamos analitica opcional para entender el rendimiento de la landing. Los formularios y las solicitudes comerciales siguen funcionando aunque la rechaces.
-      </p>
-      <div className="mt-3 flex gap-2">
-        <button
-          type="button"
-          onClick={() => choose('rejected')}
-          className="min-h-10 border border-slate-300 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-        >
-          Rechazar
-        </button>
-        <button
-          type="button"
-          onClick={() => choose('accepted')}
-          className="min-h-10 bg-blue-900 px-3 text-sm font-semibold text-white hover:bg-blue-800"
-        >
-          Aceptar analitica
-        </button>
+      <div className="container mx-auto flex max-w-7xl flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
+        <p className="max-w-3xl text-sm leading-6 text-slate-700">
+          Usamos analítica opcional para entender el rendimiento de la landing. Los formularios y las solicitudes comerciales siguen funcionando aunque la rechaces.
+        </p>
+        <div className="flex shrink-0 gap-2">
+          <button
+            type="button"
+            onClick={() => choose('rejected')}
+            className="min-h-10 border border-slate-300 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+          >
+            Rechazar
+          </button>
+          <button
+            type="button"
+            onClick={() => choose('accepted')}
+            className="min-h-10 bg-blue-900 px-3 text-sm font-semibold text-white hover:bg-blue-800"
+          >
+            Aceptar analítica
+          </button>
+        </div>
       </div>
     </aside>
   );

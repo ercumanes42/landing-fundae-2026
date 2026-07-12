@@ -37,14 +37,11 @@ function scoreFit(data: LeadScoringInput): number {
     // Diagnóstico de 15 minutos en Calendly (alta intención, no pide trabajadores)
     if (!employeeRange) employeeRange = '10-49';
   } else if (data.form_type === 'interactive_checklist') {
-    // Deducir del test técnico de autodiagnóstico de 10 preguntas
-    if (!roleStr) roleStr = 'rrhh'; // Rol directivo técnico implícito
-    if (!employeeRange && data.answers) {
-      const q8Answer = data.answers['q8']; // Representación Legal de Trabajadores
-      if (q8Answer === 'Sí') employeeRange = '50-249';
-      else if (q8Answer === 'No') employeeRange = '10-49';
-      else employeeRange = '6-9';
-    }
+    const explicitEmployeeRange = data.employee_range ?? data.answers?.company_size;
+    employeeRange = explicitEmployeeRange && Object.prototype.hasOwnProperty.call(employeeScores, explicitEmployeeRange)
+      ? explicitEmployeeRange
+      : undefined;
+    roleStr = data.role ?? '';
   } else if (data.form_type === 'checklist') {
     // Descarga pasiva del Checklist de errores (no pide cargo)
     if (!roleStr) roleStr = 'gestor_implicito';
@@ -178,16 +175,14 @@ function scoreUrgency(data: LeadScoringInput): number {
     if (!usedFundaeVal) usedFundaeVal = 'no';
     if (!riskVal) riskVal = 'high';
   } else if (data.form_type === 'interactive_checklist' && data.answers) {
-    // Deducir urgencias desde el autodiagnóstico de 10 preguntas
-    if (!knowsCreditVal && (data.answers['q1'] === 'No' || data.answers['q1'] === 'No estoy seguro/a')) {
+    const creditVisibility = data.answers.credit_visibility;
+    if (!knowsCreditVal && (creditVisibility === 'No todavía' || creditVisibility === 'No lo sé')) {
       knowsCreditVal = 'no';
     }
-    if (!usedFundaeVal && (data.answers['q2'] === 'No' || data.answers['q2'] === 'No lo sé')) {
-      usedFundaeVal = 'no';
-    }
-    if (!urgencyVal && (data.answers['q4'] === 'No' || data.answers['q4'] === 'Estamos fuera de plazo o no lo sabemos')) {
-      urgencyVal = 'inmediato';
-    }
+
+    const reviewTiming = data.answers.review_timing;
+    if (!urgencyVal && reviewTiming === 'Esta semana') urgencyVal = 'inmediato';
+    if (!urgencyVal && reviewTiming === 'En los próximos 3 meses') urgencyVal = 'menos de 3 meses';
   } else if (data.form_type === 'webinar') {
     // Webinar tiene compromiso temporal implícito
     if (!urgencyVal) urgencyVal = 'menos de 3 meses';

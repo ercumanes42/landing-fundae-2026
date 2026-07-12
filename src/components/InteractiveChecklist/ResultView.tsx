@@ -1,7 +1,7 @@
 import React, { useRef, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { User, Mail, Building2, ArrowRight, CheckCircle2, AlertTriangle, Info, FileDown, Calendar, Shield, Sparkles, TrendingUp } from "lucide-react";
-import { ChecklistResultLevel, checklistQuestions, introQuestion } from "../../lib/checklistScoring";
+import { CHECKLIST_MAX_SCORE, ChecklistResultLevel, checklistQuestions, getChecklistEmployeeRange, getChecklistUrgency, introQuestion } from "../../lib/checklistScoringV2";
 import { useFormSubmit } from "../../hooks/useFormSubmit";
 import { generateDiagnosticPDF } from "../../lib/pdfGenerator";
 import { config } from "../../config";
@@ -27,7 +27,7 @@ export function ResultView({ score, resultLevel, recommendations, answers, onRes
   const hasTrackedStart = useRef(false);
   const { state, submit, error } = useFormSubmit();
 
-  const maxScore = (checklistQuestions.length * 2) + 2; // max per question is 2, plus intro max 2
+  const maxScore = CHECKLIST_MAX_SCORE;
 
   const downloadPDF = () => {
     setIsDownloading(true);
@@ -65,6 +65,8 @@ export function ResultView({ score, resultLevel, recommendations, answers, onRes
       email: formData.email,
       company: formData.company,
       privacy_accepted: formData.privacy_accepted,
+      employee_range: getChecklistEmployeeRange(answers),
+      urgency: getChecklistUrgency(answers),
       marketing_accepted: false,
       score,
       risk_level: resultLevel.level,
@@ -127,14 +129,14 @@ export function ResultView({ score, resultLevel, recommendations, answers, onRes
               </div>
               <div className="flex-1">
                 <span className="text-sm font-bold uppercase tracking-wider opacity-80 mb-1 block">
-                  Resultado de tu evaluación
+                  Resultado orientativo
                 </span>
                 <h3 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
                   {resultLevel.title}
                 </h3>
               </div>
               <div className={`text-4xl font-black bg-gradient-to-br ${getAccentGradient()} bg-clip-text text-transparent`}>
-                {getScorePercentage()}%
+                {score}/{maxScore}
               </div>
             </div>
 
@@ -183,10 +185,10 @@ export function ResultView({ score, resultLevel, recommendations, answers, onRes
           {/* Trust indicators */}
           <div className="flex items-center gap-6 text-xs text-slate-400 px-2">
             <span className="flex items-center gap-1.5">
-              <Shield className="w-3.5 h-3.5" /> Datos cifrados
+              <Shield className="w-3.5 h-3.5" /> Autoevaluación orientativa
             </span>
             <span className="flex items-center gap-1.5">
-              <TrendingUp className="w-3.5 h-3.5" /> +2.400 empresas evaluadas
+              <TrendingUp className="w-3.5 h-3.5" /> Basado en tus respuestas
             </span>
           </div>
         </div>
@@ -202,8 +204,8 @@ export function ResultView({ score, resultLevel, recommendations, answers, onRes
             >
               <CheckCircle2 className="w-8 h-8" />
             </motion.div>
-            <h4 className="text-xl font-bold text-slate-900 mb-2">¡Diagnóstico Completado!</h4>
-            <p className="text-sm text-slate-500 mb-6">Tu informe de auditoría PDF está listo para descargar.</p>
+            <h4 className="text-xl font-bold text-slate-900 mb-2">Resumen preparado</h4>
+            <p className="text-sm text-slate-500 mb-6">Tu resumen orientativo en PDF está listo para descargar.</p>
             
             <div className="flex flex-col gap-4">
               <button
@@ -256,15 +258,15 @@ export function ResultView({ score, resultLevel, recommendations, answers, onRes
           <div className="w-14 h-14 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-emerald-100">
             <Sparkles className="w-7 h-7 text-white" />
           </div>
-          <h4 className="text-2xl font-extrabold text-slate-900 mb-2">¡Respuestas Procesadas!</h4>
+          <h4 className="text-2xl font-extrabold text-slate-900 mb-2">Tu resumen está preparado</h4>
           
           <div className="my-5 p-4 bg-emerald-50 border border-dashed border-emerald-300 rounded-2xl flex items-center justify-center gap-2.5">
             <div className="w-3 h-3 bg-emerald-600 rounded-full shrink-0 animate-pulse" />
-            <span className="text-sm font-bold text-emerald-800">Resultado Listo: Nivel de Riesgo Calculado</span>
+            <span className="text-sm font-bold text-emerald-800">Resultado listo: puntos prioritarios identificados</span>
           </div>
 
           <p className="text-sm text-slate-500 leading-relaxed">
-            Ingresa tu correo a continuación para desbloquear tu nivel de riesgo exacto y obtener tu informe de diagnóstico en PDF.
+            Introduce tu correo para recibir un resumen orientativo de tus respuestas y recomendaciones prioritarias.
           </p>
         </div>
 
@@ -365,7 +367,7 @@ export function ResultView({ score, resultLevel, recommendations, answers, onRes
               </span>
             ) : (
               <>
-                Revelar mi diagnóstico <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                Ver mi resumen <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
               </>
             )}
           </button>

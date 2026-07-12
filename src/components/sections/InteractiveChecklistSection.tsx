@@ -18,7 +18,7 @@ export function InteractiveChecklistSection() {
             Haz una revisión rápida de tu situación FUNDAE
           </h2>
           <p className="text-lg text-slate-600 leading-relaxed">
-            Responde 10 preguntas y descubre si tu empresa tiene una base sólida, una oportunidad de mejora o riesgo de estar dejando crédito de formación sin usar.
+            Responde 9 preguntas sobre crédito, planificación, evidencias y control. Obtendrás una orientación práctica sobre los puntos que conviene revisar.
           </p>
         </div>
 
@@ -28,7 +28,7 @@ export function InteractiveChecklistSection() {
 
         <div className="mt-16 text-center max-w-2xl mx-auto">
           <p className="text-sm text-slate-500 bg-white/50 backdrop-blur px-6 py-4 rounded-xl border border-slate-200">
-            Este resultado es orientativo. Para validar crédito disponible, requisitos y opciones de formación, conviene revisar el caso concreto de tu empresa.
+            Este resultado no valida el crédito disponible ni el cumplimiento de requisitos. Sirve para identificar qué conviene revisar antes de bonificar una acción formativa.
           </p>
         </div>
         

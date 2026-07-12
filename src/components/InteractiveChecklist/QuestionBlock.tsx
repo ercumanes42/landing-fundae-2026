@@ -1,7 +1,7 @@
 import React from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { ArrowLeft } from "lucide-react";
-import { ChecklistQuestion } from "../../lib/checklistScoring";
+import { ChecklistQuestion } from "../../lib/checklistScoringV2";
 
 interface QuestionBlockProps {
   questions: ChecklistQuestion[];

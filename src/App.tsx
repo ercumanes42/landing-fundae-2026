@@ -6,7 +6,7 @@ import { StatsSection } from "./components/sections/StatsSection";
 import { ReasonsSection } from "./components/sections/ReasonsSection";
 import { EntryDoors } from "./components/sections/EntryDoors";
 import { InteractiveChecklistSection } from "./components/sections/InteractiveChecklistSection";
-import { CalculatorSection } from "./components/sections/CalculatorSection";
+import { FundaeCalculatorSection } from "./components/sections/FundaeCalculatorSection";
 import { ChecklistSection } from "./components/sections/ChecklistSection";
 import { WebinarSection } from "./components/sections/WebinarSection";
 import { SolutionsSection } from "./components/sections/SolutionsSection";
@@ -54,6 +54,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-50 font-sans pb-20 lg:pb-0">
       <div data-section="header"><Header /></div>
+      <CookieConsentBanner />
       <main>
         <div data-section="hero"><HeroSection /></div>
         <div data-section="ticker"><InfiniteTicker /></div>
@@ -63,7 +64,7 @@ export default function App() {
         <div data-section="how-it-works"><HowItWorksSection /></div>
         <div data-section="entry-doors"><EntryDoors /></div>
         <div data-section="interactive-checklist"><InteractiveChecklistSection /></div>
-        <div data-section="calculator"><CalculatorSection /></div>
+        <div data-section="calculator"><FundaeCalculatorSection /></div>
         <div data-section="checklist"><ChecklistSection /></div>
         <div data-section="webinar"><WebinarSection /></div>
         <div data-section="solutions"><SolutionsSection /></div>
@@ -72,7 +73,6 @@ export default function App() {
         <div data-section="final-cta"><FinalCTASection /></div>
       </main>
       <div data-section="footer"><Footer /></div>
-      <CookieConsentBanner />
       
       {/* Mobile sticky bottom CTA */}
       <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] lg:hidden z-50">

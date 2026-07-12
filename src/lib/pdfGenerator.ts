@@ -3,7 +3,7 @@
  * This builds the PDF programmatically so it works regardless of DOM state.
  */
 import { jsPDF } from 'jspdf';
-import type { ChecklistResultLevel } from './checklistScoring';
+import type { ChecklistResultLevel } from './checklistScoringV2';
 
 interface PDFReportData {
   userName: string;
@@ -42,9 +42,9 @@ export function generateDiagnosticPDF(data: PDFReportData): void {
   };
 
   const getLevelColors = () => {
-    if (data.resultLevel.level === 'low') return { main: colors.low, bg: colors.lowBg, label: '✅ RIESGO BAJO' };
-    if (data.resultLevel.level === 'medium') return { main: colors.med, bg: colors.medBg, label: '⚠️ RIESGO MEDIO' };
-    return { main: colors.high, bg: colors.highBg, label: '🚨 RIESGO ALTO' };
+    if (data.resultLevel.level === 'low') return { main: colors.low, bg: colors.lowBg, label: 'POCOS PUNTOS A REVISAR' };
+    if (data.resultLevel.level === 'medium') return { main: colors.med, bg: colors.medBg, label: 'VARIOS PUNTOS A REVISAR' };
+    return { main: colors.high, bg: colors.highBg, label: 'REVISIÓN RECOMENDADA' };
   };
 
   const levelColors = getLevelColors();
@@ -77,11 +77,11 @@ export function generateDiagnosticPDF(data: PDFReportData): void {
   pdf.setTextColor(...colors.white);
   pdf.setFontSize(22);
   pdf.setFont('helvetica', 'bold');
-  pdf.text('INFORME DE DIAGNÓSTICO FUNDAE', margin, 18);
+  pdf.text('RESUMEN ORIENTATIVO FUNDAE', margin, 18);
 
   pdf.setFontSize(11);
   pdf.setFont('helvetica', 'normal');
-  pdf.text('Revisión rápida de situación · Informe personalizado', margin, 27);
+  pdf.text('Autoevaluación de preparación · Resumen personalizado', margin, 27);
 
   // Date
   const dateStr = new Date().toLocaleDateString('es-ES', { day: '2-digit', month: 'long', year: 'numeric' });
@@ -142,7 +142,7 @@ export function generateDiagnosticPDF(data: PDFReportData): void {
   pdf.setFontSize(14);
   pdf.setTextColor(...colors.dark);
   pdf.setFont('helvetica', 'bold');
-  const scoreText = `Puntuación: ${data.score} / ${data.maxScore}`;
+  const scoreText = `Puntos a revisar: ${data.score} / ${data.maxScore}`;
   pdf.text(scoreText, pageWidth - margin - 8, y + 10, { align: 'right' });
 
   // Title
@@ -276,12 +276,12 @@ export function generateDiagnosticPDF(data: PDFReportData): void {
   pdf.setFontSize(7);
   pdf.setFont('helvetica', 'italic');
   pdf.text(
-    'Este informe es orientativo y no constituye una auditoría oficial. Consulta con un especialista para validar tu situación real.',
+    'Este resumen es orientativo y no valida crédito ni cumplimiento. Consulta con un especialista para revisar tu situación real.',
     pageWidth / 2,
     pageHeight - 10,
     { align: 'center' }
   );
 
   // ── Save ────────────────────────────────────────────────────────
-  pdf.save(`Informe_Diagnostico_FUNDAE_${data.userCompany.replace(/\s+/g, '_') || 'empresa'}.pdf`);
+  pdf.save(`Resumen_Orientativo_FUNDAE_${data.userCompany.replace(/\s+/g, '_') || 'empresa'}.pdf`);
 }

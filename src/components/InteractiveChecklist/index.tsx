@@ -6,15 +6,15 @@ import {
   calculateChecklistScore, 
   getChecklistResultLevel, 
   getChecklistRecommendations 
-} from "../../lib/checklistScoring";
+} from "../../lib/checklistScoringV2";
 import { QuestionBlock } from "./QuestionBlock";
 import { ResultView } from "./ResultView";
 import { RotateCcw } from "lucide-react";
 
 // Distribution of questions into 3 blocks (screens)
-const BLOCK_1 = [introQuestion, checklistQuestions[0], checklistQuestions[1], checklistQuestions[2]];
-const BLOCK_2 = [checklistQuestions[3], checklistQuestions[4], checklistQuestions[5], checklistQuestions[6]];
-const BLOCK_3 = [checklistQuestions[7], checklistQuestions[8], checklistQuestions[9]];
+const BLOCK_1 = [introQuestion, checklistQuestions[0], checklistQuestions[1]];
+const BLOCK_2 = [checklistQuestions[2], checklistQuestions[3], checklistQuestions[4]];
+const BLOCK_3 = [checklistQuestions[5], checklistQuestions[6], checklistQuestions[7]];
 
 const BLOCKS = [BLOCK_1, BLOCK_2, BLOCK_3];
 

@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import type { FormState, FormType, UseFormSubmitReturn } from '../types';
+import type { FormState, FormType, SubmitResult, UseFormSubmitReturn } from '../types';
 import { submitLead } from '../lib/webhooks';
 
 /**
@@ -20,14 +20,14 @@ export function useFormSubmit(): UseFormSubmitReturn {
   const [error, setError] = useState<string | null>(null);
 
   const submit = useCallback(
-    async (formType: FormType, data: Record<string, unknown>): Promise<void> => {
+    async (formType: FormType, data: Record<string, unknown>): Promise<SubmitResult> => {
       setState('loading');
       setError(null);
 
       try {
         const result = await submitLead(formType, data);
 
-        if (result.success || result.savedLocally) {
+        if (result.success) {
           setState('success');
         } else {
           setState('error');
@@ -36,6 +36,7 @@ export function useFormSubmit(): UseFormSubmitReturn {
               'Ha ocurrido un error al enviar el formulario. Inténtalo de nuevo.',
           );
         }
+        return result;
       } catch (err: unknown) {
         setState('error');
         setError(
@@ -43,6 +44,7 @@ export function useFormSubmit(): UseFormSubmitReturn {
             ? err.message
             : 'Ha ocurrido un error inesperado.',
         );
+        return { success: false, savedLocally: false, error: err instanceof Error ? err.message : 'Ha ocurrido un error inesperado.' };
       }
     },
     [],

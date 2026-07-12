@@ -223,7 +223,23 @@ export async function getContextSummary(): Promise<ContextSummary> {
       questionDropoffs = qCounts as any;
       let maxDrop = 0;
       let worstQ = '';
-      const steps = ['intro', 'q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'q7', 'q8', 'q9', 'q10'];
+      // New events use meaningful identifiers. Keep the legacy sequence so
+      // historical dashboard data remains readable after the questionnaire update.
+      const currentSteps = [
+        'company_size',
+        'credit_visibility',
+        'training_fit',
+        'planning_process',
+        'rlpt_process',
+        'evidence_tracking',
+        'documentation_control',
+        'cofinancing',
+        'review_timing',
+      ];
+      const legacySteps = ['intro', 'q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'q7', 'q8', 'q9', 'q10'];
+      const steps = currentSteps.some((step) => qCounts[step] > 0)
+        ? currentSteps
+        : legacySteps;
       for (let i = 0; i < steps.length - 1; i++) {
         const curr = qCounts[steps[i]] || 0;
         const next = qCounts[steps[i+1]] || 0;

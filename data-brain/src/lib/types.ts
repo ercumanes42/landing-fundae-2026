@@ -15,6 +15,20 @@ export type LeadMagnet =
 
 export type LeadClassification = 'cold' | 'warm' | 'hot' | 'priority';
 
+export type FundaeCalculationMode =
+  | 'fp_quota'
+  | 'other_contributions_base'
+  | 'no_data';
+
+export interface FundaeCreditEstimate {
+  amount: number | null;
+  currency: 'EUR';
+  calculation_mode: FundaeCalculationMode;
+  calculation_source: 'minimum_credit' | 'fp_quota' | 'other_contributions_base' | 'insufficient_data';
+  applied_percentage: number;
+  requires_manual_review: boolean;
+}
+
 export interface TouchAttribution {
   utm_source: string;
   utm_medium: string;
@@ -136,6 +150,10 @@ export interface LeadPayload {
     used_fundae_before?: string;
     knows_credit?: string;
     current_training_provider?: string;
+    credit_calculation_mode?: FundaeCalculationMode;
+    prior_year_fp_quota?: number;
+    prior_year_other_contributions_base?: number;
+    special_situation?: 'no' | 'yes' | 'unknown';
   };
   interest?: {
     training_area?: string;
@@ -147,6 +165,7 @@ export interface LeadPayload {
     risk_level: string;
     answers: Record<string, string>;
   };
+  credit_estimate?: FundaeCreditEstimate;
   journey?: LeadJourneyInput;
   consent: {
     privacy_accepted: boolean;
