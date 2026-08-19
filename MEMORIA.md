@@ -216,3 +216,14 @@ No afirmar 100%, producción o E2E live hasta: release reproducible; SQL real y 
 - Se detectó y reparó corrupción por bytes nulos en `LegalPage.tsx`, `Footer.tsx` y su test. Escaneo final: cero archivos textuales con NUL; landing unit 19/19, typecheck/build PASS y E2E legal 3/3.
 - G3 queda `BLOCKED` por G2 y el E2E Graph real. G4, G5 y G6 quedan `IN_PROGRESS` con evidencia local, nunca `PASS` global.
 - Snapshot de release tras no-op y reconstrucción legal: `releaseInputsDigest=728ac650b836eedab5c1d4552bf16edcfc50300f56fb5d3ea97943b839eb81dc` antes de actualizar estos documentos; 165 archivos tracked, 339 core y 228 core no tracked. G0-CI continúa bloqueado.
+
+## Release y staging Supabase — 19 de agosto de 2026
+
+- Rama creada: `codex/fundae-release`. Primer commit selectivo: `a76fd5d2c94b23ce924742baef877a84172af2da`; excluye secretos, datos privados y outputs.
+- Se creó el staging independiente gratuito `data-brain-fundae-staging` (`rqjvbpvkjzqqqdxqcqmz`, `eu-west-1`), se ejecutó el pack sin PII y se dejó `PAUSED`.
+- Baseline, precheck, migraciones, postcheck, smoke, advisors, EXPLAIN y forward rollback concluyeron correctamente. Marcadores: `fundae_release_precheck_ok`, `fundae_release_postcheck_ok`, `fundae_release_behavior_smoke_ok` y `fundae_release_post_rollback_ok`.
+- La ejecución real detectó y permitió corregir: funciones especiales inválidamente prefijadas con `pg_catalog`, un `REVOKE` anterior a la creación de su función y una fixture de provisioning que no llegaba al kill switch. La recuperación fue aditiva por etapas; no hubo retry ciego.
+- Advisors finales: 0 WARN/ERROR; 39 INFO de RLS sin policy en tablas service-only/deny-all; 50 INFO de unused index por staging vacío; 0 foreign keys sin índice tras `20260819220000_advisor_index_hardening.sql`.
+- QA local posterior: landing 26/26 + E2E fresco 16/16; automation 72/72; Data Brain 272/272 + anti-omisión 1/1, setup/readiness 34/34, typecheck/build y STATIC_FIXTURE PASS.
+- G2 pasa de `BLOCKED` a `IN_PROGRESS / STAGING_PASS`; no es `PASS` global hasta backup/aplicación productiva autorizada y `NETWORK_G2` aplicativo. G3 continúa `BLOCKED` hasta OAuth/mailbox y 4/4 Graph fresh con confirmación real de Sent Items.
+- No hubo deploy, cambios en producción, Graph/HubSpot/Make live ni envíos. `OUTBOUND_MASTER_ENABLED` y todas las lanes permanecen OFF.

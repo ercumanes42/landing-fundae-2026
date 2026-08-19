@@ -201,7 +201,7 @@ begin
     where state not in ('confirmed_sent','suppressed_before_send')
   ), inbound_data as (
     select count(*) as manual_review_open,
-      coalesce(pg_catalog.extract(epoch from (v_now - min(observed_at)))::integer, 0)
+      coalesce(extract(epoch from (v_now - min(observed_at)))::integer, 0)
         as manual_review_oldest_seconds
     from public.inbound_event_ledger where status = 'manual_review'
   ), campaign_data as (
@@ -283,7 +283,7 @@ begin
     or p_evaluated_at is null
     or pg_catalog.jsonb_typeof(p_alerts) <> 'array'
     or pg_catalog.jsonb_array_length(p_alerts) > 64
-    or pg_catalog.coalesce(pg_catalog.array_length(p_managed_signal_codes, 1), 0) > 64 then
+    or coalesce(pg_catalog.array_length(p_managed_signal_codes, 1), 0) > 64 then
     raise exception using errcode = '22023', message = 'invalid_operational_reconciliation';
   end if;
 
@@ -327,7 +327,7 @@ begin
       update public.operational_alerts
       set severity = v_item->>'severity', metrics = coalesce(v_item->'metrics', '{}'::jsonb),
         lifecycle = case when lifecycle = 'resolved' then 'open' else lifecycle end,
-        last_detected_at = pg_catalog.greatest(last_detected_at, p_evaluated_at),
+        last_detected_at = greatest(last_detected_at, p_evaluated_at),
         occurrence_count = occurrence_count + case when first_detected_at = p_evaluated_at then 0 else 1 end,
         resolved_at = null, resolved_by_hash = null, updated_at = pg_catalog.clock_timestamp()
       where id = v_alert.id returning * into v_alert;

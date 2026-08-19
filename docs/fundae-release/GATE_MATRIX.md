@@ -5,15 +5,15 @@ Estados: `PENDING`, `IN_PROGRESS`, `PASS`, `FAIL`, `BLOCKED`. Solo `PASS` autori
 | Gate | Criterio verificable | Estado | Evidencia requerida | Autoridad |
 |---|---|---:|---|---|
 | G0-L Baseline local | toolchain fijada, manifiesto schema 2 con core crítico, pins CI y suites focales estáticas | PASS | comandos locales + `releaseInputsDigest` de handoff | técnica |
-| G0-CI Empaquetado | core 100% tracked, checkout limpio reproducible, `npm ci` y CI raíz/Data Brain/automation | BLOCKED | GitHub run verde + manifest artifact del commit | técnica |
+| G0-CI Empaquetado | core 100% tracked, checkout limpio reproducible, `npm ci` y CI raíz/Data Brain/automation | IN_PROGRESS | segundo commit selectivo + GitHub run verde + manifest artifact del commit | técnica |
 | G1 Captura segura | captura persiste sin outbound; legacy inert; UX coherente con switches OFF | IN_PROGRESS | unit/integration/E2E capture-only | técnica |
-| G2 Supabase | backup, precheck, migración revisada, staging, postcheck/advisors, rollback smoke | BLOCKED | logs SQL y backup verificable; el fixture estático no cuenta | usuario para live |
-| G3 Graph transaccional | 1 reserva=1 draft; ImmutableId; mismo draft enviado; Sent Items confirmado; ambigüedad detiene | BLOCKED | contratos/fault tests locales PASS; faltan G2 y 4/4 fresh E2E con Sent Items | usuario para live |
-| G4 Journey consentido | contrato completo, seudónimos, unión server-side tras consentimiento, minimización | IN_PROGRESS | contrato/tests locales PASS; faltan política final y purge SQL en staging | técnica |
-| G5 Dashboard/RBAC | agregados server-side, sin full-table load, claims/mailbox/reservas/tx/campaign/health, auditoría | IN_PROGRESS | UI/contratos locales PASS; faltan principals, RLS/grants y carga en staging | técnica |
+| G2 Supabase | backup, precheck, migración revisada, staging, postcheck/advisors, rollback smoke | IN_PROGRESS | staging SQL/rollback PASS; faltan backup y apply productivo autorizado, además del subgate aplicativo `NETWORK_G2` | usuario para live |
+| G3 Graph transaccional | 1 reserva=1 draft; ImmutableId; mismo draft enviado; Sent Items confirmado; ambigüedad detiene | BLOCKED | contratos/fault tests y esquema staging PASS; faltan OAuth/mailbox y 4/4 fresh E2E con Sent Items | usuario para live |
+| G4 Journey consentido | contrato completo, seudónimos, unión server-side tras consentimiento, minimización | IN_PROGRESS | contrato/tests y purge SQL staging PASS; faltan política final, activación controlada y prueba de retención con datos sintéticos | técnica |
+| G5 Dashboard/RBAC | agregados server-side, sin full-table load, claims/mailbox/reservas/tx/campaign/health, auditoría | IN_PROGRESS | UI/contratos y RLS/grants staging PASS; faltan principals y rendimiento con volumen sintético | técnica |
 | G6 HubSpot | upsert idempotente por `lead_id`; tareas/replies; supresiones sincronizadas | IN_PROGRESS | replay/mapping locales PASS; faltan propiedades/scopes y sandbox | usuario para live |
 | G7 Campaña | 939 únicos elegibles; lotes 235/235/235/234; 5 emails; baja en 4695; stops; worker/rate/timezone | BLOCKED | artefacto local 939/4695 validado; faltan rechecks de exclusión, readiness y autorización operativa | técnica |
-| G8 Observabilidad | alertas OAuth/mailbox/outbox/DLQ/replies/bajas/bounces/HubSpot/Make/freshness y kill switches | IN_PROGRESS | contrato/tests locales PASS; faltan staging, fault injection y receipts reales | técnica/live acotada |
+| G8 Observabilidad | alertas OAuth/mailbox/outbox/DLQ/replies/bajas/bounces/HubSpot/Make/freshness y kill switches | IN_PROGRESS | esquema/contratos staging PASS; faltan fault injection y receipts runtime reales | técnica/live acotada |
 | G9 Canary | switches false; captura sin outbound; 4 transaccionales; secuencia interna; 10 clientes | BLOCKED | checklist y autorización directa | usuario |
 | G10 Rollout | microbatch 25, pausa 2h, evaluación, lotes progresivos, rollback probado | BLOCKED | métricas dentro de umbral | usuario por tramo |
 
@@ -21,25 +21,25 @@ Estados: `PENDING`, `IN_PROGRESS`, `PASS`, `FAIL`, `BLOCKED`. Solo `PASS` autori
 
 `backup -> GRAPH_OUTBOX_PRECHECK_20260818.sql -> review 20260818083632_graph_outbox_foundation.sql -> staging apply -> GRAPH_OUTBOX_POSTCHECK_20260818.sql + advisors -> GRAPH_OUTBOX_FORWARD_ROLLBACK_20260818.sql smoke -> production authorization/apply`.
 
-La migración canónica se creó con Supabase CLI efímera fijada `2.81.3`; no hay dependencia CLI instalada. Docker/Postgres local no está activo, por lo que lint SQL, advisors, staging/live y rollback smoke siguen pendientes. No ejecutar SQL live hasta cerrar G2 y obtener autorización.
+La migración canónica se creó con Supabase CLI efímera fijada `2.81.3`; no hay dependencia CLI instalada. El pack se ejecutó el 19 de agosto de 2026 en el staging independiente `rqjvbpvkjzqqqdxqcqmz`, sin PII y con todos los switches OFF. El proyecto quedó `PAUSED`. No ejecutar SQL en producción hasta cerrar los subgates restantes y obtener autorización específica.
 
 El verificador tiene dos niveles deliberadamente distintos:
 
 - `STATIC_FIXTURE`: valida configuración no-send y contratos locales de migración/precheck/postcheck/rollback, sin red. Nunca cambia G2 a `PASS`.
 - `NETWORK_G2`: valida mediante Data API que el `service_role` ve tablas/RPC actuales y no ve RPC legacy/internas. Es solo un subgate; no prueba grants de otros roles, RLS efectiva, SQL interno, advisors, backup ni rollback.
 
-La evidencia autoritativa de G2 sigue siendo la ejecución SQL controlada del orden anterior en staging, incluidos grants/RLS/advisors y rollback smoke.
+La evidencia autoritativa de staging ya existe: baseline reconstruida, precheck, migraciones, postcheck, smoke, advisors, EXPLAIN y rollback forward-safe. Durante la ejecución se detectaron y corrigieron tres clases reales de fallo (`pg_catalog` sobre expresiones especiales, orden prematuro de `REVOKE` y fixture de smoke que no alcanzaba el kill switch). La recuperación fue aditiva por etapas; no hubo retry ciego ni mutación productiva.
 
-El pack local consolidado valida el no-op auditado de ADR-0005 y todos sus inputs. `npm run test:supabase-gate-pack` pasa 5/5, incluidas pruebas negativas con un temporal vacío y otro con SQL arbitrario, y `npm run release:supabase:gates:static` finaliza con `FUNDAE_SUPABASE_GATE_PACK_STATIC_OK`. El runner acepta exclusivamente el SHA-256 `e5588fcaebd98e3d917cba8cfa2de557b908021b3171c5dea48d5b27f14e0f67`, el ID de decisión y la migración sucesora exactos; cualquier vacío o drift falla cerrado. Es evidencia `VERIFIED_LOCAL`, no una ejecución SQL: G2 continúa `BLOCKED` hasta staging autorizado, advisors y rollback real.
+El pack local consolidado valida el no-op auditado de ADR-0005 y todos sus inputs. `npm run test:supabase-gate-pack` pasa 5/5 y `npm run release:supabase:gates:static` finaliza con `FUNDAE_SUPABASE_GATE_PACK_STATIC_OK`. En staging, precheck/postcheck/smoke/post-rollback terminaron con sus marcadores `*_ok`; los advisors quedaron sin WARN/ERROR, con 39 INFO de RLS sin policy deliberadamente deny-all/service-only, 50 INFO de índices aún no usados por estar el staging vacío y 0 foreign keys sin índice tras la migración de hardening. G2 se mantiene `IN_PROGRESS`, no `PASS`, hasta backup/aplicación productiva autorizada y validación aplicativa de red.
 
-G0-L puede quedar `PASS` con el árbol preservado aunque G0-CI permanezca `BLOCKED`: la primera afirmación valida el contenido local exacto; la segunda exige que ese mismo núcleo esté rastreado y que GitHub Actions lo ejecute. Ninguna de las dos satisface `NETWORK_G2`.
+G0-L queda `PASS`. El primer commit selectivo existe en `codex/fundae-release`; G0-CI está `IN_PROGRESS` hasta consolidar las correcciones de staging en un segundo commit y ejecutar GitHub Actions sobre un checkout limpio. Ninguna evidencia local sustituye esa ejecución CI.
 
 ## Snapshot QA local — 2026-08-19
 
-- Manifiesto previo a la última actualización documental: `releaseInputsDigest=728ac650b836eedab5c1d4552bf16edcfc50300f56fb5d3ea97943b839eb81dc`; 165 archivos tracked, 339 core y 228 core no tracked. CI/empaquetado siguen bloqueados.
-- Landing: 19/19 unit, typecheck PASS, build PASS y E2E fresco 16/16 con un worker; puerto preview 4173 cerrado al terminar.
-- Data Brain: 269/269 tests de `src` + 1/1 test anti-omisión; setup/readiness 34/34; typecheck y build PASS; `db:verify` solo `STATIC_FIXTURE`, cero red.
+- Manifiesto previo a esta actualización documental: `releaseInputsDigest=b393f401b7a4ef1ffa7f08deb23184b6e9ab301f826b9818c6c304f6e1d60e3c`; 365 archivos tracked y 348 core. La rama es `codex/fundae-release` y su primer commit selectivo es `a76fd5d2c94b23ce924742baef877a84172af2da`.
+- Landing: 26/26 unit, typecheck PASS, build PASS y E2E fresco 16/16 con un worker.
+- Data Brain: 272/272 tests + 1/1 test anti-omisión; setup/readiness 34/34; typecheck, build y `db:verify` STATIC_FIXTURE PASS.
 - Automation: 72/72 PASS. Pins CI: 7/7 PASS. Gate pack tras ADR-0005: 5/5 PASS y runner Static PASS. `git diff --check`: exit 0.
-- Claims limitados a `LOCAL/STATIC_FIXTURE`: no se ejecutaron GitHub CI, `npm ci` limpio, staging, NETWORK_G2, Graph/HubSpot/Make live, migraciones, deploy ni envíos.
+- Staging Supabase: precheck, migraciones, postcheck, smoke, advisors, EXPLAIN y forward rollback PASS; proyecto independiente pausado. No se ejecutaron GitHub CI, `npm ci` limpio, NETWORK_G2 aplicativo, Graph/HubSpot/Make live, deploy ni envíos.
 - Campaña: el reporte agregado sin PII valida 939 únicos, lotes 235/235/235/234 y 4695/4695 cuerpos identificados con `{{unsubscribe_url}}`; mantiene 939 contactos en `PENDIENTE`, rechecks técnicos de exclusión pendientes y autorización de campaña `PENDING`. G7 permanece `BLOCKED`.
 - Legal: Aviso Legal `PASS-LOCAL` con identidad y datos registrales contrastados; Privacidad y Cookies siguen `NO-GO` hasta aprobar finalidades/bases, plazos, encargados/transferencias, DPO/canal de derechos e inventario runtime.

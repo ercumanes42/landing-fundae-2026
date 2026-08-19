@@ -167,6 +167,10 @@ test('live dry-run does not change HEAD, branch, status or index bytes', () => {
   assert.equal(after.indexHash, before.indexHash);
   const beforeEntries = parsePorcelainV1Z(before.status);
   const afterByPath = new Map(parsePorcelainV1Z(after.status).map((entry) => [entry.path, entry.code]));
+  const expectedStatusCounts = beforeEntries.reduce(
+    (counts, entry) => ({ ...counts, [entry.classification]: counts[entry.classification] + 1 }),
+    { modified: 0, deleted: 0, untracked: 0, other: 0 },
+  );
   assert.equal(beforeEntries.every((entry) => afterByPath.get(entry.path) === entry.code), true);
   assert.equal(plan.mode, 'dry-run');
   assert.equal(plan.sideEffects, 'none');
@@ -176,7 +180,10 @@ test('live dry-run does not change HEAD, branch, status or index bytes', () => {
   assert.equal(allowlistedPaths.has('MEMORIA.md'), true);
   assert.equal(allowlistedPaths.has('automation/campaign-reports/FUNDAE_2026_CONTROLLED_COPY_REPORT.json'), true);
   assert.equal(allowlistedPaths.has('data-brain/supabase/.temp/cli-latest'), false);
-  assert.equal(plan.candidate.counts.trackedArtifactsToRemove, 33);
+  assert.equal(
+    plan.candidate.counts.trackedArtifactsToRemove,
+    plan.candidate.trackedGeneratedOrPrivateArtifactsToRemove.length,
+  );
   assert.equal(plan.candidate.trackedGeneratedOrPrivateArtifactsToRemove.every((entry) =>
     entry.stageIntent === 'delete-from-repository-only'
     && entry.package === false
@@ -184,8 +191,7 @@ test('live dry-run does not change HEAD, branch, status or index bytes', () => {
     && /^[a-f0-9]{40,64}$/.test(entry.trackedBlobOid)
     && ['index', 'head'].includes(entry.trackedBlobSource)
   ), true);
-  assert.equal(plan.repositoryStatus.counts.modified, 80);
-  assert.equal(plan.repositoryStatus.counts.deleted, 33);
+  assert.deepEqual(plan.repositoryStatus.counts, expectedStatusCounts);
 });
 
 test('planner source contains no Git mutation or filesystem write primitive', () => {

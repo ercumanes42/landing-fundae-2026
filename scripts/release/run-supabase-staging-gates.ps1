@@ -23,7 +23,8 @@ $migrationFiles = @(
   '20260819183000_operational_observability.sql',
   '20260819190000_journey_retention_control.sql',
   '20260819200000_cold_campaign_provisioning.sql',
-  '20260819210000_release_safety_barriers.sql'
+  '20260819210000_release_safety_barriers.sql',
+  '20260819220000_advisor_index_hardening.sql'
 ) | ForEach-Object { Join-Path $migrationRoot $_ }
 $precheck = Join-Path $sqlRoot 'FUNDAE_RELEASE_PRECHECK_20260819.sql'
 $postcheck = Join-Path $sqlRoot 'FUNDAE_RELEASE_POSTCHECK_20260819.sql'

@@ -230,13 +230,13 @@ begin
     'opportunity_created','reply_received','bounce_hard','unsubscribe','opposition');
   v_suppress_marketing:=p_event_name in ('meeting_booked','meeting_completed','opportunity_created','bounce_hard','unsubscribe','opposition');
   update public.campaign_contacts set
-    last_event_at=pg_catalog.greatest(pg_catalog.coalesce(last_event_at,p_occurred_at),p_occurred_at),
-    resource_started_at=case when p_event_name='resource_started' then pg_catalog.greatest(pg_catalog.coalesce(resource_started_at,p_occurred_at),p_occurred_at) else resource_started_at end,
-    resource_completed_at=case when p_event_name in ('resource_completed','checklist_downloaded','calculator_completed','webinar_registered','review_submitted') then pg_catalog.greatest(pg_catalog.coalesce(resource_completed_at,p_occurred_at),p_occurred_at) else resource_completed_at end,
-    meeting_booked_at=case when p_event_name='meeting_booked' then pg_catalog.greatest(pg_catalog.coalesce(meeting_booked_at,p_occurred_at),p_occurred_at) else meeting_booked_at end,
-    meeting_completed_at=case when p_event_name='meeting_completed' then pg_catalog.greatest(pg_catalog.coalesce(meeting_completed_at,p_occurred_at),p_occurred_at) else meeting_completed_at end,
-    opportunity_created_at=case when p_event_name='opportunity_created' then pg_catalog.greatest(pg_catalog.coalesce(opportunity_created_at,p_occurred_at),p_occurred_at) else opportunity_created_at end,
-    reply_received_at=case when p_event_name in ('reply_received','positive_reply') then pg_catalog.coalesce(reply_received_at,p_occurred_at) else reply_received_at end,
+    last_event_at=greatest(coalesce(last_event_at,p_occurred_at),p_occurred_at),
+    resource_started_at=case when p_event_name='resource_started' then greatest(coalesce(resource_started_at,p_occurred_at),p_occurred_at) else resource_started_at end,
+    resource_completed_at=case when p_event_name in ('resource_completed','checklist_downloaded','calculator_completed','webinar_registered','review_submitted') then greatest(coalesce(resource_completed_at,p_occurred_at),p_occurred_at) else resource_completed_at end,
+    meeting_booked_at=case when p_event_name='meeting_booked' then greatest(coalesce(meeting_booked_at,p_occurred_at),p_occurred_at) else meeting_booked_at end,
+    meeting_completed_at=case when p_event_name='meeting_completed' then greatest(coalesce(meeting_completed_at,p_occurred_at),p_occurred_at) else meeting_completed_at end,
+    opportunity_created_at=case when p_event_name='opportunity_created' then greatest(coalesce(opportunity_created_at,p_occurred_at),p_occurred_at) else opportunity_created_at end,
+    reply_received_at=case when p_event_name in ('reply_received','positive_reply') then coalesce(reply_received_at,p_occurred_at) else reply_received_at end,
     cold_sequence_status=case when v_stop then 'stopped' else cold_sequence_status end,
     intent_sequence_status=case when p_event_name in ('unsubscribe','bounce_hard','meeting_booked','meeting_completed','opportunity_created') then 'stopped' when p_event_name in ('diagnostic_intent','diagnostic_requested','positive_reply') then 'eligible_disabled' else intent_sequence_status end,
     transactional_status=case when p_event_name in ('resource_completed','checklist_downloaded','calculator_completed','webinar_registered','review_submitted') then 'pending' when p_event_name='transactional_delivery_sent' then 'sent' else transactional_status end,
@@ -244,10 +244,10 @@ begin
     suppression_scope=case when p_event_name='unsubscribe' then 'all' when v_suppress_marketing then 'marketing' else suppression_scope end,
     sequence_status=case when v_stop then 'stopped' else sequence_status end,
     next_delivery_status=case when v_stop then 'stopped' else next_delivery_status end,
-    stopped_at=case when v_stop then pg_catalog.coalesce(stopped_at,p_occurred_at) else stopped_at end,
-    stopped_reason=case when v_stop then pg_catalog.coalesce(stopped_reason,p_event_name) else stopped_reason end,
-    suppressed_at=case when v_suppress_marketing then pg_catalog.coalesce(suppressed_at,p_occurred_at) else suppressed_at end,
-    suppression_reason=case when v_suppress_marketing then pg_catalog.coalesce(suppression_reason,p_event_name) else suppression_reason end
+    stopped_at=case when v_stop then coalesce(stopped_at,p_occurred_at) else stopped_at end,
+    stopped_reason=case when v_stop then coalesce(stopped_reason,p_event_name) else stopped_reason end,
+    suppressed_at=case when v_suppress_marketing then coalesce(suppressed_at,p_occurred_at) else suppressed_at end,
+    suppression_reason=case when v_suppress_marketing then coalesce(suppression_reason,p_event_name) else suppression_reason end
   where id=v_contact.id;
   if p_event_name='opposition' then
     insert into public.campaign_suppressions(
@@ -261,31 +261,31 @@ begin
         when public.campaign_suppressions.reason='hard_bounce' then 'hard_bounce'
         else 'opposition'
       end,
-      occurred_at=pg_catalog.least(public.campaign_suppressions.occurred_at,excluded.occurred_at),
-      source_event_id=pg_catalog.coalesce(public.campaign_suppressions.source_event_id,excluded.source_event_id),
-      source_campaign_id=pg_catalog.coalesce(public.campaign_suppressions.source_campaign_id,excluded.source_campaign_id),
-      source_contact_id=pg_catalog.coalesce(public.campaign_suppressions.source_contact_id,excluded.source_contact_id),
+      occurred_at=least(public.campaign_suppressions.occurred_at,excluded.occurred_at),
+      source_event_id=coalesce(public.campaign_suppressions.source_event_id,excluded.source_event_id),
+      source_campaign_id=coalesce(public.campaign_suppressions.source_campaign_id,excluded.source_campaign_id),
+      source_contact_id=coalesce(public.campaign_suppressions.source_contact_id,excluded.source_contact_id),
       updated_at=pg_catalog.clock_timestamp();
     update public.campaign_contacts set
       cold_sequence_status='stopped',intent_sequence_status='stopped',marketing_lane='none',
       suppression_scope=case when suppression_scope='all' then 'all' else 'marketing' end,
       sequence_status='stopped',next_delivery_status='stopped',next_scheduled_at=null,
       locked_at=null,lock_token=null,lock_expires_at=null,
-      stopped_at=pg_catalog.coalesce(stopped_at,p_occurred_at),
-      stopped_reason=pg_catalog.coalesce(stopped_reason,'opposition'),
-      suppressed_at=pg_catalog.coalesce(suppressed_at,p_occurred_at),
-      suppression_reason=pg_catalog.coalesce(suppression_reason,'opposition')
+      stopped_at=coalesce(stopped_at,p_occurred_at),
+      stopped_reason=coalesce(stopped_reason,'opposition'),
+      suppressed_at=coalesce(suppressed_at,p_occurred_at),
+      suppression_reason=coalesce(suppression_reason,'opposition')
     where email_hash=v_contact.email_hash;
     update public.campaign_executions set status='stopped',
-      stopped_at=pg_catalog.coalesce(stopped_at,p_occurred_at),
-      stop_reason=pg_catalog.coalesce(stop_reason,'opposition')
+      stopped_at=coalesce(stopped_at,p_occurred_at),
+      stop_reason=coalesce(stop_reason,'opposition')
     where status='planned' and campaign_contact_id in (
       select id from public.campaign_contacts where email_hash=v_contact.email_hash
     );
   end if;
   if v_stop then
-    update public.campaign_executions set status='stopped',stopped_at=pg_catalog.coalesce(stopped_at,p_occurred_at),
-      stop_reason=pg_catalog.coalesce(stop_reason,p_event_name)
+    update public.campaign_executions set status='stopped',stopped_at=coalesce(stopped_at,p_occurred_at),
+      stop_reason=coalesce(stop_reason,p_event_name)
     where campaign_contact_id=v_contact.id and status='planned';
   end if;
   return pg_catalog.jsonb_build_object('id',v_event.id,'duplicate',v_duplicate);

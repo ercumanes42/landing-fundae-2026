@@ -159,11 +159,11 @@ begin
     ),
     'funnel', pg_catalog.jsonb_build_object(
       'leads', (select count(*) from lead_base),
-      'by_magnet', pg_catalog.coalesce((select pg_catalog.jsonb_object_agg(k, n)
-        from (select pg_catalog.coalesce(lead_magnet, 'unknown') k, count(*) n
+      'by_magnet', coalesce((select pg_catalog.jsonb_object_agg(k, n)
+        from (select coalesce(lead_magnet, 'unknown') k, count(*) n
           from lead_base group by 1) grouped), '{}'::jsonb),
-      'by_classification', pg_catalog.coalesce((select pg_catalog.jsonb_object_agg(k, n)
-        from (select pg_catalog.coalesce(lead_classification, 'unknown') k, count(*) n
+      'by_classification', coalesce((select pg_catalog.jsonb_object_agg(k, n)
+        from (select coalesce(lead_classification, 'unknown') k, count(*) n
           from lead_base group by 1) grouped), '{}'::jsonb),
       'by_score_band', pg_catalog.jsonb_build_object(
         '0_39', (select count(*) from lead_base where lead_score between 0 and 39),
@@ -171,7 +171,7 @@ begin
         '60_79', (select count(*) from lead_base where lead_score between 60 and 79),
         '80_plus', (select count(*) from lead_base where lead_score >= 80)
       ),
-      'events_by_name', pg_catalog.coalesce((select pg_catalog.jsonb_object_agg(k, n)
+      'events_by_name', coalesce((select pg_catalog.jsonb_object_agg(k, n)
         from (select event_name k, count(*) n from event_base group by 1) grouped),
         '{}'::jsonb)
     ),
@@ -182,24 +182,24 @@ begin
       'consented_events', (select count(*) from event_base
         where context ->> 'consent_state' = 'accepted'),
       'latest_event_at', (select max(occurred_at) from event_base),
-      'by_magnet', pg_catalog.coalesce((select pg_catalog.jsonb_object_agg(k, n)
-        from (select pg_catalog.coalesce(lead_magnet, 'unknown') k, count(*) n
+      'by_magnet', coalesce((select pg_catalog.jsonb_object_agg(k, n)
+        from (select coalesce(lead_magnet, 'unknown') k, count(*) n
           from event_base group by 1) grouped), '{}'::jsonb)
     ),
     'transactional', pg_catalog.jsonb_build_object(
-      'dispatch_by_status', pg_catalog.coalesce((select pg_catalog.jsonb_object_agg(k, n)
+      'dispatch_by_status', coalesce((select pg_catalog.jsonb_object_agg(k, n)
         from (select status k, count(*) n from public.transactional_dispatch_outbox
           where created_at >= p_from and created_at < p_to group by status) grouped),
         '{}'::jsonb),
-      'graph_by_state', pg_catalog.coalesce((select pg_catalog.jsonb_object_agg(k, n)
+      'graph_by_state', coalesce((select pg_catalog.jsonb_object_agg(k, n)
         from (select state k, count(*) n from public.graph_outbox
           where lane = 'transactional' and created_at >= p_from and created_at < p_to
           group by state) grouped), '{}'::jsonb),
-      'reservations_by_status', pg_catalog.coalesce((select pg_catalog.jsonb_object_agg(k, n)
+      'reservations_by_status', coalesce((select pg_catalog.jsonb_object_agg(k, n)
         from (select status k, count(*) n from public.mailbox_delivery_reservations
           where lane = 'transactional' and reserved_at >= p_from and reserved_at < p_to
           group by status) grouped), '{}'::jsonb),
-      'tx_events_by_name', pg_catalog.coalesce((select pg_catalog.jsonb_object_agg(k, n)
+      'tx_events_by_name', coalesce((select pg_catalog.jsonb_object_agg(k, n)
         from (select event_name k, count(*) n from public.transactional_email_events
           where occurred_at >= p_from and occurred_at < p_to group by event_name) grouped),
         '{}'::jsonb),
@@ -211,21 +211,21 @@ begin
     ),
     'campaign', pg_catalog.jsonb_build_object(
       'contacts', (select count(*) from campaign_contact_base),
-      'by_lane', pg_catalog.coalesce((select pg_catalog.jsonb_object_agg(k, n)
+      'by_lane', coalesce((select pg_catalog.jsonb_object_agg(k, n)
         from (select marketing_lane k, count(*) n from campaign_contact_base group by 1) grouped),
         '{}'::jsonb),
-      'by_lot', pg_catalog.coalesce((select pg_catalog.jsonb_object_agg(k, n)
+      'by_lot', coalesce((select pg_catalog.jsonb_object_agg(k, n)
         from (select lot k, count(*) n from campaign_contact_base group by 1) grouped), '{}'::jsonb),
-      'by_step', pg_catalog.coalesce((select pg_catalog.jsonb_object_agg(k, n)
+      'by_step', coalesce((select pg_catalog.jsonb_object_agg(k, n)
         from (select current_step::text k, count(*) n from campaign_contact_base group by 1) grouped),
         '{}'::jsonb),
-      'events_by_name', pg_catalog.coalesce((select pg_catalog.jsonb_object_agg(k, n)
+      'events_by_name', coalesce((select pg_catalog.jsonb_object_agg(k, n)
         from (select event_name k, count(*) n from campaign_event_base group by 1) grouped),
         '{}'::jsonb),
-      'executions_by_status', pg_catalog.coalesce((select pg_catalog.jsonb_object_agg(k, n)
+      'executions_by_status', coalesce((select pg_catalog.jsonb_object_agg(k, n)
         from (select status k, count(*) n from campaign_execution_base group by 1) grouped),
         '{}'::jsonb),
-      'pipeline_value', (select pg_catalog.coalesce(sum(deal_value), 0)
+      'pipeline_value', (select coalesce(sum(deal_value), 0)
         from campaign_contact_base where opportunity_created_at is not null),
       'hubspot_unlinked', (select count(*) from campaign_contact_base
         where hubspot_contact_id is null or hubspot_sync_status <> 'synced'),
@@ -233,7 +233,7 @@ begin
         where suppression_scope <> 'none')
     ),
     'health', pg_catalog.jsonb_build_object(
-      'queue_by_status', pg_catalog.coalesce((select pg_catalog.jsonb_object_agg(k, n)
+      'queue_by_status', coalesce((select pg_catalog.jsonb_object_agg(k, n)
         from (select status k, count(*) n from public.delivery_queue
           where created_at >= p_from and created_at < p_to group by status) grouped),
         '{}'::jsonb),
@@ -297,7 +297,7 @@ begin
       v_role not in ('admin', 'auditor')) then
     raise exception using errcode = '42501', message = 'dashboard_dataset_access_denied';
   end if;
-  v_limit := pg_catalog.least(
+  v_limit := least(
     p_limit, case when v_role in ('admin', 'operator') then 100 else 50 end
   );
 
@@ -316,10 +316,10 @@ begin
     when 'leads' then
       select count(*) into v_total from public.leads
       where created_at >= p_from and created_at < p_to;
-      select pg_catalog.coalesce(pg_catalog.jsonb_agg(row_data), '[]'::jsonb)
+      select coalesce(pg_catalog.jsonb_agg(row_data), '[]'::jsonb)
       into v_rows from (
         select pg_catalog.jsonb_build_object(
-          'id', pg_catalog.substring(pg_catalog.encode(extensions.digest(
+          'id', substring(pg_catalog.encode(extensions.digest(
             pg_catalog.convert_to(id::text, 'UTF8'), 'sha256'
           ), 'hex') from 1 for 24),
           'lead_magnet', lead_magnet, 'lead_classification', lead_classification,
@@ -333,10 +333,10 @@ begin
     when 'events' then
       select count(*) into v_total from public.events
       where occurred_at >= p_from and occurred_at < p_to;
-      select pg_catalog.coalesce(pg_catalog.jsonb_agg(row_data), '[]'::jsonb)
+      select coalesce(pg_catalog.jsonb_agg(row_data), '[]'::jsonb)
       into v_rows from (
         select pg_catalog.jsonb_build_object(
-          'id', pg_catalog.substring(pg_catalog.encode(extensions.digest(
+          'id', substring(pg_catalog.encode(extensions.digest(
             pg_catalog.convert_to(id::text, 'UTF8'), 'sha256'
           ), 'hex') from 1 for 24),
           'event_name', event_name, 'lead_magnet', lead_magnet,
@@ -349,10 +349,10 @@ begin
     when 'reservations' then
       select count(*) into v_total from public.mailbox_delivery_reservations
       where reserved_at >= p_from and reserved_at < p_to;
-      select pg_catalog.coalesce(pg_catalog.jsonb_agg(row_data), '[]'::jsonb)
+      select coalesce(pg_catalog.jsonb_agg(row_data), '[]'::jsonb)
       into v_rows from (
         select pg_catalog.jsonb_build_object(
-          'id', pg_catalog.substring(pg_catalog.encode(extensions.digest(
+          'id', substring(pg_catalog.encode(extensions.digest(
             pg_catalog.convert_to(id::text, 'UTF8'), 'sha256'
           ), 'hex') from 1 for 24),
           'lane', lane, 'resource', resource, 'status', status,
@@ -366,13 +366,13 @@ begin
     when 'transactional_events' then
       select count(*) into v_total from public.transactional_email_events
       where occurred_at >= p_from and occurred_at < p_to;
-      select pg_catalog.coalesce(pg_catalog.jsonb_agg(row_data), '[]'::jsonb)
+      select coalesce(pg_catalog.jsonb_agg(row_data), '[]'::jsonb)
       into v_rows from (
         select pg_catalog.jsonb_build_object(
-          'id', pg_catalog.substring(pg_catalog.encode(extensions.digest(
+          'id', substring(pg_catalog.encode(extensions.digest(
             pg_catalog.convert_to(id::text, 'UTF8'), 'sha256'
           ), 'hex') from 1 for 24),
-          'submission', pg_catalog.substring(pg_catalog.encode(extensions.digest(
+          'submission', substring(pg_catalog.encode(extensions.digest(
             pg_catalog.convert_to(submission_id, 'UTF8'), 'sha256'
           ), 'hex') from 1 for 24),
           'event_name', event_name, 'occurred_at', occurred_at,
@@ -386,10 +386,10 @@ begin
     when 'campaign_executions' then
       select count(*) into v_total from public.campaign_executions
       where created_at >= p_from and created_at < p_to;
-      select pg_catalog.coalesce(pg_catalog.jsonb_agg(row_data), '[]'::jsonb)
+      select coalesce(pg_catalog.jsonb_agg(row_data), '[]'::jsonb)
       into v_rows from (
         select pg_catalog.jsonb_build_object(
-          'id', pg_catalog.substring(pg_catalog.encode(extensions.digest(
+          'id', substring(pg_catalog.encode(extensions.digest(
             pg_catalog.convert_to(id::text, 'UTF8'), 'sha256'
           ), 'hex') from 1 for 24),
           'channel', channel, 'step', step,
@@ -403,10 +403,10 @@ begin
     when 'graph_events' then
       select count(*) into v_total from public.graph_outbox_events
       where occurred_at >= p_from and occurred_at < p_to;
-      select pg_catalog.coalesce(pg_catalog.jsonb_agg(row_data), '[]'::jsonb)
+      select coalesce(pg_catalog.jsonb_agg(row_data), '[]'::jsonb)
       into v_rows from (
         select pg_catalog.jsonb_build_object(
-          'reservation', pg_catalog.substring(pg_catalog.encode(extensions.digest(
+          'reservation', substring(pg_catalog.encode(extensions.digest(
             pg_catalog.convert_to(reservation_id::text, 'UTF8'), 'sha256'
           ), 'hex') from 1 for 24),
           'state', state, 'occurred_at', occurred_at,
@@ -419,11 +419,11 @@ begin
     when 'audit' then
       select count(*) into v_total from public.dashboard_audit_log
       where occurred_at >= p_from and occurred_at < p_to;
-      select pg_catalog.coalesce(pg_catalog.jsonb_agg(row_data), '[]'::jsonb)
+      select coalesce(pg_catalog.jsonb_agg(row_data), '[]'::jsonb)
       into v_rows from (
         select pg_catalog.jsonb_build_object(
           'request_id', request_id,
-          'actor', pg_catalog.substring(actor_hash from 1 for 16),
+          'actor', substring(actor_hash from 1 for 16),
           'actor_role', actor_role, 'action', action,
           'scope', scope, 'occurred_at', occurred_at
         ) row_data

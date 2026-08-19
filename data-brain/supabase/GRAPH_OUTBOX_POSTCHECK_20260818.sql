@@ -67,7 +67,7 @@ begin
     from pg_catalog.pg_proc p
     join pg_catalog.pg_namespace n on n.oid = p.pronamespace
     cross join lateral pg_catalog.aclexplode(
-      pg_catalog.coalesce(
+      coalesce(
         p.proacl, pg_catalog.acldefault('f', p.proowner)
       )
     ) acl
@@ -104,7 +104,7 @@ begin
         'reconcile_transactional_mailbox_delivery',
         'mark_graph_managed_reservation'
       )
-      and not pg_catalog.coalesce(
+      and not coalesce(
         p.proconfig @> array['search_path=""']::text[], false
       )
   ) then

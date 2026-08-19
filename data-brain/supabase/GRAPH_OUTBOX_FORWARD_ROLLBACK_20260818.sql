@@ -21,7 +21,7 @@ begin
     v_actor_hash,
     'FORWARD_ROLLBACK_OPERATOR_HALT'
   );
-  if not pg_catalog.coalesce((v_result ->> 'accepted')::boolean, false) then
+  if not coalesce((v_result ->> 'accepted')::boolean, false) then
     raise exception using errcode = '23514',
       message = 'graph_outbox_forward_rollback_rejected';
   end if;

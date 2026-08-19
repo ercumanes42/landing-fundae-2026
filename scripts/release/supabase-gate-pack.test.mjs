@@ -35,7 +35,7 @@ const migrationFiles = [
   '20260819120000_dashboard_aggregates_rbac.sql', '20260819143000_inbound_reliability.sql',
   '20260819170000_cold_campaign_scheduler.sql', '20260819183000_operational_observability.sql',
   '20260819190000_journey_retention_control.sql', '20260819200000_cold_campaign_provisioning.sql',
-  '20260819210000_release_safety_barriers.sql',
+  '20260819210000_release_safety_barriers.sql', '20260819220000_advisor_index_hardening.sql',
 ];
 
 function runStaticFixture(noopContent) {
@@ -83,9 +83,15 @@ test('the consolidated SQL gate pack is bounded and explicit', () => {
   }
   assert.match(readFileSync(join(sqlRoot, sqlFiles[0]), 'utf8'), /partial_or_already_applied/);
   assert.match(readFileSync(join(sqlRoot, sqlFiles[1]), 'utf8'), /relforcerowsecurity/);
-  assert.match(readFileSync(join(sqlRoot, sqlFiles[2]), 'utf8'), /rollback;\s*$/i);
-  assert.doesNotMatch(readFileSync(join(sqlRoot, sqlFiles[2]), 'utf8'), /master_enabled\s*=\s*true/i);
-  assert.doesNotMatch(readFileSync(join(sqlRoot, sqlFiles[2]), 'utf8'), /purge_enabled\s*=\s*true/i);
+  const behaviorSmoke = readFileSync(join(sqlRoot, sqlFiles[2]), 'utf8');
+  assert.match(behaviorSmoke, /rollback;\s*$/i);
+  assert.doesNotMatch(behaviorSmoke, /master_enabled\s*=\s*true/i);
+  assert.doesNotMatch(behaviorSmoke, /purge_enabled\s*=\s*true/i);
+  assert.match(
+    behaviorSmoke,
+    /jsonb_build_object\(\s*'row_sha256',\s*pg_catalog\.repeat\('6',64\)/i,
+  );
+  assert.doesNotMatch(behaviorSmoke, /'FUNDAE_STAGING_SMOKE',\s*'\[\]'::jsonb/i);
   assert.match(readFileSync(join(sqlRoot, sqlFiles[3]), 'utf8'), /Preserves rows and evidence/i);
   assert.doesNotMatch(readFileSync(join(sqlRoot, sqlFiles[3]), 'utf8'), /\bdelete\s+from\b/i);
   assert.doesNotMatch(readFileSync(join(sqlRoot, sqlFiles[3]), 'utf8'), /\bdrop\s+(table|schema)\b/i);

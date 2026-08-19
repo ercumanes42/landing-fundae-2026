@@ -3574,10 +3574,10 @@ begin
   new.locked_at := null;
   new.lock_token := null;
   new.lock_expires_at := null;
-  new.stopped_at := pg_catalog.coalesce(new.stopped_at, v_suppression.occurred_at);
-  new.stopped_reason := pg_catalog.coalesce(new.stopped_reason, v_suppression.reason);
-  new.suppressed_at := pg_catalog.coalesce(new.suppressed_at, v_suppression.occurred_at);
-  new.suppression_reason := pg_catalog.coalesce(
+  new.stopped_at := coalesce(new.stopped_at, v_suppression.occurred_at);
+  new.stopped_reason := coalesce(new.stopped_reason, v_suppression.reason);
+  new.suppressed_at := coalesce(new.suppressed_at, v_suppression.occurred_at);
+  new.suppression_reason := coalesce(
     new.suppression_reason, v_suppression.reason
   );
   return new;
@@ -3618,16 +3618,16 @@ begin
       then 'all' else 'marketing' end,
     reason = case when campaign_suppressions.scope = 'all'
       then 'unsubscribe' else 'hard_bounce' end,
-    occurred_at = pg_catalog.least(
+    occurred_at = least(
       campaign_suppressions.occurred_at, excluded.occurred_at
     ),
-    source_event_id = pg_catalog.coalesce(
+    source_event_id = coalesce(
       campaign_suppressions.source_event_id, excluded.source_event_id
     ),
-    source_campaign_id = pg_catalog.coalesce(
+    source_campaign_id = coalesce(
       campaign_suppressions.source_campaign_id, excluded.source_campaign_id
     ),
-    source_contact_id = pg_catalog.coalesce(
+    source_contact_id = coalesce(
       campaign_suppressions.source_contact_id, excluded.source_contact_id
     ),
     updated_at = pg_catalog.clock_timestamp()
@@ -3649,10 +3649,10 @@ begin
       locked_at = null,
       lock_token = null,
       lock_expires_at = null,
-      stopped_at = pg_catalog.coalesce(stopped_at, p_occurred_at),
-      stopped_reason = pg_catalog.coalesce(stopped_reason, v_suppression.reason),
-      suppressed_at = pg_catalog.coalesce(suppressed_at, p_occurred_at),
-      suppression_reason = pg_catalog.coalesce(
+      stopped_at = coalesce(stopped_at, p_occurred_at),
+      stopped_reason = coalesce(stopped_reason, v_suppression.reason),
+      suppressed_at = coalesce(suppressed_at, p_occurred_at),
+      suppression_reason = coalesce(
         suppression_reason, v_suppression.reason
       )
   where email_hash = p_identity_hash;
@@ -3660,8 +3660,8 @@ begin
 
   update public.campaign_executions
   set status = 'stopped',
-      stopped_at = pg_catalog.coalesce(stopped_at, p_occurred_at),
-      stop_reason = pg_catalog.coalesce(stop_reason, v_suppression.reason)
+      stopped_at = coalesce(stopped_at, p_occurred_at),
+      stop_reason = coalesce(stop_reason, v_suppression.reason)
   where status = 'planned'
     and campaign_contact_id in (
       select id from public.campaign_contacts where email_hash = p_identity_hash
@@ -3913,7 +3913,7 @@ begin
       where id = v_active.id;
       update public.mailbox_throttle_state
       set active_reservation_id = null, blocked_reservation_id = v_active.id,
-          next_allowed_at = pg_catalog.greatest(
+          next_allowed_at = greatest(
             next_allowed_at, v_now + interval '120 seconds'
           ), updated_at = v_now
       where mailbox_key_hash = p_mailbox_key_hash;
@@ -3932,7 +3932,7 @@ begin
     return pg_catalog.jsonb_build_object(
       'authorized', false, 'duplicate', false, 'reason_code', 'cooldown',
       'next_allowed_at', v_state.next_allowed_at,
-      'retry_after_seconds', pg_catalog.greatest(
+      'retry_after_seconds', greatest(
         1, pg_catalog.ceil(extract(epoch from
           (v_state.next_allowed_at - v_now)))
       )::integer
@@ -3989,7 +3989,7 @@ begin
   update public.mailbox_throttle_state
   set active_reservation_id = v_reservation.id,
       batch_reservations_count = v_position,
-      next_allowed_at = pg_catalog.greatest(
+      next_allowed_at = greatest(
         next_allowed_at,
         v_now + pg_catalog.make_interval(
           secs => v_control.minimum_spacing_seconds
@@ -4003,7 +4003,7 @@ begin
     'reservation_id', v_reservation.id,
     'lease_expires_at', v_reservation.lease_expires_at,
     'authorization_expires_at', v_now + interval '20 minutes',
-    'next_allowed_at', pg_catalog.greatest(
+    'next_allowed_at', greatest(
       v_state.next_allowed_at,
       v_now + pg_catalog.make_interval(secs => v_control.minimum_spacing_seconds)
     ),
@@ -4241,7 +4241,7 @@ begin
     update public.mailbox_throttle_state
     set active_reservation_id = null,
         blocked_reservation_id = p_reservation_id,
-        next_allowed_at = pg_catalog.greatest(
+        next_allowed_at = greatest(
           next_allowed_at, v_now + interval '120 seconds'
         ), updated_at = v_now
     where mailbox_key_hash = v_outbox.mailbox_key_hash;
@@ -4283,7 +4283,7 @@ begin
       where id = p_reservation_id;
       update public.campaign_executions
       set status = 'stopped', stopped_at = v_now,
-          stop_reason = pg_catalog.coalesce(stop_reason, 'suppressed_before_send')
+          stop_reason = coalesce(stop_reason, 'suppressed_before_send')
       where id = v_outbox.campaign_execution_id and status = 'planned';
       update public.mailbox_throttle_state
       set active_reservation_id = null,
@@ -4291,7 +4291,7 @@ begin
             then extensions.gen_random_uuid() else batch_id end,
           batch_reservations_count = case when v_reservation.batch_position = 2
             then 0 else batch_reservations_count end,
-          next_allowed_at = pg_catalog.greatest(
+          next_allowed_at = greatest(
             next_allowed_at,
             v_now + case when v_reservation.batch_position = 2
               then interval '120 seconds' else interval '0 seconds' end
@@ -4422,7 +4422,7 @@ begin
         blocked_reservation_id = null,
         batch_id = extensions.gen_random_uuid(),
         batch_reservations_count = 0,
-        next_allowed_at = pg_catalog.greatest(
+        next_allowed_at = greatest(
           next_allowed_at, v_now + interval '120 seconds'
         ), updated_at = v_now
     where mailbox_key_hash = v_outbox.mailbox_key_hash;
@@ -4549,7 +4549,7 @@ begin
     update public.mailbox_throttle_state
     set active_reservation_id = null,
         blocked_reservation_id = p_reservation_id,
-        next_allowed_at = pg_catalog.greatest(
+        next_allowed_at = greatest(
           next_allowed_at, v_now + interval '120 seconds'
         ), updated_at = v_now
     where mailbox_key_hash = v_outbox.mailbox_key_hash;
@@ -4559,7 +4559,7 @@ begin
         blocked_reservation_id = null,
         batch_id = extensions.gen_random_uuid(),
         batch_reservations_count = 0,
-        next_allowed_at = pg_catalog.greatest(
+        next_allowed_at = greatest(
           next_allowed_at, v_now + interval '120 seconds'
         ), updated_at = v_now
     where mailbox_key_hash = v_outbox.mailbox_key_hash;
@@ -4833,7 +4833,7 @@ begin
       'enforce_mailbox_terminal_transition'
     ) and (
       p.prosecdef or
-      not pg_catalog.coalesce(
+      not coalesce(
         pg_catalog.array_to_string(p.proconfig, ','), ''
       ) like '%search_path=%'
     );
@@ -5082,7 +5082,7 @@ begin
       set lease_expires_at = v_item.claim_expires_at, updated_at = v_now
       where id = v_reservation.id and status = 'reserved';
       update public.graph_outbox_authorizations
-      set expires_at = pg_catalog.least(
+      set expires_at = least(
         v_item.claim_expires_at, v_now + interval '90 seconds'
       )
       where reservation_id = v_reservation.id and consumed_at is null
@@ -5292,7 +5292,7 @@ begin
     reservation_id, send_capability_hash, authorized_at, expires_at
   ) values (
     v_reservation.id, p_send_capability_hash, v_now,
-    pg_catalog.least(v_dispatch.claim_expires_at, v_now + interval '90 seconds')
+    least(v_dispatch.claim_expires_at, v_now + interval '90 seconds')
   );
   update public.mailbox_throttle_state
   set active_reservation_id = v_reservation.id,
@@ -5423,8 +5423,6 @@ revoke all privileges on table public.transactional_dispatch_outbox
   from public, anon, authenticated;
 grant select, insert, update on table public.transactional_dispatch_outbox
   to service_role;
-revoke execute on function public.enqueue_transactional_graph_dispatch()
-  from public, anon, authenticated, service_role;
 revoke execute on function public.claim_transactional_graph_dispatch(uuid,integer,integer)
   from public, anon, authenticated;
 revoke execute on function public.reserve_claimed_transactional_graph_dispatch(
@@ -5908,8 +5906,8 @@ begin
        pg_catalog.make_interval(secs => v_control.minimum_spacing_seconds) then
     return pg_catalog.jsonb_build_object(
       'authorized', false, 'duplicate', false, 'reason_code', 'send_cadence',
-      'retry_after_seconds', pg_catalog.greatest(1, pg_catalog.ceil(
-        pg_catalog.extract(epoch from (
+      'retry_after_seconds', greatest(1, pg_catalog.ceil(
+        extract(epoch from (
           v_mailbox.last_graph_send_authorized_at +
           pg_catalog.make_interval(secs => v_control.minimum_spacing_seconds) - v_now
         ))
@@ -6157,11 +6155,11 @@ begin
     ),
     'funnel', pg_catalog.jsonb_build_object(
       'leads', (select count(*) from lead_base),
-      'by_magnet', pg_catalog.coalesce((select pg_catalog.jsonb_object_agg(k, n)
-        from (select pg_catalog.coalesce(lead_magnet, 'unknown') k, count(*) n
+      'by_magnet', coalesce((select pg_catalog.jsonb_object_agg(k, n)
+        from (select coalesce(lead_magnet, 'unknown') k, count(*) n
           from lead_base group by 1) grouped), '{}'::jsonb),
-      'by_classification', pg_catalog.coalesce((select pg_catalog.jsonb_object_agg(k, n)
-        from (select pg_catalog.coalesce(lead_classification, 'unknown') k, count(*) n
+      'by_classification', coalesce((select pg_catalog.jsonb_object_agg(k, n)
+        from (select coalesce(lead_classification, 'unknown') k, count(*) n
           from lead_base group by 1) grouped), '{}'::jsonb),
       'by_score_band', pg_catalog.jsonb_build_object(
         '0_39', (select count(*) from lead_base where lead_score between 0 and 39),
@@ -6169,7 +6167,7 @@ begin
         '60_79', (select count(*) from lead_base where lead_score between 60 and 79),
         '80_plus', (select count(*) from lead_base where lead_score >= 80)
       ),
-      'events_by_name', pg_catalog.coalesce((select pg_catalog.jsonb_object_agg(k, n)
+      'events_by_name', coalesce((select pg_catalog.jsonb_object_agg(k, n)
         from (select event_name k, count(*) n from event_base group by 1) grouped),
         '{}'::jsonb)
     ),
@@ -6180,24 +6178,24 @@ begin
       'consented_events', (select count(*) from event_base
         where context ->> 'consent_state' = 'accepted'),
       'latest_event_at', (select max(occurred_at) from event_base),
-      'by_magnet', pg_catalog.coalesce((select pg_catalog.jsonb_object_agg(k, n)
-        from (select pg_catalog.coalesce(lead_magnet, 'unknown') k, count(*) n
+      'by_magnet', coalesce((select pg_catalog.jsonb_object_agg(k, n)
+        from (select coalesce(lead_magnet, 'unknown') k, count(*) n
           from event_base group by 1) grouped), '{}'::jsonb)
     ),
     'transactional', pg_catalog.jsonb_build_object(
-      'dispatch_by_status', pg_catalog.coalesce((select pg_catalog.jsonb_object_agg(k, n)
+      'dispatch_by_status', coalesce((select pg_catalog.jsonb_object_agg(k, n)
         from (select status k, count(*) n from public.transactional_dispatch_outbox
           where created_at >= p_from and created_at < p_to group by status) grouped),
         '{}'::jsonb),
-      'graph_by_state', pg_catalog.coalesce((select pg_catalog.jsonb_object_agg(k, n)
+      'graph_by_state', coalesce((select pg_catalog.jsonb_object_agg(k, n)
         from (select state k, count(*) n from public.graph_outbox
           where lane = 'transactional' and created_at >= p_from and created_at < p_to
           group by state) grouped), '{}'::jsonb),
-      'reservations_by_status', pg_catalog.coalesce((select pg_catalog.jsonb_object_agg(k, n)
+      'reservations_by_status', coalesce((select pg_catalog.jsonb_object_agg(k, n)
         from (select status k, count(*) n from public.mailbox_delivery_reservations
           where lane = 'transactional' and reserved_at >= p_from and reserved_at < p_to
           group by status) grouped), '{}'::jsonb),
-      'tx_events_by_name', pg_catalog.coalesce((select pg_catalog.jsonb_object_agg(k, n)
+      'tx_events_by_name', coalesce((select pg_catalog.jsonb_object_agg(k, n)
         from (select event_name k, count(*) n from public.transactional_email_events
           where occurred_at >= p_from and occurred_at < p_to group by event_name) grouped),
         '{}'::jsonb),
@@ -6209,21 +6207,21 @@ begin
     ),
     'campaign', pg_catalog.jsonb_build_object(
       'contacts', (select count(*) from campaign_contact_base),
-      'by_lane', pg_catalog.coalesce((select pg_catalog.jsonb_object_agg(k, n)
+      'by_lane', coalesce((select pg_catalog.jsonb_object_agg(k, n)
         from (select marketing_lane k, count(*) n from campaign_contact_base group by 1) grouped),
         '{}'::jsonb),
-      'by_lot', pg_catalog.coalesce((select pg_catalog.jsonb_object_agg(k, n)
+      'by_lot', coalesce((select pg_catalog.jsonb_object_agg(k, n)
         from (select lot k, count(*) n from campaign_contact_base group by 1) grouped), '{}'::jsonb),
-      'by_step', pg_catalog.coalesce((select pg_catalog.jsonb_object_agg(k, n)
+      'by_step', coalesce((select pg_catalog.jsonb_object_agg(k, n)
         from (select current_step::text k, count(*) n from campaign_contact_base group by 1) grouped),
         '{}'::jsonb),
-      'events_by_name', pg_catalog.coalesce((select pg_catalog.jsonb_object_agg(k, n)
+      'events_by_name', coalesce((select pg_catalog.jsonb_object_agg(k, n)
         from (select event_name k, count(*) n from campaign_event_base group by 1) grouped),
         '{}'::jsonb),
-      'executions_by_status', pg_catalog.coalesce((select pg_catalog.jsonb_object_agg(k, n)
+      'executions_by_status', coalesce((select pg_catalog.jsonb_object_agg(k, n)
         from (select status k, count(*) n from campaign_execution_base group by 1) grouped),
         '{}'::jsonb),
-      'pipeline_value', (select pg_catalog.coalesce(sum(deal_value), 0)
+      'pipeline_value', (select coalesce(sum(deal_value), 0)
         from campaign_contact_base where opportunity_created_at is not null),
       'hubspot_unlinked', (select count(*) from campaign_contact_base
         where hubspot_contact_id is null or hubspot_sync_status <> 'synced'),
@@ -6231,7 +6229,7 @@ begin
         where suppression_scope <> 'none')
     ),
     'health', pg_catalog.jsonb_build_object(
-      'queue_by_status', pg_catalog.coalesce((select pg_catalog.jsonb_object_agg(k, n)
+      'queue_by_status', coalesce((select pg_catalog.jsonb_object_agg(k, n)
         from (select status k, count(*) n from public.delivery_queue
           where created_at >= p_from and created_at < p_to group by status) grouped),
         '{}'::jsonb),
@@ -6294,7 +6292,7 @@ begin
       v_role not in ('admin', 'auditor')) then
     raise exception using errcode = '42501', message = 'dashboard_dataset_access_denied';
   end if;
-  v_limit := pg_catalog.least(
+  v_limit := least(
     p_limit, case when v_role in ('admin', 'operator') then 100 else 50 end
   );
 
@@ -6313,10 +6311,10 @@ begin
     when 'leads' then
       select count(*) into v_total from public.leads
       where created_at >= p_from and created_at < p_to;
-      select pg_catalog.coalesce(pg_catalog.jsonb_agg(row_data), '[]'::jsonb)
+      select coalesce(pg_catalog.jsonb_agg(row_data), '[]'::jsonb)
       into v_rows from (
         select pg_catalog.jsonb_build_object(
-          'id', pg_catalog.substring(pg_catalog.encode(extensions.digest(
+          'id', substring(pg_catalog.encode(extensions.digest(
             pg_catalog.convert_to(id::text, 'UTF8'), 'sha256'
           ), 'hex') from 1 for 24),
           'lead_magnet', lead_magnet, 'lead_classification', lead_classification,
@@ -6330,10 +6328,10 @@ begin
     when 'events' then
       select count(*) into v_total from public.events
       where occurred_at >= p_from and occurred_at < p_to;
-      select pg_catalog.coalesce(pg_catalog.jsonb_agg(row_data), '[]'::jsonb)
+      select coalesce(pg_catalog.jsonb_agg(row_data), '[]'::jsonb)
       into v_rows from (
         select pg_catalog.jsonb_build_object(
-          'id', pg_catalog.substring(pg_catalog.encode(extensions.digest(
+          'id', substring(pg_catalog.encode(extensions.digest(
             pg_catalog.convert_to(id::text, 'UTF8'), 'sha256'
           ), 'hex') from 1 for 24),
           'event_name', event_name, 'lead_magnet', lead_magnet,
@@ -6346,10 +6344,10 @@ begin
     when 'reservations' then
       select count(*) into v_total from public.mailbox_delivery_reservations
       where reserved_at >= p_from and reserved_at < p_to;
-      select pg_catalog.coalesce(pg_catalog.jsonb_agg(row_data), '[]'::jsonb)
+      select coalesce(pg_catalog.jsonb_agg(row_data), '[]'::jsonb)
       into v_rows from (
         select pg_catalog.jsonb_build_object(
-          'id', pg_catalog.substring(pg_catalog.encode(extensions.digest(
+          'id', substring(pg_catalog.encode(extensions.digest(
             pg_catalog.convert_to(id::text, 'UTF8'), 'sha256'
           ), 'hex') from 1 for 24),
           'lane', lane, 'resource', resource, 'status', status,
@@ -6363,13 +6361,13 @@ begin
     when 'transactional_events' then
       select count(*) into v_total from public.transactional_email_events
       where occurred_at >= p_from and occurred_at < p_to;
-      select pg_catalog.coalesce(pg_catalog.jsonb_agg(row_data), '[]'::jsonb)
+      select coalesce(pg_catalog.jsonb_agg(row_data), '[]'::jsonb)
       into v_rows from (
         select pg_catalog.jsonb_build_object(
-          'id', pg_catalog.substring(pg_catalog.encode(extensions.digest(
+          'id', substring(pg_catalog.encode(extensions.digest(
             pg_catalog.convert_to(id::text, 'UTF8'), 'sha256'
           ), 'hex') from 1 for 24),
-          'submission', pg_catalog.substring(pg_catalog.encode(extensions.digest(
+          'submission', substring(pg_catalog.encode(extensions.digest(
             pg_catalog.convert_to(submission_id, 'UTF8'), 'sha256'
           ), 'hex') from 1 for 24),
           'event_name', event_name, 'occurred_at', occurred_at,
@@ -6383,10 +6381,10 @@ begin
     when 'campaign_executions' then
       select count(*) into v_total from public.campaign_executions
       where created_at >= p_from and created_at < p_to;
-      select pg_catalog.coalesce(pg_catalog.jsonb_agg(row_data), '[]'::jsonb)
+      select coalesce(pg_catalog.jsonb_agg(row_data), '[]'::jsonb)
       into v_rows from (
         select pg_catalog.jsonb_build_object(
-          'id', pg_catalog.substring(pg_catalog.encode(extensions.digest(
+          'id', substring(pg_catalog.encode(extensions.digest(
             pg_catalog.convert_to(id::text, 'UTF8'), 'sha256'
           ), 'hex') from 1 for 24),
           'channel', channel, 'step', step,
@@ -6400,10 +6398,10 @@ begin
     when 'graph_events' then
       select count(*) into v_total from public.graph_outbox_events
       where occurred_at >= p_from and occurred_at < p_to;
-      select pg_catalog.coalesce(pg_catalog.jsonb_agg(row_data), '[]'::jsonb)
+      select coalesce(pg_catalog.jsonb_agg(row_data), '[]'::jsonb)
       into v_rows from (
         select pg_catalog.jsonb_build_object(
-          'reservation', pg_catalog.substring(pg_catalog.encode(extensions.digest(
+          'reservation', substring(pg_catalog.encode(extensions.digest(
             pg_catalog.convert_to(reservation_id::text, 'UTF8'), 'sha256'
           ), 'hex') from 1 for 24),
           'state', state, 'occurred_at', occurred_at,
@@ -6416,11 +6414,11 @@ begin
     when 'audit' then
       select count(*) into v_total from public.dashboard_audit_log
       where occurred_at >= p_from and occurred_at < p_to;
-      select pg_catalog.coalesce(pg_catalog.jsonb_agg(row_data), '[]'::jsonb)
+      select coalesce(pg_catalog.jsonb_agg(row_data), '[]'::jsonb)
       into v_rows from (
         select pg_catalog.jsonb_build_object(
           'request_id', request_id,
-          'actor', pg_catalog.substring(actor_hash from 1 for 16),
+          'actor', substring(actor_hash from 1 for 16),
           'actor_role', actor_role, 'action', action,
           'scope', scope, 'occurred_at', occurred_at
         ) row_data
@@ -7311,13 +7309,13 @@ begin
     'opportunity_created','reply_received','bounce_hard','unsubscribe','opposition');
   v_suppress_marketing:=p_event_name in ('meeting_booked','meeting_completed','opportunity_created','bounce_hard','unsubscribe','opposition');
   update public.campaign_contacts set
-    last_event_at=pg_catalog.greatest(pg_catalog.coalesce(last_event_at,p_occurred_at),p_occurred_at),
-    resource_started_at=case when p_event_name='resource_started' then pg_catalog.greatest(pg_catalog.coalesce(resource_started_at,p_occurred_at),p_occurred_at) else resource_started_at end,
-    resource_completed_at=case when p_event_name in ('resource_completed','checklist_downloaded','calculator_completed','webinar_registered','review_submitted') then pg_catalog.greatest(pg_catalog.coalesce(resource_completed_at,p_occurred_at),p_occurred_at) else resource_completed_at end,
-    meeting_booked_at=case when p_event_name='meeting_booked' then pg_catalog.greatest(pg_catalog.coalesce(meeting_booked_at,p_occurred_at),p_occurred_at) else meeting_booked_at end,
-    meeting_completed_at=case when p_event_name='meeting_completed' then pg_catalog.greatest(pg_catalog.coalesce(meeting_completed_at,p_occurred_at),p_occurred_at) else meeting_completed_at end,
-    opportunity_created_at=case when p_event_name='opportunity_created' then pg_catalog.greatest(pg_catalog.coalesce(opportunity_created_at,p_occurred_at),p_occurred_at) else opportunity_created_at end,
-    reply_received_at=case when p_event_name in ('reply_received','positive_reply') then pg_catalog.coalesce(reply_received_at,p_occurred_at) else reply_received_at end,
+    last_event_at=greatest(coalesce(last_event_at,p_occurred_at),p_occurred_at),
+    resource_started_at=case when p_event_name='resource_started' then greatest(coalesce(resource_started_at,p_occurred_at),p_occurred_at) else resource_started_at end,
+    resource_completed_at=case when p_event_name in ('resource_completed','checklist_downloaded','calculator_completed','webinar_registered','review_submitted') then greatest(coalesce(resource_completed_at,p_occurred_at),p_occurred_at) else resource_completed_at end,
+    meeting_booked_at=case when p_event_name='meeting_booked' then greatest(coalesce(meeting_booked_at,p_occurred_at),p_occurred_at) else meeting_booked_at end,
+    meeting_completed_at=case when p_event_name='meeting_completed' then greatest(coalesce(meeting_completed_at,p_occurred_at),p_occurred_at) else meeting_completed_at end,
+    opportunity_created_at=case when p_event_name='opportunity_created' then greatest(coalesce(opportunity_created_at,p_occurred_at),p_occurred_at) else opportunity_created_at end,
+    reply_received_at=case when p_event_name in ('reply_received','positive_reply') then coalesce(reply_received_at,p_occurred_at) else reply_received_at end,
     cold_sequence_status=case when v_stop then 'stopped' else cold_sequence_status end,
     intent_sequence_status=case when p_event_name in ('unsubscribe','bounce_hard','meeting_booked','meeting_completed','opportunity_created') then 'stopped' when p_event_name in ('diagnostic_intent','diagnostic_requested','positive_reply') then 'eligible_disabled' else intent_sequence_status end,
     transactional_status=case when p_event_name in ('resource_completed','checklist_downloaded','calculator_completed','webinar_registered','review_submitted') then 'pending' when p_event_name='transactional_delivery_sent' then 'sent' else transactional_status end,
@@ -7325,10 +7323,10 @@ begin
     suppression_scope=case when p_event_name='unsubscribe' then 'all' when v_suppress_marketing then 'marketing' else suppression_scope end,
     sequence_status=case when v_stop then 'stopped' else sequence_status end,
     next_delivery_status=case when v_stop then 'stopped' else next_delivery_status end,
-    stopped_at=case when v_stop then pg_catalog.coalesce(stopped_at,p_occurred_at) else stopped_at end,
-    stopped_reason=case when v_stop then pg_catalog.coalesce(stopped_reason,p_event_name) else stopped_reason end,
-    suppressed_at=case when v_suppress_marketing then pg_catalog.coalesce(suppressed_at,p_occurred_at) else suppressed_at end,
-    suppression_reason=case when v_suppress_marketing then pg_catalog.coalesce(suppression_reason,p_event_name) else suppression_reason end
+    stopped_at=case when v_stop then coalesce(stopped_at,p_occurred_at) else stopped_at end,
+    stopped_reason=case when v_stop then coalesce(stopped_reason,p_event_name) else stopped_reason end,
+    suppressed_at=case when v_suppress_marketing then coalesce(suppressed_at,p_occurred_at) else suppressed_at end,
+    suppression_reason=case when v_suppress_marketing then coalesce(suppression_reason,p_event_name) else suppression_reason end
   where id=v_contact.id;
   if p_event_name='opposition' then
     insert into public.campaign_suppressions(
@@ -7342,31 +7340,31 @@ begin
         when public.campaign_suppressions.reason='hard_bounce' then 'hard_bounce'
         else 'opposition'
       end,
-      occurred_at=pg_catalog.least(public.campaign_suppressions.occurred_at,excluded.occurred_at),
-      source_event_id=pg_catalog.coalesce(public.campaign_suppressions.source_event_id,excluded.source_event_id),
-      source_campaign_id=pg_catalog.coalesce(public.campaign_suppressions.source_campaign_id,excluded.source_campaign_id),
-      source_contact_id=pg_catalog.coalesce(public.campaign_suppressions.source_contact_id,excluded.source_contact_id),
+      occurred_at=least(public.campaign_suppressions.occurred_at,excluded.occurred_at),
+      source_event_id=coalesce(public.campaign_suppressions.source_event_id,excluded.source_event_id),
+      source_campaign_id=coalesce(public.campaign_suppressions.source_campaign_id,excluded.source_campaign_id),
+      source_contact_id=coalesce(public.campaign_suppressions.source_contact_id,excluded.source_contact_id),
       updated_at=pg_catalog.clock_timestamp();
     update public.campaign_contacts set
       cold_sequence_status='stopped',intent_sequence_status='stopped',marketing_lane='none',
       suppression_scope=case when suppression_scope='all' then 'all' else 'marketing' end,
       sequence_status='stopped',next_delivery_status='stopped',next_scheduled_at=null,
       locked_at=null,lock_token=null,lock_expires_at=null,
-      stopped_at=pg_catalog.coalesce(stopped_at,p_occurred_at),
-      stopped_reason=pg_catalog.coalesce(stopped_reason,'opposition'),
-      suppressed_at=pg_catalog.coalesce(suppressed_at,p_occurred_at),
-      suppression_reason=pg_catalog.coalesce(suppression_reason,'opposition')
+      stopped_at=coalesce(stopped_at,p_occurred_at),
+      stopped_reason=coalesce(stopped_reason,'opposition'),
+      suppressed_at=coalesce(suppressed_at,p_occurred_at),
+      suppression_reason=coalesce(suppression_reason,'opposition')
     where email_hash=v_contact.email_hash;
     update public.campaign_executions set status='stopped',
-      stopped_at=pg_catalog.coalesce(stopped_at,p_occurred_at),
-      stop_reason=pg_catalog.coalesce(stop_reason,'opposition')
+      stopped_at=coalesce(stopped_at,p_occurred_at),
+      stop_reason=coalesce(stop_reason,'opposition')
     where status='planned' and campaign_contact_id in (
       select id from public.campaign_contacts where email_hash=v_contact.email_hash
     );
   end if;
   if v_stop then
-    update public.campaign_executions set status='stopped',stopped_at=pg_catalog.coalesce(stopped_at,p_occurred_at),
-      stop_reason=pg_catalog.coalesce(stop_reason,p_event_name)
+    update public.campaign_executions set status='stopped',stopped_at=coalesce(stopped_at,p_occurred_at),
+      stop_reason=coalesce(stop_reason,p_event_name)
     where campaign_contact_id=v_contact.id and status='planned';
   end if;
   return pg_catalog.jsonb_build_object('id',v_event.id,'duplicate',v_duplicate);
@@ -7391,5 +7389,58 @@ grant execute on function public.reconcile_operational_alerts(text,timestamptz,t
 grant execute on function public.claim_cold_campaign_dispatch(uuid,text,integer) to service_role;
 grant execute on function public.bind_cold_campaign_reservation(uuid,uuid,text,text,text,text,text,text,text) to service_role;
 grant execute on function public.authorize_graph_draft_send(uuid,text,text,text) to service_role;
+
+commit;
+
+-- Cover every foreign key reported by the Supabase performance advisor.
+-- Additive only; outbound, retention and provisioning controls remain unchanged.
+begin;
+set local lock_timeout = '10s';
+set local statement_timeout = '10min';
+
+create index if not exists cold_dispatch_reservation_fk_idx
+  on public.cold_campaign_dispatch_outbox (reservation_id);
+create index if not exists cold_provision_manifest_campaign_fk_idx
+  on public.cold_campaign_provision_manifests (campaign_id);
+create index if not exists cold_scheduler_alert_dispatch_fk_idx
+  on public.cold_campaign_scheduler_alerts (dispatch_id);
+create index if not exists events_campaign_fk_idx
+  on public.events (campaign_id);
+create index if not exists graph_outbox_mailbox_reservation_fk_idx
+  on public.graph_outbox (mailbox_key_hash, reservation_id);
+create index if not exists inbound_ledger_contact_fk_idx
+  on public.inbound_event_ledger (campaign_contact_id);
+create index if not exists inbound_ledger_campaign_fk_idx
+  on public.inbound_event_ledger (campaign_id);
+create index if not exists mailbox_state_active_reservation_fk_idx
+  on public.mailbox_throttle_state (mailbox_key_hash, active_reservation_id);
+create index if not exists mailbox_state_blocked_reservation_fk_idx
+  on public.mailbox_throttle_state (mailbox_key_hash, blocked_reservation_id);
+create index if not exists operational_alert_receipts_dedupe_fk_idx
+  on public.operational_alert_receipts (dedupe_key);
+
+do $$
+begin
+  if exists (
+    select 1
+    from unnest(array[
+      'cold_dispatch_reservation_fk_idx',
+      'cold_provision_manifest_campaign_fk_idx',
+      'cold_scheduler_alert_dispatch_fk_idx',
+      'events_campaign_fk_idx',
+      'graph_outbox_mailbox_reservation_fk_idx',
+      'inbound_ledger_contact_fk_idx',
+      'inbound_ledger_campaign_fk_idx',
+      'mailbox_state_active_reservation_fk_idx',
+      'mailbox_state_blocked_reservation_fk_idx',
+      'operational_alert_receipts_dedupe_fk_idx'
+    ]) as expected(index_name)
+    where pg_catalog.to_regclass('public.' || expected.index_name) is null
+  ) then
+    raise exception using errcode = '23514',
+      message = 'advisor_fk_index_hardening_incomplete';
+  end if;
+end;
+$$;
 
 commit;

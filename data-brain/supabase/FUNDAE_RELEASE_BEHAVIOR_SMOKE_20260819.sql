@@ -41,7 +41,7 @@ begin
     'dashboard', 'healthy', pg_catalog.clock_timestamp(),
     pg_catalog.jsonb_build_object('smoke', true)
   );
-  if not pg_catalog.coalesce((v_result->>'accepted')::boolean, false) then
+  if not coalesce((v_result->>'accepted')::boolean, false) then
     raise exception using errcode = '23514', message = 'heartbeat_smoke_failed';
   end if;
 
@@ -53,19 +53,19 @@ begin
       'metrics', '{}'::jsonb
     )), array['dashboard']::text[]
   );
-  if not pg_catalog.coalesce((v_result->>'accepted')::boolean, false) then
+  if not coalesce((v_result->>'accepted')::boolean, false) then
     raise exception using errcode = '23514', message = 'alert_reconcile_smoke_failed';
   end if;
 
   v_result := public.transition_operational_alert(v_alert_key, 'acknowledged', v_actor, '{}'::jsonb);
-  if not pg_catalog.coalesce((v_result->>'accepted')::boolean, false) then
+  if not coalesce((v_result->>'accepted')::boolean, false) then
     raise exception using errcode = '23514', message = 'alert_transition_smoke_failed';
   end if;
 
   v_result := public.claim_inbound_event(
     'microsoft_graph', v_claim_hash, 'reply_received', '{}'::jsonb, 60
   );
-  if not pg_catalog.coalesce((v_result->>'accepted')::boolean, false) then
+  if not coalesce((v_result->>'accepted')::boolean, false) then
     raise exception using errcode = '23514', message = 'inbound_claim_smoke_failed';
   end if;
   v_claim_token := (v_result->>'claimToken')::uuid;
@@ -73,13 +73,13 @@ begin
     'microsoft_graph', v_claim_hash, v_claim_token,
     'manual_review', null, null, 'staging_smoke'
   );
-  if not pg_catalog.coalesce((v_result->>'accepted')::boolean, false) then
+  if not coalesce((v_result->>'accepted')::boolean, false) then
     raise exception using errcode = '23514', message = 'inbound_finalize_smoke_failed';
   end if;
   v_result := public.claim_inbound_event(
     'microsoft_graph', v_claim_hash, 'reply_received', '{}'::jsonb, 60
   );
-  if not pg_catalog.coalesce((v_result->>'duplicate')::boolean, false) then
+  if not coalesce((v_result->>'duplicate')::boolean, false) then
     raise exception using errcode = '23514', message = 'inbound_replay_smoke_failed';
   end if;
 
@@ -90,7 +90,7 @@ begin
   v_result := public.advance_inbound_cursor(
     'microsoft_graph.smoke', v_cursor_hash, 'staging-smoke-cursor-0002'
   );
-  if not pg_catalog.coalesce((v_result->>'accepted')::boolean, false) then
+  if not coalesce((v_result->>'accepted')::boolean, false) then
     raise exception using errcode = '23514', message = 'inbound_cursor_cas_smoke_failed';
   end if;
 
@@ -110,7 +110,7 @@ begin
   v_result := public.claim_cold_campaign_dispatch(
     extensions.gen_random_uuid(), pg_catalog.repeat('w', 43), 60
   );
-  if pg_catalog.coalesce((v_result->>'accepted')::boolean, false) then
+  if coalesce((v_result->>'accepted')::boolean, false) then
     raise exception using errcode = '23514', message = 'cold_claim_authorized_while_off';
   end if;
 
@@ -118,15 +118,20 @@ begin
     extensions.gen_random_uuid(), pg_catalog.repeat('e',64),
     pg_catalog.repeat('f',64), pg_catalog.repeat('1',64)
   );
-  if pg_catalog.coalesce((v_result->>'authorized')::boolean, false) then
+  if coalesce((v_result->>'authorized')::boolean, false) then
     raise exception using errcode = '23514', message = 'graph_send_authorized_while_off';
   end if;
 
   begin
     perform public.apply_cold_campaign_provision_batch(
       pg_catalog.repeat('2',64), pg_catalog.repeat('3',64), 0, 1,
-      pg_catalog.repeat('4',64), v_actor, pg_catalog.repeat('5',64),
-      'FUNDAE_STAGING_SMOKE', '[]'::jsonb
+      pg_catalog.encode(extensions.digest(pg_catalog.convert_to(
+        pg_catalog.repeat('6',64), 'UTF8'
+      ), 'sha256'), 'hex'),
+      v_actor, pg_catalog.repeat('5',64), 'FUNDAE_STAGING_SMOKE',
+      pg_catalog.jsonb_build_array(pg_catalog.jsonb_build_object(
+        'row_sha256', pg_catalog.repeat('6',64)
+      ))
     );
     raise exception using errcode = '23514', message = 'provisioning_accepted_while_closed';
   exception when insufficient_privilege then

@@ -20,7 +20,7 @@ begin
   v_result := public.emergency_halt_outbound_delivery(
     v_actor, 'FUNDAE_RELEASE_FORWARD_ROLLBACK'
   );
-  if not pg_catalog.coalesce((v_result->>'accepted')::boolean, false) then
+  if not coalesce((v_result->>'accepted')::boolean, false) then
     raise exception using errcode = '23514',
       message = 'fundae_forward_rollback_halt_rejected';
   end if;
@@ -36,7 +36,7 @@ set purge_enabled = false, updated_at = pg_catalog.clock_timestamp()
 where singleton;
 
 update public.dashboard_principals
-set is_active = false, revoked_at = pg_catalog.coalesce(revoked_at, pg_catalog.clock_timestamp()),
+set is_active = false, revoked_at = coalesce(revoked_at, pg_catalog.clock_timestamp()),
     updated_at = pg_catalog.clock_timestamp()
 where is_active;
 

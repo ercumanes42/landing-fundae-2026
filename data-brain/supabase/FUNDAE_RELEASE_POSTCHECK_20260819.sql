@@ -129,7 +129,7 @@ begin
     from pg_catalog.pg_proc p
     join pg_catalog.pg_namespace n on n.oid = p.pronamespace
     cross join lateral pg_catalog.aclexplode(
-      pg_catalog.coalesce(p.proacl, pg_catalog.acldefault('f', p.proowner))
+      coalesce(p.proacl, pg_catalog.acldefault('f', p.proowner))
     ) acl
     where n.nspname = 'public'
       and p.proname = any(array[
@@ -173,7 +173,7 @@ begin
       'reconcile_operational_alerts', 'purge_expired_journey_events',
       'apply_cold_campaign_provision_batch', 'finalize_cold_campaign_provision',
       'cold_outbound_barrier_reason', 'record_campaign_event_atomic'
-    ]) and not pg_catalog.coalesce(
+    ]) and not coalesce(
       p.proconfig @> array['search_path=""']::text[], false
     );
   if v_bad_definers is not null then
@@ -237,6 +237,26 @@ begin
   ) then
     raise exception using errcode = '23514',
       message = 'fundae_release_postcheck_prepared_manifest_count_mismatch';
+  end if;
+
+  if exists (
+    select 1
+    from unnest(array[
+      'cold_dispatch_reservation_fk_idx',
+      'cold_provision_manifest_campaign_fk_idx',
+      'cold_scheduler_alert_dispatch_fk_idx',
+      'events_campaign_fk_idx',
+      'graph_outbox_mailbox_reservation_fk_idx',
+      'inbound_ledger_contact_fk_idx',
+      'inbound_ledger_campaign_fk_idx',
+      'mailbox_state_active_reservation_fk_idx',
+      'mailbox_state_blocked_reservation_fk_idx',
+      'operational_alert_receipts_dedupe_fk_idx'
+    ]) as expected(index_name)
+    where pg_catalog.to_regclass('public.' || expected.index_name) is null
+  ) then
+    raise exception using errcode = '23514',
+      message = 'fundae_release_postcheck_fk_index_missing';
   end if;
 end;
 $$;

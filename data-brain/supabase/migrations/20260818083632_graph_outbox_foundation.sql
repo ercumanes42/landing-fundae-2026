@@ -350,10 +350,10 @@ begin
   new.locked_at := null;
   new.lock_token := null;
   new.lock_expires_at := null;
-  new.stopped_at := pg_catalog.coalesce(new.stopped_at, v_suppression.occurred_at);
-  new.stopped_reason := pg_catalog.coalesce(new.stopped_reason, v_suppression.reason);
-  new.suppressed_at := pg_catalog.coalesce(new.suppressed_at, v_suppression.occurred_at);
-  new.suppression_reason := pg_catalog.coalesce(
+  new.stopped_at := coalesce(new.stopped_at, v_suppression.occurred_at);
+  new.stopped_reason := coalesce(new.stopped_reason, v_suppression.reason);
+  new.suppressed_at := coalesce(new.suppressed_at, v_suppression.occurred_at);
+  new.suppression_reason := coalesce(
     new.suppression_reason, v_suppression.reason
   );
   return new;
@@ -394,16 +394,16 @@ begin
       then 'all' else 'marketing' end,
     reason = case when campaign_suppressions.scope = 'all'
       then 'unsubscribe' else 'hard_bounce' end,
-    occurred_at = pg_catalog.least(
+    occurred_at = least(
       campaign_suppressions.occurred_at, excluded.occurred_at
     ),
-    source_event_id = pg_catalog.coalesce(
+    source_event_id = coalesce(
       campaign_suppressions.source_event_id, excluded.source_event_id
     ),
-    source_campaign_id = pg_catalog.coalesce(
+    source_campaign_id = coalesce(
       campaign_suppressions.source_campaign_id, excluded.source_campaign_id
     ),
-    source_contact_id = pg_catalog.coalesce(
+    source_contact_id = coalesce(
       campaign_suppressions.source_contact_id, excluded.source_contact_id
     ),
     updated_at = pg_catalog.clock_timestamp()
@@ -425,10 +425,10 @@ begin
       locked_at = null,
       lock_token = null,
       lock_expires_at = null,
-      stopped_at = pg_catalog.coalesce(stopped_at, p_occurred_at),
-      stopped_reason = pg_catalog.coalesce(stopped_reason, v_suppression.reason),
-      suppressed_at = pg_catalog.coalesce(suppressed_at, p_occurred_at),
-      suppression_reason = pg_catalog.coalesce(
+      stopped_at = coalesce(stopped_at, p_occurred_at),
+      stopped_reason = coalesce(stopped_reason, v_suppression.reason),
+      suppressed_at = coalesce(suppressed_at, p_occurred_at),
+      suppression_reason = coalesce(
         suppression_reason, v_suppression.reason
       )
   where email_hash = p_identity_hash;
@@ -436,8 +436,8 @@ begin
 
   update public.campaign_executions
   set status = 'stopped',
-      stopped_at = pg_catalog.coalesce(stopped_at, p_occurred_at),
-      stop_reason = pg_catalog.coalesce(stop_reason, v_suppression.reason)
+      stopped_at = coalesce(stopped_at, p_occurred_at),
+      stop_reason = coalesce(stop_reason, v_suppression.reason)
   where status = 'planned'
     and campaign_contact_id in (
       select id from public.campaign_contacts where email_hash = p_identity_hash
@@ -689,7 +689,7 @@ begin
       where id = v_active.id;
       update public.mailbox_throttle_state
       set active_reservation_id = null, blocked_reservation_id = v_active.id,
-          next_allowed_at = pg_catalog.greatest(
+          next_allowed_at = greatest(
             next_allowed_at, v_now + interval '120 seconds'
           ), updated_at = v_now
       where mailbox_key_hash = p_mailbox_key_hash;
@@ -708,7 +708,7 @@ begin
     return pg_catalog.jsonb_build_object(
       'authorized', false, 'duplicate', false, 'reason_code', 'cooldown',
       'next_allowed_at', v_state.next_allowed_at,
-      'retry_after_seconds', pg_catalog.greatest(
+      'retry_after_seconds', greatest(
         1, pg_catalog.ceil(extract(epoch from
           (v_state.next_allowed_at - v_now)))
       )::integer
@@ -765,7 +765,7 @@ begin
   update public.mailbox_throttle_state
   set active_reservation_id = v_reservation.id,
       batch_reservations_count = v_position,
-      next_allowed_at = pg_catalog.greatest(
+      next_allowed_at = greatest(
         next_allowed_at,
         v_now + pg_catalog.make_interval(
           secs => v_control.minimum_spacing_seconds
@@ -779,7 +779,7 @@ begin
     'reservation_id', v_reservation.id,
     'lease_expires_at', v_reservation.lease_expires_at,
     'authorization_expires_at', v_now + interval '20 minutes',
-    'next_allowed_at', pg_catalog.greatest(
+    'next_allowed_at', greatest(
       v_state.next_allowed_at,
       v_now + pg_catalog.make_interval(secs => v_control.minimum_spacing_seconds)
     ),
@@ -1017,7 +1017,7 @@ begin
     update public.mailbox_throttle_state
     set active_reservation_id = null,
         blocked_reservation_id = p_reservation_id,
-        next_allowed_at = pg_catalog.greatest(
+        next_allowed_at = greatest(
           next_allowed_at, v_now + interval '120 seconds'
         ), updated_at = v_now
     where mailbox_key_hash = v_outbox.mailbox_key_hash;
@@ -1059,7 +1059,7 @@ begin
       where id = p_reservation_id;
       update public.campaign_executions
       set status = 'stopped', stopped_at = v_now,
-          stop_reason = pg_catalog.coalesce(stop_reason, 'suppressed_before_send')
+          stop_reason = coalesce(stop_reason, 'suppressed_before_send')
       where id = v_outbox.campaign_execution_id and status = 'planned';
       update public.mailbox_throttle_state
       set active_reservation_id = null,
@@ -1067,7 +1067,7 @@ begin
             then extensions.gen_random_uuid() else batch_id end,
           batch_reservations_count = case when v_reservation.batch_position = 2
             then 0 else batch_reservations_count end,
-          next_allowed_at = pg_catalog.greatest(
+          next_allowed_at = greatest(
             next_allowed_at,
             v_now + case when v_reservation.batch_position = 2
               then interval '120 seconds' else interval '0 seconds' end
@@ -1198,7 +1198,7 @@ begin
         blocked_reservation_id = null,
         batch_id = extensions.gen_random_uuid(),
         batch_reservations_count = 0,
-        next_allowed_at = pg_catalog.greatest(
+        next_allowed_at = greatest(
           next_allowed_at, v_now + interval '120 seconds'
         ), updated_at = v_now
     where mailbox_key_hash = v_outbox.mailbox_key_hash;
@@ -1325,7 +1325,7 @@ begin
     update public.mailbox_throttle_state
     set active_reservation_id = null,
         blocked_reservation_id = p_reservation_id,
-        next_allowed_at = pg_catalog.greatest(
+        next_allowed_at = greatest(
           next_allowed_at, v_now + interval '120 seconds'
         ), updated_at = v_now
     where mailbox_key_hash = v_outbox.mailbox_key_hash;
@@ -1335,7 +1335,7 @@ begin
         blocked_reservation_id = null,
         batch_id = extensions.gen_random_uuid(),
         batch_reservations_count = 0,
-        next_allowed_at = pg_catalog.greatest(
+        next_allowed_at = greatest(
           next_allowed_at, v_now + interval '120 seconds'
         ), updated_at = v_now
     where mailbox_key_hash = v_outbox.mailbox_key_hash;
@@ -1609,7 +1609,7 @@ begin
       'enforce_mailbox_terminal_transition'
     ) and (
       p.prosecdef or
-      not pg_catalog.coalesce(
+      not coalesce(
         pg_catalog.array_to_string(p.proconfig, ','), ''
       ) like '%search_path=%'
     );
@@ -1858,7 +1858,7 @@ begin
       set lease_expires_at = v_item.claim_expires_at, updated_at = v_now
       where id = v_reservation.id and status = 'reserved';
       update public.graph_outbox_authorizations
-      set expires_at = pg_catalog.least(
+      set expires_at = least(
         v_item.claim_expires_at, v_now + interval '90 seconds'
       )
       where reservation_id = v_reservation.id and consumed_at is null
@@ -2068,7 +2068,7 @@ begin
     reservation_id, send_capability_hash, authorized_at, expires_at
   ) values (
     v_reservation.id, p_send_capability_hash, v_now,
-    pg_catalog.least(v_dispatch.claim_expires_at, v_now + interval '90 seconds')
+    least(v_dispatch.claim_expires_at, v_now + interval '90 seconds')
   );
   update public.mailbox_throttle_state
   set active_reservation_id = v_reservation.id,
@@ -2199,8 +2199,6 @@ revoke all privileges on table public.transactional_dispatch_outbox
   from public, anon, authenticated;
 grant select, insert, update on table public.transactional_dispatch_outbox
   to service_role;
-revoke execute on function public.enqueue_transactional_graph_dispatch()
-  from public, anon, authenticated, service_role;
 revoke execute on function public.claim_transactional_graph_dispatch(uuid,integer,integer)
   from public, anon, authenticated;
 revoke execute on function public.reserve_claimed_transactional_graph_dispatch(
@@ -2686,8 +2684,8 @@ begin
        pg_catalog.make_interval(secs => v_control.minimum_spacing_seconds) then
     return pg_catalog.jsonb_build_object(
       'authorized', false, 'duplicate', false, 'reason_code', 'send_cadence',
-      'retry_after_seconds', pg_catalog.greatest(1, pg_catalog.ceil(
-        pg_catalog.extract(epoch from (
+      'retry_after_seconds', greatest(1, pg_catalog.ceil(
+        extract(epoch from (
           v_mailbox.last_graph_send_authorized_at +
           pg_catalog.make_interval(secs => v_control.minimum_spacing_seconds) - v_now
         ))
