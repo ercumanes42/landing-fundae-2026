@@ -49,6 +49,9 @@ function rpcRepository(
 function client(options: {
   createThrows?: boolean;
   sendThrows?: boolean;
+  sentFolderThrows?: boolean;
+  sentMessageThrows?: boolean;
+  sentMarkerThrows?: boolean;
   markerMatches?: 0 | 1 | 2;
   sentSequence?: Array<'missing' | 'draft' | 'sent'>;
   draftIdentity?: {
@@ -72,6 +75,7 @@ function client(options: {
       },
       sendDraft: async () => { sendCalls += 1; if (options.sendThrows) throw new Error('timeout'); },
       findByMarker: async (marker: string) => {
+        if (options.sentMarkerThrows && sendCalls > 0) throw new Error('sent marker unavailable');
         payload ??= {
           recipient: deliveryPackage.recipient.email,
           subject: deliveryPackage.subject,
@@ -94,8 +98,12 @@ function client(options: {
         internetMessageId: null, sentDateTime: null, subject: deliveryPackage.subject,
         htmlBody: deliveryPackage.body, recipients: [deliveryPackage.recipient.email], marker: '', attachments: [],
       }),
-      getSentItemsFolderId: async () => 'SentFolder',
+      getSentItemsFolderId: async () => {
+        if (options.sentFolderThrows) throw new Error('sent folder unavailable');
+        return 'SentFolder';
+      },
       getMessage: async () => {
+        if (options.sentMessageThrows && sendCalls > 0) throw new Error('sent message unavailable');
         const state = sentSequence.shift() ?? 'sent';
         if (state === 'missing') return null;
         return state === 'draft'
@@ -204,6 +212,17 @@ test('send timeout is not retried and eventual Sent Items evidence confirms', as
   const result = await executeTransactionalGraphJob(job, deps(rpcRepository(), graph));
   assert.equal(result.state, 'confirmed_sent');
   assert.equal(graph.stats().sendCalls, 1);
+});
+
+test('Sent Items read failure after submission halts once and never retries the send', async () => {
+  const rpcCalls: string[] = [];
+  const graph = client({ sentFolderThrows: true });
+  const result = await executeTransactionalGraphJob(job, deps(rpcRepository('reserved', rpcCalls), graph));
+  assert.equal(result.state, 'ambiguous_halted');
+  assert.equal(result.alertAttempted, true);
+  assert.equal(result.alertDelivered, true);
+  assert.equal(graph.stats().sendCalls, 1);
+  assert.equal(rpcCalls.filter((name) => name === 'finalize_graph_delivery_failure').length, 1);
 });
 
 test('draft_created recovery reconciles the existing marker and never creates a second draft', async () => {

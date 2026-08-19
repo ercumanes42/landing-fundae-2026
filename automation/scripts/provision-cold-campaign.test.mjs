@@ -82,6 +82,7 @@ test('Excel serial dates, canonical payload and unit-separator row hash are dete
     'tipo de empresa': 'micro', 'validacion pre envio': 'OK', 'unsubscribe status': 'CLEAR',
     'opposition status': 'CLEAR', 'hard bounce status': 'CLEAR', 'suppression status': 'CLEAR',
     'duplicate status': 'CLEAR', 'campaign authorization': 'AUTHORIZED',
+    'habilitado envio': 'SI', 'contacto principal id': '',
     'technical evidence sha256': 'b'.repeat(64),
   };
   const dates = ['2026-09-01T08:00:00.000Z','2026-09-15T08:00:00.000Z','2026-10-01T08:00:00.000Z','2026-10-15T08:00:00.000Z','2026-11-03T08:00:00.000Z'];
@@ -97,6 +98,7 @@ test('Excel serial dates, canonical payload and unit-separator row hash are dete
   assert.equal(rows.length, 5);
   assert.deepEqual(rows.toSorted((a, b) => a.step - b.step).map((row) => row.scheduled_for), dates);
   assert.ok(rows.every((row) => row.company_size === 'micro'));
+  assert.ok(rows.every((row) => row.parent_contact_id === '' && row.conditional_delivery === false));
   assert.ok(rows.every((row) =>
     row.email_hash === createHmac('sha256', 'l'.repeat(32)).update('recipient@example.invalid').digest('hex')));
   for (const row of rows) {
@@ -108,9 +110,23 @@ test('Excel serial dates, canonical payload and unit-separator row hash are dete
       row.scheduled_for,row.execution_key,row.recipient_email,row.subject,row.html_body,row.payload_sha256,row.token_hash,
       row.validation_status,row.unsubscribe_status,row.opposition_status,row.hard_bounce_status,row.suppression_status,
       row.duplicate_status,row.campaign_authorization,row.company_size,row.technical_evidence_sha256,
+      row.parent_contact_id,String(row.conditional_delivery),
     ];
     assert.equal(row.row_sha256, hash(fields.join('\x1f')));
   }
+
+  const conditional = structuredClone(source);
+  conditional['contact id'] = 'contact-0002';
+  conditional['correo electronico'] = 'secondary@example.invalid';
+  conditional['habilitado envio'] = 'CONDICIONADO';
+  conditional['contacto principal id'] = 'contact-0001';
+  const conditionalRows = prepareProvisionRows([source, conditional], {
+    unsubscribeSecret: 'u'.repeat(32), unsubscribeBaseUrl: 'https://example.invalid/',
+    leadHashSecret: 'l'.repeat(32),
+  }).filter((row) => row.contact_id === 'contact-0002');
+  assert.equal(conditionalRows.length, 5);
+  assert.ok(conditionalRows.every((row) =>
+    row.parent_contact_id === 'contact-0001' && row.conditional_delivery === true));
 });
 
 test('provisioner rejects weak, placeholder and whitespace-drift lead secrets before processing rows', () => {
@@ -209,7 +225,9 @@ test('SQL v3 supersedes v2 and binds technical evidence into rows and manifest',
   const schema = readFileSync(new URL('../../data-brain/supabase/schema.sql', import.meta.url), 'utf8')
     .replaceAll('\r\n', '\n');
   const marker = '-- 20260819234000_campaign_terminal_suppression_hardening.sql';
-  const schemaMirror = schema.slice(schema.lastIndexOf(marker) + marker.length).trim();
+  const markerStart = schema.lastIndexOf(marker) + marker.length;
+  const nextMarker = schema.indexOf('\n-- 20', markerStart);
+  const schemaMirror = schema.slice(markerStart, nextMarker === -1 ? undefined : nextMarker).trim();
   assert.equal(schemaMirror, migration.trim());
   for (const contract of [
     "hash_domain = 'cold-provision-v3'",

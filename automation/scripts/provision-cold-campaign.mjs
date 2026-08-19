@@ -121,6 +121,7 @@ function canonicalRowHash(row) {
     row.validation_status, row.unsubscribe_status, row.opposition_status,
     row.hard_bounce_status, row.suppression_status, row.duplicate_status,
     row.campaign_authorization, row.company_size, row.technical_evidence_sha256,
+    row.parent_contact_id, String(row.conditional_delivery),
   ];
   return sha256(fields.join('\x1f'));
 }
@@ -129,11 +130,21 @@ export function prepareProvisionRows(rows, { unsubscribeSecret, unsubscribeBaseU
   assertLeadHashSecret(leadHashSecret);
   const base = new URL(unsubscribeBaseUrl);
   if (base.protocol !== 'https:' || base.username || base.password || base.pathname !== '/') throw new Error('APPLY_UNSUBSCRIBE_ORIGIN_INVALID');
+  const sourceByContact = new Map(rows.map((row) => [text(row, 'contact id'), row]));
   const provisionRows = [];
   for (const source of rows) {
     const campaignId = text(source, 'campaign id');
     const contactId = text(source, 'contact id');
     const email = text(source, 'correo electronico').toLowerCase();
+    const conditionalDelivery = text(source, 'habilitado envio').toUpperCase() === 'CONDICIONADO';
+    const parentContactId = conditionalDelivery ? text(source, 'contacto principal id') : '';
+    const parent = parentContactId ? sourceByContact.get(parentContactId) : undefined;
+    if (conditionalDelivery && (!parent || parentContactId === contactId ||
+        text(parent, 'campaign id') !== campaignId ||
+        text(parent, 'variante nombre') !== text(source, 'variante nombre') ||
+        text(parent, 'habilitado envio').toUpperCase() === 'CONDICIONADO')) {
+      throw new Error('APPLY_CONDITIONAL_GRAPH_INVALID');
+    }
     const token = unsubscribeToken(campaignId, contactId, unsubscribeSecret);
     if (!TOKEN_PATTERN.test(token)) throw new Error('APPLY_TOKEN_INVALID');
     const unsubscribeUrl = `${base.origin}/baja?token=${token}`;
@@ -172,6 +183,8 @@ export function prepareProvisionRows(rows, { unsubscribeSecret, unsubscribeBaseU
         campaign_authorization: text(source, 'campaign authorization').toUpperCase(),
         company_size: text(source, 'tipo de empresa'),
         technical_evidence_sha256: text(source, TECHNICAL_EVIDENCE_FIELD),
+        parent_contact_id: parentContactId,
+        conditional_delivery: conditionalDelivery,
       };
       if (!HASH.test(row.technical_evidence_sha256)) throw new Error('APPLY_TECHNICAL_EVIDENCE_INVALID');
       row.row_sha256 = canonicalRowHash(row);

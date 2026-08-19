@@ -45,6 +45,8 @@ const migrationFiles = [
   '20260819234000_campaign_terminal_suppression_hardening.sql',
   '20260819234100_campaign_contact_suppression_insert_gate.sql',
   '20260819234200_transactional_graph_pilot_authorization_fk_index.sql',
+  '20260819234300_transactional_graph_pilot_alert_hardening.sql',
+  '20260819234400_campaign_conditional_delivery_hardening.sql',
 ];
 
 function schemaMigrationMirror(schema, migrationName) {
@@ -238,6 +240,39 @@ test('pilot authorization foreign key has an exact covering index', () => {
   assert.equal(schemaMigrationMirror(schema, migrationName), migration);
   assert.match(migration, /transactional_graph_pilot_authorization_fk_idx/i);
   assert.match(migration, /transactional_graph_pilot_runs \(authorization_hash\)/i);
+});
+
+test('pilot watchdog alerts durably and unscoped authorization fails closed', () => {
+  const migrationName = '20260819234300_transactional_graph_pilot_alert_hardening.sql';
+  const migration = readFileSync(join(sqlRoot, 'migrations', migrationName), 'utf8').replaceAll('\r\n', '\n').trim();
+  const schema = readFileSync(join(sqlRoot, 'schema.sql'), 'utf8').replaceAll('\r\n', '\n');
+  assert.equal(schemaMigrationMirror(schema, migrationName), migration);
+  assert.match(migration, /authorize_graph_draft_send_pre_alert_20260819/i);
+  assert.match(migration, /TRANSACTIONAL_GRAPH_PILOT_UNSCOPED_AUTHORIZATION/i);
+  assert.match(migration, /enforce_transactional_graph_pilot_deadline_pre_alert_20260819/i);
+  assert.match(migration, /perform public\.enqueue_operational_alert_delivery\(/i);
+  assert.match(migration, /exception when others then[\s\S]*?v_alert_enqueued := false/i);
+  assert.match(migration, /master_enabled = false[\s\S]*?transactional_enabled = false[\s\S]*?cold_enabled = false/i);
+  assert.match(migration, /revoke execute[\s\S]*?pre_alert_20260819[\s\S]*?service_role/i);
+  assert.doesNotMatch(migration, /pg_catalog\.(?:coalesce|substring)\b/i);
+});
+
+test('conditional contacts bind their parent and are stopped at claim and JIT authorization', () => {
+  const migrationName = '20260819234400_campaign_conditional_delivery_hardening.sql';
+  const migration = readFileSync(join(sqlRoot, 'migrations', migrationName), 'utf8').replaceAll('\r\n', '\n').trim();
+  const schema = readFileSync(join(sqlRoot, 'schema.sql'), 'utf8').replaceAll('\r\n', '\n');
+  assert.equal(schemaMigrationMirror(schema, migrationName), migration);
+  assert.match(migration, /jsonb_object_keys\(v_row\)\)<>27/i);
+  assert.match(migration, /parent_contact_id[\s\S]*?conditional_delivery[\s\S]*?row_sha256/i);
+  assert.match(migration, /parent_external_contact_id,conditional_delivery/i);
+  assert.match(migration, /conditional_delivery\)<>104/i);
+  assert.match(migration, /claim_cold_campaign_dispatch_pre_conditional_20260819/i);
+  assert.match(migration, /authorize_graph_draft_send_pre_conditional_20260819/i);
+  assert.match(migration, /conditional_parent_stopped/i);
+  assert.match(migration, /draft_neutralization_required/i);
+  assert.match(migration, /CONDITIONAL_GRAPH_INVALID/i);
+  assert.match(migration, /master_enabled=false[\s\S]*?transactional_enabled=false[\s\S]*?cold_enabled=false/i);
+  assert.match(migration, /revoke execute[\s\S]*?pre_conditional_20260819[\s\S]*?service_role/i);
 });
 
 test('the npm entrypoint selects a platform PowerShell without embedding credentials', () => {

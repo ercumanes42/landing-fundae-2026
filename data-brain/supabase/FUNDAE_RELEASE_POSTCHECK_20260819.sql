@@ -634,6 +634,52 @@ begin
   end if;
 
   if exists (
+    select 1 from public.cold_campaign_provision_manifests m
+    where m.status = 'prepared_off' and (
+      (select pg_catalog.count(*) from public.campaign_contacts c
+       where c.campaign_id=m.campaign_id and c.conditional_delivery) <> 104
+      or exists (
+        select 1
+        from public.campaign_contacts child
+        left join public.campaign_contacts parent
+          on parent.campaign_id=child.campaign_id
+         and parent.external_contact_id=child.parent_external_contact_id
+        where child.campaign_id=m.campaign_id and (
+          (child.conditional_delivery and (
+            child.parent_external_contact_id is null or parent.id is null or
+            parent.id=child.id or parent.conditional_delivery or
+            parent.variant<>child.variant
+          )) or
+          (not child.conditional_delivery and child.parent_external_contact_id is not null)
+        )
+      )
+    )
+  ) then
+    raise exception using errcode = '23514',
+      message = 'fundae_release_postcheck_conditional_graph_invalid';
+  end if;
+
+  if pg_catalog.strpos(pg_catalog.pg_get_functiondef(pg_catalog.to_regprocedure(
+       'public.claim_cold_campaign_dispatch(uuid,text,integer)'
+     )), 'claim_cold_campaign_dispatch_pre_conditional_20260819') = 0 or
+     pg_catalog.strpos(pg_catalog.pg_get_functiondef(pg_catalog.to_regprocedure(
+       'public.authorize_graph_draft_send(uuid,text,text,text)'
+     )), 'authorize_graph_draft_send_pre_conditional_20260819') = 0 or
+     pg_catalog.has_function_privilege(
+       'service_role',
+       'public.claim_cold_campaign_dispatch_pre_conditional_20260819(uuid,text,integer)',
+       'EXECUTE'
+     ) or
+     pg_catalog.has_function_privilege(
+       'service_role',
+       'public.authorize_graph_draft_send_pre_conditional_20260819(uuid,text,text,text)',
+       'EXECUTE'
+     ) then
+    raise exception using errcode = '42501',
+      message = 'fundae_release_postcheck_conditional_rpc_contract_invalid';
+  end if;
+
+  if exists (
     select 1 from public.campaign_contacts c
     join public.campaigns campaign on campaign.id=c.campaign_id
     where campaign.external_id='FUNDAE_2026_EMAIL_V1'

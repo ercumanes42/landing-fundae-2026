@@ -20,6 +20,7 @@ declare
   v_claim jsonb;
   v_halt jsonb;
   v_watchdog jsonb;
+  v_watchdog_alerts_before bigint;
   v_authorization_id text := '018f1e20-7b5d-7d20-8c3a-4b5c6d7e8f91';
   v_authorization_hash text;
   v_approval_evidence text := pg_catalog.repeat('e', 64);
@@ -195,16 +196,26 @@ begin
       halt_reason = 'TRANSACTIONAL_GRAPH_PILOT_ACTIVE',
       updated_at = pg_catalog.clock_timestamp()
   where singleton;
+  select pg_catalog.count(*) into v_watchdog_alerts_before
+  from public.operational_alert_receipts r
+  join public.operational_alerts a on a.dedupe_key = r.dedupe_key
+  where a.summary_code = 'TRANSACTIONAL_GRAPH_PILOT_EXPIRED';
   v_watchdog := fundae_private.enforce_transactional_graph_pilot_deadline();
   if v_watchdog ->> 'reason_code' <> 'pilot_scope_expired' or
      v_watchdog ->> 'outbound_off' <> 'true' or
+     v_watchdog ->> 'alert_attempted' <> 'true' or
+     v_watchdog ->> 'alert_enqueued' <> 'true' or
      not exists (
        select 1 from public.transactional_graph_pilot_runs
        where run_id = v_run_id and status = 'expired'
      ) or exists (
-       select 1 from public.outbound_delivery_control
+     select 1 from public.outbound_delivery_control
        where singleton and (master_enabled or transactional_enabled or cold_enabled)
-     ) then
+     ) or (select pg_catalog.count(*)
+       from public.operational_alert_receipts r
+       join public.operational_alerts a on a.dedupe_key = r.dedupe_key
+       where a.summary_code = 'TRANSACTIONAL_GRAPH_PILOT_EXPIRED'
+         and r.delivery_status = 'pending') <> v_watchdog_alerts_before + 1 then
     raise exception using errcode = '55000', message = 'pilot_watchdog_failed';
   end if;
 end;

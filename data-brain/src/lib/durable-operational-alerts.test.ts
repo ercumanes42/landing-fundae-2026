@@ -89,7 +89,10 @@ test('webhook fault schedules durable retry and replay delivers once without los
 test('SQL queue is private, bounded, recoverable and atomically wired to DB halts', () => {
   const sql = readFileSync(new URL('../../supabase/migrations/20260819230000_durable_operational_alert_delivery.sql', import.meta.url), 'utf8').toLowerCase().replace(/\r\n/g, '\n');
   const schema = readFileSync(new URL('../../supabase/schema.sql', import.meta.url), 'utf8').toLowerCase().replace(/\r\n/g, '\n');
-  const schemaBlock = schema.slice(schema.indexOf('-- 20260819230000_durable_operational_alert_delivery.sql'));
+  const schemaMarker = '-- 20260819230000_durable_operational_alert_delivery.sql';
+  const schemaStart = schema.indexOf(schemaMarker) + schemaMarker.length;
+  const schemaEnd = schema.indexOf('\n-- 20', schemaStart);
+  const schemaBlock = schema.slice(schemaStart, schemaEnd === -1 ? undefined : schemaEnd).trim();
   for (const marker of [
     "default 'not_requested'", "delivery_status in ('not_requested','pending','claimed','delivered','dead_letter')",
     'delivery_attempt_count between 0 and 8', 'for update of r skip locked',
@@ -108,5 +111,5 @@ test('SQL queue is private, bounded, recoverable and atomically wired to DB halt
   assert.equal(schemaBlock.includes('pg_catalog.coalesce'), false);
   assert.equal(sql.includes('pg_catalog.substring'), false);
   assert.equal(schemaBlock.includes('pg_catalog.substring'), false);
-  assert.ok(schemaBlock.includes(sql.trim()), 'schema must mirror the durable alert migration exactly');
+  assert.equal(schemaBlock, sql.trim(), 'schema must mirror the durable alert migration exactly');
 });

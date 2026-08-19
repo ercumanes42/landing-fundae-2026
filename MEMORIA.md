@@ -253,3 +253,12 @@ No afirmar 100%, producción o E2E live hasta: release reproducible; SQL real y 
 - Advisors finales: 0 WARN/ERROR; 41 INFO de RLS deny-all/service-only y 49 INFO de índices sin uso por staging vacío; 0 foreign keys sin índice.
 - QA local vigente: landing 29/29 + E2E 17/17; automation 85/85; Data Brain 324/324 + anti-omisión 1/1, setup 37/37, typecheck/build PASS; gate pack 10/10.
 - G2 continúa `IN_PROGRESS / STAGING_PASS`; no hubo producción, deploy, Graph/HubSpot/Make live ni envíos. Privacidad/Cookies, GitHub CI, NETWORK_G2 y los gates operativos reales siguen pendientes.
+
+## Cierre incremental Graph y campaña condicional — 20 de agosto de 2026
+
+- Se cerró el escape de cohorte del piloto Graph: una reserva no ligada al piloto no puede delegar al autorizador anterior; el sistema apaga master/transaccional/cold y encola alerta durable.
+- Los fallos de lectura/reconciliación de Sent Items quedan `ambiguous_halted`, con evidencia y sin reenvío. Los estados inbound `busy` ya no avanzan el cursor y responden 503 para reintento.
+- El provisioning liga `parent_contact_id` y `conditional_delivery` al hash de fila. Los 104 contactos condicionados se validan contra un principal de la misma campaña/variante y se bloquean tanto en claim como en autorización JIT si el principal ya respondió, concertó reunión o fue detenido.
+- QA local: automation 85/85; Data Brain 327/327 + anti-omisión 1/1; typecheck y build PASS; gate pack Supabase 12/12 y Static PASS.
+- Las migraciones `20260819234300_transactional_graph_pilot_alert_hardening.sql` y `20260819234400_campaign_conditional_delivery_hardening.sql` se aplicaron al staging autorizado. Postcheck y smokes Graph/campaña/comportamiento terminaron PASS; advisors 0 WARN/ERROR; todos los controles outbound quedaron false y el proyecto se confirmó `INACTIVE`.
+- No hubo producción, deploy, Graph/HubSpot/Make live ni envíos. Permanecen como gates externos: privacidad/cookies, GitHub CI, NETWORK_G2, OAuth/App RBAC/mailbox Graph, 4/4 real, sandbox HubSpot, rechecks privados de exclusiones y autorización operativa.

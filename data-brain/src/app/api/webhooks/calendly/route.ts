@@ -25,6 +25,12 @@ export async function POST(request: Request) {
   }
   try {
     const result = await processCalendlyInviteeCreated(input, new SupabaseInboundRepository());
+    if (result.reason === 'busy') {
+      return NextResponse.json(
+        { accepted: false, ...result },
+        { status: 503, headers: { ...headers, 'Retry-After': '5' } },
+      );
+    }
     return NextResponse.json({ accepted: true, ...result }, { headers });
   } catch {
     return NextResponse.json({ accepted: false, reason_code: 'calendly_ingest_unavailable' }, { status: 503, headers });

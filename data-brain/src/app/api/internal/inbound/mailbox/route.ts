@@ -10,7 +10,11 @@ export async function POST(request: Request) {
   if ((request.headers.get('content-length') ?? '0') !== '0') return NextResponse.json({ accepted: false, reason_code: 'invalid_request' }, { status: 400, headers });
   try {
     const result = await executeConfiguredInboundMailboxTick();
-    return NextResponse.json({ accepted: result.state !== 'off', ...result }, { status: result.state === 'off' ? 409 : 200, headers });
+    const status = result.state === 'off' ? 409 : result.state === 'deferred' ? 503 : 200;
+    return NextResponse.json({ accepted: status === 200, ...result }, {
+      status,
+      headers: result.state === 'deferred' ? { ...headers, 'Retry-After': '5' } : headers,
+    });
   } catch {
     return NextResponse.json({ accepted: false, reason_code: 'inbound_mailbox_unavailable' }, { status: 503, headers });
   }

@@ -277,15 +277,39 @@ async function confirmIfSent(
   const sleep = deps.sleep ?? ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
   const attempts = Math.min(30, Math.max(1, deps.sentPollAttempts ?? 10));
   const interval = Math.max(0, deps.pollIntervalMs ?? 2_000);
-  const sentFolderId = await deps.client.getSentItemsFolderId();
+  let sentFolderId: string;
+  try {
+    sentFolderId = await deps.client.getSentItemsFolderId();
+  } catch {
+    return halt(
+      deps, job, finalizeCapabilityHash,
+      'AMBIGUOUS_SENT_CONFIRM_UNAVAILABLE', sha256(immutableId),
+    );
+  }
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
-    const message = await deps.client.getMessage(immutableId);
+    let message;
+    try {
+      message = await deps.client.getMessage(immutableId);
+    } catch {
+      return halt(
+        deps, job, finalizeCapabilityHash,
+        'AMBIGUOUS_SENT_CONFIRM_UNAVAILABLE', sha256(immutableId),
+      );
+    }
     if (message && message.id !== immutableId) {
       return halt(deps, job, finalizeCapabilityHash, 'AMBIGUOUS_ID_MISMATCH', sha256(message.id));
     }
     if (message?.isDraft === false && message.parentFolderId === sentFolderId &&
         message.internetMessageId && message.sentDateTime) {
-      const matches = await deps.client.findByMarker(marker);
+      let matches;
+      try {
+        matches = await deps.client.findByMarker(marker);
+      } catch {
+        return halt(
+          deps, job, finalizeCapabilityHash,
+          'AMBIGUOUS_SENT_CONFIRM_UNAVAILABLE', sha256(immutableId),
+        );
+      }
       if (matches.length !== 1 || matches[0].id !== immutableId) {
         return halt(deps, job, finalizeCapabilityHash, 'AMBIGUOUS_MARKER_MATCHES', String(matches.length));
       }
@@ -299,13 +323,21 @@ async function confirmIfSent(
         packageHmacSha256: deliveryPackage.packageHmacSha256,
         marker,
       }));
-      const confirmed = await deps.repository.confirmSent({
-        reservationId: job.reservation_id,
-        finalizeCapabilityHash,
-        immutableId,
-        internetMessageIdHash,
-        sentItemsEvidenceHash,
-      });
+      let confirmed;
+      try {
+        confirmed = await deps.repository.confirmSent({
+          reservationId: job.reservation_id,
+          finalizeCapabilityHash,
+          immutableId,
+          internetMessageIdHash,
+          sentItemsEvidenceHash,
+        });
+      } catch {
+        return halt(
+          deps, job, finalizeCapabilityHash,
+          'AMBIGUOUS_SENT_CONFIRM_UNAVAILABLE', sha256(immutableId),
+        );
+      }
       if (!confirmed.accepted) {
         return halt(deps, job, finalizeCapabilityHash, 'AMBIGUOUS_CONFIRM_REJECTED', confirmed.reasonCode);
       }
