@@ -39,6 +39,8 @@ const CORE_KEYS = [
   'HUBSPOT_SYNC_ENABLED',
   'OPERATIONAL_OBSERVABILITY_ENABLED',
   'TRANSACTIONAL_PILOT_MODE',
+  'TRANSACTIONAL_GRAPH_PILOT_LIVE_ENABLED',
+  'TRANSACTIONAL_GRAPH_PILOT_TTL_SECONDS',
   'TRANSACTIONAL_PILOT_ALLOWLIST_LEAD_IDS',
   'TRANSACTIONAL_LANDING_ORIGIN',
   'TRANSACTIONAL_WEBINAR_TITLE',
@@ -173,6 +175,7 @@ function validateTransactionalNoSendConfiguration(environment: Environment, issu
     'LEGACY_DELIVERY_RETRY_ENABLED',
     'HUBSPOT_SYNC_ENABLED',
     'OPERATIONAL_OBSERVABILITY_ENABLED',
+    'TRANSACTIONAL_GRAPH_PILOT_LIVE_ENABLED',
   ] as const) {
     if (valueOf(environment, key) !== 'false') {
       issues.push({
@@ -187,6 +190,14 @@ function validateTransactionalNoSendConfiguration(environment: Environment, issu
       severity: 'p0',
       key: 'TRANSACTIONAL_PILOT_MODE',
       message: 'TRANSACTIONAL_PILOT_MODE debe ser exactamente true durante el piloto.',
+    });
+  }
+  const pilotTtl = Number(valueOf(environment, 'TRANSACTIONAL_GRAPH_PILOT_TTL_SECONDS'));
+  if (!Number.isSafeInteger(pilotTtl) || pilotTtl < 120 || pilotTtl > 900) {
+    issues.push({
+      severity: 'p0',
+      key: 'TRANSACTIONAL_GRAPH_PILOT_TTL_SECONDS',
+      message: 'TRANSACTIONAL_GRAPH_PILOT_TTL_SECONDS debe ser un entero entre 120 y 900.',
     });
   }
   if (valueOf(environment, 'MAKE_WEBHOOK_URL')) {

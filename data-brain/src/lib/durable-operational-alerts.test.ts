@@ -87,8 +87,8 @@ test('webhook fault schedules durable retry and replay delivers once without los
 });
 
 test('SQL queue is private, bounded, recoverable and atomically wired to DB halts', () => {
-  const sql = readFileSync(new URL('../../supabase/migrations/20260819230000_durable_operational_alert_delivery.sql', import.meta.url), 'utf8').toLowerCase();
-  const schema = readFileSync(new URL('../../supabase/schema.sql', import.meta.url), 'utf8').toLowerCase();
+  const sql = readFileSync(new URL('../../supabase/migrations/20260819230000_durable_operational_alert_delivery.sql', import.meta.url), 'utf8').toLowerCase().replace(/\r\n/g, '\n');
+  const schema = readFileSync(new URL('../../supabase/schema.sql', import.meta.url), 'utf8').toLowerCase().replace(/\r\n/g, '\n');
   const schemaBlock = schema.slice(schema.indexOf('-- 20260819230000_durable_operational_alert_delivery.sql'));
   for (const marker of [
     "default 'not_requested'", "delivery_status in ('not_requested','pending','claimed','delivered','dead_letter')",

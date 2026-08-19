@@ -65,6 +65,7 @@ test('keeps every operational decision fail-closed in the controlled copy', () =
     'hard bounce status': 'PENDING_RECHECK',
     'suppression status': 'PENDING_RECHECK',
     'duplicate status': 'CLEAR',
+    'technical evidence sha256': '',
     'campaign authorization': 'PENDING',
     'eligibility status': 'PENDING_TECHNICAL_GATES',
   });

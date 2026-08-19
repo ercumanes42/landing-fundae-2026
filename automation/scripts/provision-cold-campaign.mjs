@@ -4,10 +4,13 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { readCampaignWorkbook, text, toDate, validateCampaignRows, value } from './campaign-workbook.mjs';
+import { TECHNICAL_EVIDENCE_FIELD } from './campaign-materialization.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const CONTROLLED_WORKBOOK = path.resolve(HERE, '../../data-private/Base_FUNDAE_2026_CONTROLADA_OFF_V1.xlsx');
 export const CONTROLLED_REPORT = path.resolve(HERE, '../campaign-reports/FUNDAE_2026_CONTROLLED_COPY_REPORT.json');
+export const MATERIALIZED_WORKBOOK = path.resolve(HERE, '../../data-private/Base_FUNDAE_2026_MATERIALIZADA_OFF_V1.xlsx');
+export const MATERIALIZED_REPORT = path.resolve(HERE, '../../data-private/FUNDAE_2026_MATERIALIZED_COPY_REPORT.json');
 export const EXPECTED_CONTACTS = 939;
 export const EXPECTED_PAYLOADS = 4695;
 export const EXPECTED_LOTS = { A: 235, B: 235, C: 235, D: 234 };
@@ -63,6 +66,9 @@ export function evaluateProvisioningGates(summary, report, structuralOk = true) 
   if (!onlyBucket(summary.readiness, 'OK', EXPECTED_CONTACTS)) gates.push('VALIDATION_NOT_OK');
   const technical = policy.technicalStatuses || {};
   if (!Object.values(technical).every((counts) => onlyBucket(counts, 'CLEAR', EXPECTED_CONTACTS))) gates.push('TECHNICAL_EXCLUSIONS_NOT_CLEAR');
+  if (!HASH.test(policy.technicalEvidenceSha256 || '') ||
+      !HASH.test(report.technical_evidence_sha256 || '') ||
+      policy.technicalEvidenceSha256 !== report.technical_evidence_sha256) gates.push('TECHNICAL_EVIDENCE_MISSING_OR_DRIFT');
   if (!onlyBucket(policy.authorizations, 'AUTHORIZED', EXPECTED_CONTACTS)) gates.push('CAMPAIGN_NOT_AUTHORIZED');
   return [...new Set(gates)];
 }
@@ -70,7 +76,9 @@ export function evaluateProvisioningGates(summary, report, structuralOk = true) 
 export function analyzeControlledWorkbook({ workbookPath = CONTROLLED_WORKBOOK, reportPath = CONTROLLED_REPORT } = {}) {
   const resolvedWorkbook = path.resolve(workbookPath);
   const resolvedReport = path.resolve(reportPath);
-  if (resolvedWorkbook !== CONTROLLED_WORKBOOK || resolvedReport !== CONTROLLED_REPORT) throw new Error('CONTROLLED_INPUT_ONLY');
+  const isControlled = resolvedWorkbook === CONTROLLED_WORKBOOK && resolvedReport === CONTROLLED_REPORT;
+  const isMaterialized = resolvedWorkbook === MATERIALIZED_WORKBOOK && resolvedReport === MATERIALIZED_REPORT;
+  if (!isControlled && !isMaterialized) throw new Error('CONTROLLED_INPUT_ONLY');
   const report = JSON.parse(fs.readFileSync(resolvedReport, 'utf8'));
   if (!HASH.test(report.controlled_copy_sha256 || '') || !HASH.test(report.logical_dataset_sha256 || '')) throw new Error('REPORT_INVALID');
   const observedHash = fileHash(resolvedWorkbook);
@@ -87,6 +95,7 @@ export function analyzeControlledWorkbook({ workbookPath = CONTROLLED_WORKBOOK, 
       reportVersion: report.report_version,
       controlledCopySha256: report.controlled_copy_sha256,
       logicalDatasetSha256: report.logical_dataset_sha256,
+      technicalEvidenceSha256: report.technical_evidence_sha256 || null,
     },
     summary: {
       observedWorkbookSha256: observedHash,
@@ -94,6 +103,7 @@ export function analyzeControlledWorkbook({ workbookPath = CONTROLLED_WORKBOOK, 
       payloads: structural.summary.optOutCoverage.totalBodies,
       lots: structural.summary.lots,
       logicalDatasetSha256: structural.summary.logicalDatasetSha256,
+      technicalEvidenceSha256: structural.summary.policyCoverage.technicalEvidenceSha256,
     },
   };
 }
@@ -110,7 +120,7 @@ function canonicalRowHash(row) {
     row.recipient_email, row.subject, row.html_body, row.payload_sha256, row.token_hash,
     row.validation_status, row.unsubscribe_status, row.opposition_status,
     row.hard_bounce_status, row.suppression_status, row.duplicate_status,
-    row.campaign_authorization, row.company_size,
+    row.campaign_authorization, row.company_size, row.technical_evidence_sha256,
   ];
   return sha256(fields.join('\x1f'));
 }
@@ -161,7 +171,9 @@ export function prepareProvisionRows(rows, { unsubscribeSecret, unsubscribeBaseU
         duplicate_status: text(source, 'duplicate status').toUpperCase(),
         campaign_authorization: text(source, 'campaign authorization').toUpperCase(),
         company_size: text(source, 'tipo de empresa'),
+        technical_evidence_sha256: text(source, TECHNICAL_EVIDENCE_FIELD),
       };
+      if (!HASH.test(row.technical_evidence_sha256)) throw new Error('APPLY_TECHNICAL_EVIDENCE_INVALID');
       row.row_sha256 = canonicalRowHash(row);
       provisionRows.push(row);
     }
@@ -170,18 +182,21 @@ export function prepareProvisionRows(rows, { unsubscribeSecret, unsubscribeBaseU
   return provisionRows;
 }
 
-export function buildProvisionManifest(rows, logicalDatasetSha256, batchSize = 500) {
-  if (rows.length !== EXPECTED_PAYLOADS || batchSize < 1 || batchSize > 500 || !HASH.test(logicalDatasetSha256 || '')) throw new Error('APPLY_ROW_COUNT_INVALID');
+export function buildProvisionManifest(rows, logicalDatasetSha256, technicalEvidenceSha256, batchSize = 500) {
+  if (rows.length !== EXPECTED_PAYLOADS || batchSize < 1 || batchSize > 500 ||
+      !HASH.test(logicalDatasetSha256 || '') || !HASH.test(technicalEvidenceSha256 || '')) throw new Error('APPLY_ROW_COUNT_INVALID');
   const campaignExternalId = rows[0]?.campaign_external_id;
-  if (!campaignExternalId || rows.some((row) => row.campaign_external_id !== campaignExternalId || !HASH.test(row.row_sha256 || ''))) throw new Error('APPLY_MANIFEST_INPUT_INVALID');
+  if (!campaignExternalId || rows.some((row) => row.campaign_external_id !== campaignExternalId ||
+      row.technical_evidence_sha256 !== technicalEvidenceSha256 || !HASH.test(row.row_sha256 || ''))) throw new Error('APPLY_MANIFEST_INPUT_INVALID');
   const rowHashes = rows.map((row) => row.row_sha256).sort();
-  const manifestHash = sha256(`cold-provision-v2\x1f${logicalDatasetSha256}\x1f${campaignExternalId}\x1f${rowHashes.join('\n')}`);
+  const schemaVersion = 'cold-provision-v3';
+  const manifestHash = sha256(`${schemaVersion}\x1f${logicalDatasetSha256}\x1f${technicalEvidenceSha256}\x1f${campaignExternalId}\x1f${rowHashes.join('\n')}`);
   const batches = [];
   for (let index = 0; index < rows.length; index += batchSize) {
     const batchRows = rows.slice(index, index + batchSize);
     batches.push({ index: batches.length, rows: batchRows, hash: sha256(batchRows.map((row) => row.row_sha256).sort().join('\n')) });
   }
-  return { manifestHash, logicalDatasetSha256, campaignExternalId, batchCount: batches.length, rows: rows.length, batches };
+  return { schemaVersion, manifestHash, logicalDatasetSha256, technicalEvidenceSha256, campaignExternalId, batchCount: batches.length, rows: rows.length, batches };
 }
 
 function constantHash(value) {
@@ -204,8 +219,13 @@ async function rpc(fetchImpl, url, serviceKey, name, body) {
 
 export async function applyProvisionManifest(input, fetchImpl = fetch) {
   const { manifest, campaignExternalId, actorHash, authorizationToken, supabaseUrl, serviceKey } = input;
+  if (manifest.schemaVersion !== 'cold-provision-v3' || !HASH.test(manifest.technicalEvidenceSha256 || '')) {
+    throw new Error('APPLY_MANIFEST_V3_REQUIRED');
+  }
   if (input.applyAck !== APPLY_ACK || input.provisioningEnabled !== 'true' || !ACTOR.test(actorHash || '') ||
       manifest.campaignExternalId !== campaignExternalId || !HASH.test(manifest.logicalDatasetSha256 || '') ||
+      manifest.batches.some((batch) => batch.rows.some((row) =>
+        row.technical_evidence_sha256 !== manifest.technicalEvidenceSha256)) ||
       Buffer.byteLength(authorizationToken || '', 'utf8') < 32 || !/^https:\/\//.test(supabaseUrl || '') ||
       Buffer.byteLength(serviceKey || '', 'utf8') < 32) throw new Error('APPLY_DOUBLE_GATE_CLOSED');
   const authorizationHash = constantHash(authorizationToken);
@@ -223,8 +243,11 @@ export async function applyProvisionManifest(input, fetchImpl = fetch) {
   });
 }
 
-export async function runProvisioner({ apply = false, fetchImpl = fetch } = {}) {
-  const analysis = analyzeControlledWorkbook();
+export async function runProvisioner({ apply = false, useMaterialized = false, fetchImpl = fetch } = {}) {
+  const materialized = apply || useMaterialized;
+  const analysis = analyzeControlledWorkbook(materialized
+    ? { workbookPath: MATERIALIZED_WORKBOOK, reportPath: MATERIALIZED_REPORT }
+    : undefined);
   const publicResult = { mode: apply ? 'apply' : 'dry-run', ready: analysis.ready, gates: analysis.gates, summary: analysis.summary };
   if (!analysis.ready) return { ...publicResult, exitCode: 2 };
   if (!apply) return { ...publicResult, exitCode: 0 };
@@ -233,7 +256,7 @@ export async function runProvisioner({ apply = false, fetchImpl = fetch } = {}) 
     unsubscribeBaseUrl: process.env.UNSUBSCRIBE_PUBLIC_BASE_URL || '',
     leadHashSecret: process.env.LEAD_HASH_SECRET || '',
   });
-  const manifest = buildProvisionManifest(rows, analysis.report.logicalDatasetSha256);
+  const manifest = buildProvisionManifest(rows, analysis.report.logicalDatasetSha256, analysis.report.technicalEvidenceSha256);
   await applyProvisionManifest({
     manifest, campaignExternalId: text(analysis.rows[0], 'campaign id'),
     actorHash: process.env.CAMPAIGN_PROVISION_ACTOR_HASH || '',
@@ -242,11 +265,15 @@ export async function runProvisioner({ apply = false, fetchImpl = fetch } = {}) 
     provisioningEnabled: process.env.COLD_CAMPAIGN_PROVISIONING_ENABLED || '',
     supabaseUrl: process.env.SUPABASE_URL || '', serviceKey: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
   }, fetchImpl);
-  return { ...publicResult, manifest: { hash: manifest.manifestHash, batches: manifest.batchCount, rows: manifest.rows }, exitCode: 0 };
+  return { ...publicResult, manifest: { schemaVersion: manifest.schemaVersion, hash: manifest.manifestHash, technicalEvidenceSha256: manifest.technicalEvidenceSha256, batches: manifest.batchCount, rows: manifest.rows }, exitCode: 0 };
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const result = await runProvisioner({ apply: process.argv.slice(2).includes('--apply') });
+  const args = process.argv.slice(2);
+  const result = await runProvisioner({
+    apply: args.includes('--apply'),
+    useMaterialized: args.includes('--materialized'),
+  });
   console.log(JSON.stringify(result, null, 2));
   process.exitCode = result.exitCode;
 }

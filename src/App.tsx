@@ -50,7 +50,12 @@ export default function App() {
   }, []);
 
   if (legalKind) {
-    return <LegalPage kind={legalKind} />;
+    return (
+      <>
+        <CookieConsentBanner />
+        <LegalPage kind={legalKind} />
+      </>
+    );
   }
 
   return (

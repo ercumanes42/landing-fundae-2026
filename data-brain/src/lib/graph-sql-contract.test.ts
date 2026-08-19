@@ -7,6 +7,9 @@ const migration = readFileSync(
   'utf8',
 );
 const schema = readFileSync(new URL('../../supabase/schema.sql', import.meta.url), 'utf8');
+const pilotWrapperStart = schema.indexOf('-- Exact four-resource Graph pilot scope');
+assert.notEqual(pilotWrapperStart, -1, 'missing transactional pilot wrapper boundary');
+const graphFoundationSchema = schema.slice(0, pilotWrapperStart);
 
 function extractFunction(sql: string, name: string): string {
   const start = sql.lastIndexOf(`create or replace function public.${name}(`);
@@ -72,7 +75,7 @@ test('authorize exposes only the four-argument forward boundary', () => {
 
 test('transactional recovery resumes one existing reservation without a second draft', () => {
   const claim = extractFunction(migration, 'claim_transactional_graph_dispatch');
-  assert.equal(claim, extractFunction(schema, 'claim_transactional_graph_dispatch'));
+  assert.equal(claim, extractFunction(graphFoundationSchema, 'claim_transactional_graph_dispatch'));
   assert.match(claim, /status = 'reserved' and reservation_id is not null/);
   assert.match(claim, /claim_expires_at <= v_now/);
   assert.match(claim, /for update skip locked/);
@@ -92,7 +95,7 @@ test('transactional recovery resumes one existing reservation without a second d
 
 test('suppressed draft finalization is evidence-bound and maps to a safe dispatch terminal', () => {
   const finalize = extractFunction(migration, 'finalize_transactional_graph_dispatch');
-  assert.equal(finalize, extractFunction(schema, 'finalize_transactional_graph_dispatch'));
+  assert.equal(finalize, extractFunction(graphFoundationSchema, 'finalize_transactional_graph_dispatch'));
   assert.match(finalize, /'suppressed_before_send', 'deferred'/);
   assert.match(finalize, /when 'suppressed_before_send' then 'definitive_failed'/);
   assert.match(finalize, /v_outbox\.draft_neutralized_at is null/);

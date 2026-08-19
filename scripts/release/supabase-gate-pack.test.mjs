@@ -15,8 +15,10 @@ const sqlFiles = [
   'FUNDAE_RELEASE_PRECHECK_20260819.sql',
   'FUNDAE_RELEASE_POSTCHECK_20260819.sql',
   'FUNDAE_RELEASE_BEHAVIOR_SMOKE_20260819.sql',
+  'TRANSACTIONAL_GRAPH_PILOT_SMOKE_20260819.sql',
   'FUNDAE_RELEASE_FORWARD_ROLLBACK_20260819.sql',
   'FUNDAE_RELEASE_POST_ROLLBACK_20260819.sql',
+  'CAMPAIGN_SUPPRESSION_SMOKE_20260819.sql',
 ];
 const noopMigrationName = '20260819072840_cold_campaign_scheduler.sql';
 const noopMigrationPath = join(sqlRoot, 'migrations', noopMigrationName);
@@ -39,7 +41,19 @@ const migrationFiles = [
   '20260819190000_journey_retention_control.sql', '20260819200000_cold_campaign_provisioning.sql',
   '20260819210000_release_safety_barriers.sql', '20260819220000_advisor_index_hardening.sql',
   '20260819230000_durable_operational_alert_delivery.sql',
+  '20260819233000_transactional_graph_pilot_scope.sql',
+  '20260819234000_campaign_terminal_suppression_hardening.sql',
+  '20260819234100_campaign_contact_suppression_insert_gate.sql',
+  '20260819234200_transactional_graph_pilot_authorization_fk_index.sql',
 ];
+
+function schemaMigrationMirror(schema, migrationName) {
+  const marker = `-- ${migrationName}`;
+  const start = schema.lastIndexOf(marker);
+  assert.notEqual(start, -1, `missing schema marker ${marker}`);
+  const nextMarker = schema.indexOf('\n-- 20', start + marker.length);
+  return schema.slice(start + marker.length, nextMarker === -1 ? undefined : nextMarker).trim();
+}
 
 function runStaticFixture(noopContent) {
   const fixtureRoot = mkdtempSync(join(tmpdir(), 'fundae-supabase-gates-'));
@@ -95,9 +109,22 @@ test('the consolidated SQL gate pack is bounded and explicit', () => {
     /jsonb_build_object\(\s*'row_sha256',\s*pg_catalog\.repeat\('6',64\)/i,
   );
   assert.doesNotMatch(behaviorSmoke, /'FUNDAE_STAGING_SMOKE',\s*'\[\]'::jsonb/i);
-  assert.match(readFileSync(join(sqlRoot, sqlFiles[3]), 'utf8'), /Preserves rows and evidence/i);
-  assert.doesNotMatch(readFileSync(join(sqlRoot, sqlFiles[3]), 'utf8'), /\bdelete\s+from\b/i);
-  assert.doesNotMatch(readFileSync(join(sqlRoot, sqlFiles[3]), 'utf8'), /\bdrop\s+(table|schema)\b/i);
+  const pilotSmoke = readFileSync(join(sqlRoot, sqlFiles[3]), 'utf8');
+  assert.match(pilotSmoke, /pilot_scope_escape_not_halted/);
+  assert.match(pilotSmoke, /pilot_ledger_redaction_failed/);
+  assert.match(pilotSmoke, /rollback;\s*$/i);
+  assert.match(readFileSync(join(sqlRoot, sqlFiles[4]), 'utf8'), /Preserves rows and evidence/i);
+  assert.doesNotMatch(readFileSync(join(sqlRoot, sqlFiles[4]), 'utf8'), /\bdelete\s+from\b/i);
+  assert.doesNotMatch(readFileSync(join(sqlRoot, sqlFiles[4]), 'utf8'), /\bdrop\s+(table|schema)\b/i);
+  const suppressionSmoke = readFileSync(join(sqlRoot, sqlFiles[6]), 'utf8');
+  assert.match(suppressionSmoke, /fundae_release_campaign_suppression_smoke_ok/);
+  assert.match(suppressionSmoke, /fundae_release_campaign_provision_v3_smoke_ok/);
+  assert.match(suppressionSmoke, /campaign_contact_suppressed/);
+  assert.match(suppressionSmoke, /campaign_provision_v2_manifest_was_accepted/);
+  assert.match(suppressionSmoke, /campaign_provision_manifest_without_evidence_was_accepted/);
+  assert.match(suppressionSmoke, /rollback;\s*$/i);
+  assert.doesNotMatch(suppressionSmoke, /master_enabled\s*=\s*true/i);
+  assert.doesNotMatch(suppressionSmoke, /enabled\s*=\s*true/i);
 });
 
 test('the PowerShell runner is fail-closed and never embeds credentials', () => {
@@ -113,6 +140,104 @@ test('the PowerShell runner is fail-closed and never embeds credentials', () => 
   assert.doesNotMatch(runner, /PGPASSWORD\s*=/i);
   assert.doesNotMatch(runner, /postgres(?:ql)?:\/\//i);
   for (const migration of migrationFiles) assert.match(runner, new RegExp(migration.replaceAll('.', '\\.'), 'u'));
+});
+
+test('the transactional Graph pilot SQL is exact-scoped, redacted and mirrored', () => {
+  const migrationName = '20260819233000_transactional_graph_pilot_scope.sql';
+  const migration = readFileSync(join(sqlRoot, 'migrations', migrationName), 'utf8').replaceAll('\r\n', '\n').trim();
+  const schema = readFileSync(join(sqlRoot, 'schema.sql'), 'utf8').replaceAll('\r\n', '\n');
+  assert.equal(schemaMigrationMirror(schema, migrationName), migration);
+  for (const markerText of [
+    'preview_transactional_graph_pilot', 'start_transactional_graph_pilot',
+    'finish_transactional_graph_pilot', 'read_transactional_graph_pilot_ledger',
+    'transactional_graph_pilot_authorization_grants',
+    'register_transactional_graph_pilot_grant',
+    'enforce_transactional_graph_pilot_deadline',
+    'fundae-transactional-graph-pilot-watchdog',
+    'authorization_required',
+    'consumed_at is null and revoked_at is null',
+    'claim_transactional_graph_dispatch_pre_pilot_20260819',
+    'reserve_claimed_transactional_graph_dispatch_pre_pilot_20260819',
+    'authorize_graph_draft_send_pre_pilot_20260819',
+    'pilot_scope_violation', 'draft_neutralization_required',
+    "l.form_type in ('calculator', 'interactive_checklist', 'checklist', 'webinar')",
+    'g.sent_items_evidence_hash = d.outcome_evidence_hash',
+    'pg_catalog.count(distinct g.graph_draft_immutable_id)',
+    "'draft_immutable_id_hash'", "'internet_message_id_hash'", "'evidence_hash'",
+  ]) assert.match(migration, new RegExp(markerText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.doesNotMatch(migration, /pg_catalog\.(?:coalesce|substring)\b/i);
+  assert.doesNotMatch(migration, /required_authorization_hash|fundae-transactional-graph-pilot:v1:/i);
+  assert.match(migration, /revoke all privileges on table public\.transactional_graph_pilot_runs\s+from public, anon, authenticated, service_role/i);
+  assert.match(migration, /revoke all privileges on table\s+fundae_private\.transactional_graph_pilot_authorization_grants\s+from public, anon, authenticated, service_role/i);
+  assert.match(migration, /revoke execute on function fundae_private\.register_transactional_graph_pilot_grant\([\s\S]*?service_role/i);
+  assert.match(migration, /select cron\.schedule\([\s\S]*?fundae-transactional-graph-pilot-watchdog[\s\S]*?enforce_transactional_graph_pilot_deadline/i);
+  assert.match(migration, /grant execute on function public\.read_transactional_graph_pilot_ledger\(text,text\)\s+to service_role/i);
+  const ledger = migration.slice(migration.indexOf('create or replace function public.read_transactional_graph_pilot_ledger('), migration.indexOf('alter table public.transactional_graph_pilot_runs enable row level security;'));
+  assert.doesNotMatch(ledger, /'submission_id'|'allowed_lead_id'|'graph_draft_immutable_id'\s*,/i);
+});
+
+test('terminal campaign suppression hardening is centralized, private and mirrored', () => {
+  const migrationName = '20260819234000_campaign_terminal_suppression_hardening.sql';
+  const migration = readFileSync(join(sqlRoot, 'migrations', migrationName), 'utf8').replaceAll('\r\n', '\n').trim();
+  const schema = readFileSync(join(sqlRoot, 'schema.sql'), 'utf8').replaceAll('\r\n', '\n');
+  assert.equal(schemaMigrationMirror(schema, migrationName), migration);
+  for (const markerText of [
+    'campaign_events_terminal_suppression',
+    'campaign_contacts_suppression_gate',
+    'enforce_campaign_terminal_suppression',
+    'reject_suppressed_campaign_contact',
+    "new.event_name not in ('unsubscribe', 'bounce_hard', 'opposition')",
+    'insert into public.campaign_suppressions',
+    'where email_hash = v_suppression.identity_hash',
+    'where identity_hash = new.email_hash',
+    'pg_advisory_xact_lock',
+    'cold_campaign_v2_state_present',
+    'technical_evidence_hash',
+    "hash_domain = 'cold-provision-v3'",
+    "v_row->>'technical_evidence_sha256'",
+    "'cold-provision-v3',v_manifest.logical_dataset_hash",
+    'v_manifest.technical_evidence_hash,v_manifest.campaign_external_id',
+    'provision_technical_evidence_invalid',
+  ]) assert.ok(migration.includes(markerText), `missing suppression contract: ${markerText}`);
+  assert.match(migration, /security definer\s+set search_path = ''/gi);
+  assert.match(migration, /revoke execute on function fundae_private\.enforce_campaign_terminal_suppression\(\)[\s\S]*?service_role/);
+  const v3Apply = migration.slice(
+    migration.lastIndexOf('create or replace function public.apply_cold_campaign_provision_batch('),
+    migration.lastIndexOf('create or replace function public.finalize_cold_campaign_provision('),
+  );
+  const v3Finalize = migration.slice(
+    migration.lastIndexOf('create or replace function public.finalize_cold_campaign_provision('),
+    migration.lastIndexOf('-- Applying the contract never activates outbound or provisioning.'),
+  );
+  assert.doesNotMatch(v3Apply, /cold-provision-v2/i);
+  assert.doesNotMatch(v3Finalize, /cold-provision-v2/i);
+  assert.ok(
+    v3Apply.indexOf("v_computed_row_hash<>v_row->>'row_sha256'") <
+      v3Apply.indexOf("'reason_code','batch_replayed'"),
+    'v3 must recompute each row before accepting a replay',
+  );
+  assert.doesNotMatch(migration, /master_enabled\s*=\s*true|cold_enabled\s*=\s*true|enabled\s*=\s*true/i);
+});
+
+test('suppressed campaign identities are rejected on every new contact insert', () => {
+  const migrationName = '20260819234100_campaign_contact_suppression_insert_gate.sql';
+  const migration = readFileSync(join(sqlRoot, 'migrations', migrationName), 'utf8').replaceAll('\r\n', '\n').trim();
+  const schema = readFileSync(join(sqlRoot, 'schema.sql'), 'utf8').replaceAll('\r\n', '\n');
+  assert.equal(schemaMigrationMirror(schema, migrationName), migration);
+  assert.match(migration, /if tg_op <> 'INSERT' and/i);
+  assert.match(migration, /where identity_hash = new\.email_hash/i);
+  assert.match(migration, /message = 'campaign_contact_suppressed'/i);
+  assert.match(migration, /security definer[\s\S]*?set search_path = ''/i);
+  assert.match(migration, /revoke execute[\s\S]*?service_role/i);
+});
+
+test('pilot authorization foreign key has an exact covering index', () => {
+  const migrationName = '20260819234200_transactional_graph_pilot_authorization_fk_index.sql';
+  const migration = readFileSync(join(sqlRoot, 'migrations', migrationName), 'utf8').replaceAll('\r\n', '\n').trim();
+  const schema = readFileSync(join(sqlRoot, 'schema.sql'), 'utf8').replaceAll('\r\n', '\n');
+  assert.equal(schemaMigrationMirror(schema, migrationName), migration);
+  assert.match(migration, /transactional_graph_pilot_authorization_fk_idx/i);
+  assert.match(migration, /transactional_graph_pilot_runs \(authorization_hash\)/i);
 });
 
 test('the npm entrypoint selects a platform PowerShell without embedding credentials', () => {

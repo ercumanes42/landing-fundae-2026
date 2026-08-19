@@ -6,12 +6,6 @@ import { campaignFilePath, readCampaignWorkbook, validateCampaignRows } from './
 import { injectOptOutFooter } from './unsubscribe-operations.mjs';
 
 const BODY_COLUMNS = [1, 2, 3, 4, 5].map((step) => `email${step} cuerpo html`);
-const LEGAL_EVIDENCE_HEADERS = [
-  'base_juridica_envio',
-  'origen_datos',
-  'referencia_evidencia',
-  'fecha_evidencia',
-];
 
 function normalizeHeader(value) {
   return String(value ?? '')
@@ -66,21 +60,6 @@ const workbook = XLSX.readFile(sourcePath, { cellDates: true });
 const sheet = workbook.Sheets[source.sheetName];
 const grid = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: true });
 const indexes = new Map((grid[0] || []).map((header, index) => [normalizeHeader(header), index]));
-const legalColumnsAdded = [];
-let nextColumnIndex = (grid[0] || []).length;
-for (const header of LEGAL_EVIDENCE_HEADERS) {
-  const normalized = normalizeHeader(header);
-  if (indexes.has(normalized)) continue;
-  setTextCell(sheet, 0, nextColumnIndex, header);
-  indexes.set(normalized, nextColumnIndex);
-  legalColumnsAdded.push(header);
-  nextColumnIndex += 1;
-}
-if (legalColumnsAdded.length > 0) {
-  const sheetRange = XLSX.utils.decode_range(sheet['!ref'] || 'A1:A1');
-  sheetRange.e.c = Math.max(sheetRange.e.c, nextColumnIndex - 1);
-  sheet['!ref'] = XLSX.utils.encode_range(sheetRange);
-}
 for (const column of ['contact id', ...BODY_COLUMNS]) {
   if (!indexes.has(column)) throw new Error(`Missing required operational column: ${column}`);
 }
@@ -110,12 +89,8 @@ try {
   XLSX.writeFile(workbook, temporaryWorkbook, { compression: true });
   const prepared = readCampaignWorkbook(temporaryWorkbook);
   const preparedValidation = validateCampaignRows(prepared.rows, { requireReady: false });
-  if (
-    !preparedValidation.ok ||
-    preparedValidation.summary.optOutCoverage.missingBodies !== 0 ||
-    preparedValidation.summary.legalBasisCoverage.missingColumns.length !== 0
-  ) {
-    throw new Error('Operational copy failed structural, opt-out or legal-column validation');
+  if (!preparedValidation.ok || preparedValidation.summary.optOutCoverage.missingBodies !== 0) {
+    throw new Error('Operational copy failed structural or opt-out validation');
   }
   if (fileHash(sourcePath) !== sourceHashBefore) {
     throw new Error('Safety check failed: the immutable source workbook changed');
@@ -126,8 +101,6 @@ try {
     mode: 'placeholder',
     contacts,
     updatedBodies,
-    legalColumnsAdded,
-    legalBasisCoverage: preparedValidation.summary.legalBasisCoverage,
     optOutCoverage: preparedValidation.summary.optOutCoverage,
     sourceUnchanged: true,
     outputFile: path.basename(outputPath),

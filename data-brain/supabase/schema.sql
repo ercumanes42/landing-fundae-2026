@@ -8068,3 +8068,1807 @@ grant execute on function public.enqueue_operational_alert_delivery(text,text,te
   to service_role;
 
 commit;
+
+-- 20260819233000_transactional_graph_pilot_scope.sql
+-- Exact four-resource Graph pilot scope. The migration itself leaves every lane OFF.
+begin;
+set local lock_timeout = '10s';
+set local statement_timeout = '10min';
+create extension if not exists pg_cron;
+
+create table if not exists public.transactional_graph_pilot_runs (
+  run_id text primary key check (run_id ~ '^[A-Za-z0-9][A-Za-z0-9_.:-]{7,63}$'),
+  actor_hash text not null check (actor_hash ~ '^[a-f0-9]{64}$'),
+  authorization_hash text not null check (authorization_hash ~ '^[a-f0-9]{64}$'),
+  approval_evidence_hash text not null check (approval_evidence_hash ~ '^[a-f0-9]{64}$'),
+  allowed_lead_id text not null check (allowed_lead_id ~ '^[a-f0-9]{64}$'),
+  submission_ids text[] not null,
+  submission_set_hash text not null check (submission_set_hash ~ '^[a-f0-9]{64}$'),
+  status text not null check (status in ('active', 'completed', 'halted', 'expired')),
+  expires_at timestamptz not null,
+  started_at timestamptz not null,
+  finished_at timestamptz,
+  finish_evidence_hash text check (
+    finish_evidence_hash is null or finish_evidence_hash ~ '^[a-f0-9]{64}$'
+  ),
+  created_at timestamptz not null default pg_catalog.clock_timestamp(),
+  updated_at timestamptz not null default pg_catalog.clock_timestamp(),
+  check (pg_catalog.array_length(submission_ids, 1) = 4),
+  check (
+    (status = 'active' and finished_at is null and finish_evidence_hash is null) or
+    (status <> 'active' and finished_at is not null and finish_evidence_hash is not null)
+  )
+);
+
+create unique index if not exists transactional_graph_pilot_one_active_idx
+  on public.transactional_graph_pilot_runs ((status)) where status = 'active';
+create index if not exists transactional_graph_pilot_expiry_idx
+  on public.transactional_graph_pilot_runs (expires_at) where status = 'active';
+
+create table if not exists fundae_private.transactional_graph_pilot_authorization_grants (
+  authorization_nonce_hash text primary key check (
+    authorization_nonce_hash ~ '^[a-f0-9]{64}$'
+  ),
+  authorized_run_id text not null unique check (
+    authorized_run_id ~ '^[A-Za-z0-9][A-Za-z0-9_.:-]{7,63}$'
+  ),
+  actor_hash text not null check (actor_hash ~ '^[a-f0-9]{64}$'),
+  allowed_lead_id text not null check (allowed_lead_id ~ '^[a-f0-9]{64}$'),
+  submission_set_hash text not null check (submission_set_hash ~ '^[a-f0-9]{64}$'),
+  max_ttl_seconds integer not null check (max_ttl_seconds between 120 and 900),
+  expires_at timestamptz not null,
+  approval_evidence_hash text not null check (
+    approval_evidence_hash ~ '^[a-f0-9]{64}$'
+  ),
+  consumed_at timestamptz,
+  consumed_run_id text unique,
+  revoked_at timestamptz,
+  revocation_evidence_hash text check (
+    revocation_evidence_hash is null or revocation_evidence_hash ~ '^[a-f0-9]{64}$'
+  ),
+  created_at timestamptz not null default pg_catalog.clock_timestamp(),
+  updated_at timestamptz not null default pg_catalog.clock_timestamp(),
+  check ((consumed_at is null) = (consumed_run_id is null)),
+  check ((revoked_at is null) = (revocation_evidence_hash is null)),
+  check (consumed_at is null or revoked_at is null)
+);
+create index if not exists transactional_graph_pilot_grant_expiry_idx
+  on fundae_private.transactional_graph_pilot_authorization_grants (expires_at)
+  where consumed_at is null and revoked_at is null;
+alter table public.transactional_graph_pilot_runs
+  drop constraint if exists transactional_graph_pilot_authorization_fk;
+alter table public.transactional_graph_pilot_runs
+  add constraint transactional_graph_pilot_authorization_fk
+  foreign key (authorization_hash)
+  references fundae_private.transactional_graph_pilot_authorization_grants(
+    authorization_nonce_hash
+  ) on delete restrict;
+
+alter table public.transactional_dispatch_outbox
+  add column if not exists pilot_run_id text;
+alter table public.transactional_dispatch_outbox
+  drop constraint if exists transactional_dispatch_pilot_run_fk;
+alter table public.transactional_dispatch_outbox
+  add constraint transactional_dispatch_pilot_run_fk foreign key (pilot_run_id)
+  references public.transactional_graph_pilot_runs(run_id) on delete restrict;
+create index if not exists transactional_dispatch_pilot_run_idx
+  on public.transactional_dispatch_outbox (pilot_run_id, status, claim_expires_at, created_at)
+  where pilot_run_id is not null;
+
+create or replace function public.enforce_transactional_graph_pilot_binding()
+returns trigger language plpgsql security definer set search_path = ''
+as $$
+begin
+  if tg_op = 'UPDATE' and old.pilot_run_id is not null and
+     new.pilot_run_id is distinct from old.pilot_run_id then
+    raise exception using errcode = '23514', message = 'pilot_binding_immutable';
+  end if;
+  if new.pilot_run_id is null or
+     (tg_op = 'UPDATE' and new.pilot_run_id is not distinct from old.pilot_run_id) then
+    return new;
+  end if;
+  if not exists (
+    select 1 from public.transactional_graph_pilot_runs r
+    join public.leads l on l.submission_id = new.submission_id
+    where r.run_id = new.pilot_run_id and r.status = 'active'
+      and new.submission_id = any(r.submission_ids)
+      and l.lead_id = r.allowed_lead_id and l.form_type = new.resource
+  ) then
+    raise exception using errcode = '23514', message = 'pilot_binding_scope_invalid';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists transactional_dispatch_pilot_binding
+  on public.transactional_dispatch_outbox;
+create trigger transactional_dispatch_pilot_binding
+before insert or update of pilot_run_id on public.transactional_dispatch_outbox
+for each row execute function public.enforce_transactional_graph_pilot_binding();
+
+create or replace function fundae_private.transactional_graph_pilot_cohort_reason(
+  p_allowed_lead_id text, p_submission_ids text[]
+) returns text language plpgsql security definer set search_path = ''
+as $$
+declare
+  v_ids text[];
+  v_unique integer;
+  v_leads integer;
+  v_dispatches integer;
+  v_resources text[];
+begin
+  if p_allowed_lead_id is null or p_allowed_lead_id !~ '^[a-f0-9]{64}$' or
+     p_submission_ids is null or pg_catalog.array_length(p_submission_ids, 1) <> 4 or
+     pg_catalog.array_position(p_submission_ids, null) is not null then
+    return 'invalid_request';
+  end if;
+  select pg_catalog.array_agg(x order by x), pg_catalog.count(distinct x)
+    into v_ids, v_unique from pg_catalog.unnest(p_submission_ids) x;
+  if v_unique <> 4 or exists (
+    select 1 from pg_catalog.unnest(v_ids) x
+    where x !~ '^[A-Za-z0-9][A-Za-z0-9_.:-]{2,127}$'
+  ) then
+    return 'submission_set_invalid';
+  end if;
+  select pg_catalog.count(*),
+         pg_catalog.array_agg(distinct l.form_type order by l.form_type)
+    into v_leads, v_resources
+  from public.leads l where l.submission_id = any(v_ids)
+    and l.lead_id = p_allowed_lead_id
+    and l.form_type = l.lead_magnet
+    and l.form_type in ('calculator', 'interactive_checklist', 'checklist', 'webinar')
+    and l.delivery_status = 'dead_letter'
+    and l.email_delivery_status = 'pending'
+    and l.accepted_by_make_at is null and l.ai_summary is null;
+  if v_leads <> 4 or v_resources is distinct from
+     array['calculator','checklist','interactive_checklist','webinar']::text[] then
+    return 'lead_cohort_invalid';
+  end if;
+  if exists (
+    select 1 from public.leads l
+    where l.submission_id = any(v_ids) and l.lead_id <> p_allowed_lead_id
+  ) then
+    return 'identity_mapping_invalid';
+  end if;
+  if exists (
+    select 1 from public.campaign_contacts c where c.email_hash = p_allowed_lead_id
+  ) then
+    return 'campaign_identity_conflict';
+  end if;
+  select pg_catalog.count(*) into v_dispatches
+  from public.transactional_dispatch_outbox d
+  join public.leads l on l.submission_id = d.submission_id
+  where d.submission_id = any(v_ids)
+    and d.resource = l.form_type and l.lead_id = p_allowed_lead_id
+    and d.status in ('queued_off', 'deferred')
+    and d.claimed_by is null and d.claim_expires_at is null
+    and d.reservation_id is null and d.outcome_evidence_hash is null
+    and d.terminal_at is null and d.pilot_run_id is null
+    and d.payload_sha256 = pg_catalog.encode(extensions.digest(
+      pg_catalog.convert_to(l.payload::text, 'UTF8'), 'sha256'
+    ), 'hex');
+  if v_dispatches <> 4 then return 'dispatch_cohort_invalid'; end if;
+  return null;
+end;
+$$;
+
+create or replace function fundae_private.register_transactional_graph_pilot_grant(
+  p_run_id text,
+  p_actor_hash text,
+  p_authorization_nonce_hash text,
+  p_allowed_lead_id text,
+  p_submission_ids text[],
+  p_max_ttl_seconds integer,
+  p_expires_at timestamptz,
+  p_approval_evidence_hash text
+) returns jsonb language plpgsql security definer set search_path = ''
+as $$
+declare
+  v_now timestamptz;
+  v_reason text;
+  v_ids text[];
+  v_set_hash text;
+  v_control public.outbound_delivery_control%rowtype;
+begin
+  if p_run_id is null or p_run_id !~ '^[A-Za-z0-9][A-Za-z0-9_.:-]{7,63}$' or
+     p_actor_hash is null or p_actor_hash !~ '^[a-f0-9]{64}$' or
+     p_authorization_nonce_hash is null or
+     p_authorization_nonce_hash !~ '^[a-f0-9]{64}$' or
+     p_allowed_lead_id is null or p_allowed_lead_id !~ '^[a-f0-9]{64}$' or
+     p_max_ttl_seconds is null or p_max_ttl_seconds not between 120 and 900 or
+     p_expires_at is null or p_approval_evidence_hash is null or
+     p_approval_evidence_hash !~ '^[a-f0-9]{64}$' then
+    return pg_catalog.jsonb_build_object(
+      'accepted', false, 'reason_code', 'invalid_request'
+    );
+  end if;
+  select * into v_control from public.outbound_delivery_control
+  where singleton for update;
+  perform 1 from fundae_private.transactional_graph_pilot_authorization_grants
+  where authorized_run_id = p_run_id for update;
+  perform 1 from public.transactional_graph_pilot_runs
+  where run_id = p_run_id or status = 'active' for update;
+  perform 1 from public.transactional_dispatch_outbox
+  where submission_id = any(p_submission_ids) for update;
+  perform 1 from public.leads where submission_id = any(p_submission_ids) for update;
+  v_now := pg_catalog.clock_timestamp();
+  if v_control.singleton is null or v_control.master_enabled or
+     v_control.transactional_enabled or v_control.cold_enabled then
+    return pg_catalog.jsonb_build_object(
+      'accepted', false, 'reason_code', 'outbound_must_be_off'
+    );
+  end if;
+  if p_expires_at < v_now + pg_catalog.make_interval(secs => p_max_ttl_seconds) or
+     p_expires_at > v_now + interval '20 minutes' then
+    return pg_catalog.jsonb_build_object(
+      'accepted', false, 'reason_code', 'grant_expiry_invalid'
+    );
+  end if;
+  if exists (
+    select 1 from fundae_private.transactional_graph_pilot_authorization_grants
+    where authorized_run_id = p_run_id
+  ) or exists (
+    select 1 from public.transactional_graph_pilot_runs
+    where run_id = p_run_id or status = 'active'
+  ) then
+    return pg_catalog.jsonb_build_object(
+      'accepted', false, 'reason_code', 'grant_conflict'
+    );
+  end if;
+  select pg_catalog.array_agg(x order by x) into v_ids
+  from pg_catalog.unnest(p_submission_ids) x;
+  v_reason := fundae_private.transactional_graph_pilot_cohort_reason(
+    p_allowed_lead_id, p_submission_ids
+  );
+  if v_reason is not null then
+    return pg_catalog.jsonb_build_object(
+      'accepted', false, 'reason_code', v_reason
+    );
+  end if;
+  v_set_hash := pg_catalog.encode(extensions.digest(pg_catalog.convert_to(
+    pg_catalog.array_to_string(v_ids, pg_catalog.chr(31)), 'UTF8'
+  ), 'sha256'), 'hex');
+  insert into fundae_private.transactional_graph_pilot_authorization_grants(
+    authorization_nonce_hash, authorized_run_id, actor_hash, allowed_lead_id,
+    submission_set_hash, max_ttl_seconds, expires_at, approval_evidence_hash
+  ) values (
+    p_authorization_nonce_hash, p_run_id, p_actor_hash, p_allowed_lead_id,
+    v_set_hash, p_max_ttl_seconds, p_expires_at, p_approval_evidence_hash
+  );
+  return pg_catalog.jsonb_build_object(
+    'accepted', true, 'reason_code', 'pilot_grant_registered',
+    'run_id_hash', pg_catalog.encode(extensions.digest(
+      pg_catalog.convert_to(p_run_id, 'UTF8'), 'sha256'
+    ), 'hex'),
+    'submission_set_hash', v_set_hash, 'expires_at', p_expires_at,
+    'max_ttl_seconds', p_max_ttl_seconds
+  );
+exception when unique_violation then
+  return pg_catalog.jsonb_build_object(
+    'accepted', false, 'reason_code', 'grant_conflict'
+  );
+end;
+$$;
+
+create or replace function public.preview_transactional_graph_pilot(
+  p_run_id text, p_actor_hash text, p_allowed_lead_id text,
+  p_submission_ids text[], p_ttl_seconds integer
+) returns jsonb language plpgsql security definer set search_path = ''
+as $$
+declare
+  v_reason text;
+  v_ids text[];
+  v_set_hash text;
+  v_control public.outbound_delivery_control%rowtype;
+begin
+  if p_run_id is null or p_run_id !~ '^[A-Za-z0-9][A-Za-z0-9_.:-]{7,63}$' or
+     p_actor_hash is null or p_actor_hash !~ '^[a-f0-9]{64}$' or
+     p_ttl_seconds is null or p_ttl_seconds not between 120 and 900 then
+    return pg_catalog.jsonb_build_object(
+      'accepted', false, 'mode', 'dry_run', 'reason_code', 'invalid_request'
+    );
+  end if;
+  select pg_catalog.array_agg(x order by x) into v_ids
+  from pg_catalog.unnest(p_submission_ids) x;
+  v_reason := fundae_private.transactional_graph_pilot_cohort_reason(
+    p_allowed_lead_id, p_submission_ids
+  );
+  if v_reason is not null then
+    return pg_catalog.jsonb_build_object(
+      'accepted', false, 'mode', 'dry_run', 'reason_code', v_reason,
+      'run_id', p_run_id, 'resources', 0, 'submissions', 0
+    );
+  end if;
+  if exists (select 1 from public.transactional_graph_pilot_runs where run_id = p_run_id) or
+     exists (select 1 from public.transactional_graph_pilot_runs where status = 'active') then
+    return pg_catalog.jsonb_build_object(
+      'accepted', false, 'mode', 'dry_run', 'reason_code', 'pilot_run_conflict',
+      'run_id', p_run_id, 'resources', 0, 'submissions', 0
+    );
+  end if;
+  select * into v_control from public.outbound_delivery_control where singleton;
+  if not found or v_control.master_enabled or v_control.transactional_enabled or
+     v_control.cold_enabled then
+    return pg_catalog.jsonb_build_object(
+      'accepted', false, 'mode', 'dry_run', 'reason_code', 'outbound_must_be_off',
+      'run_id', p_run_id, 'resources', 0, 'submissions', 0
+    );
+  end if;
+  v_set_hash := pg_catalog.encode(extensions.digest(pg_catalog.convert_to(
+    pg_catalog.array_to_string(v_ids, pg_catalog.chr(31)), 'UTF8'
+  ), 'sha256'), 'hex');
+  return pg_catalog.jsonb_build_object(
+    'accepted', true, 'mode', 'dry_run', 'reason_code', 'pilot_ready',
+    'run_id', p_run_id, 'resources', 4, 'submissions', 4,
+    'allowed_lead_id_hash', pg_catalog.encode(extensions.digest(
+      pg_catalog.convert_to(p_allowed_lead_id, 'UTF8'), 'sha256'
+    ), 'hex'),
+    'submission_set_hash', v_set_hash,
+    'authorization_required', true,
+    'ttl_seconds', p_ttl_seconds,
+    'controls', pg_catalog.jsonb_build_object(
+      'master_enabled', false, 'transactional_enabled', false, 'cold_enabled', false
+    )
+  );
+end;
+$$;
+
+create or replace function public.start_transactional_graph_pilot(
+  p_run_id text, p_actor_hash text, p_allowed_lead_id text,
+  p_submission_ids text[], p_authorization_hash text, p_ttl_seconds integer
+) returns jsonb language plpgsql security definer set search_path = ''
+as $$
+declare
+  v_reason text;
+  v_ids text[];
+  v_set_hash text;
+  v_grant fundae_private.transactional_graph_pilot_authorization_grants%rowtype;
+  v_control public.outbound_delivery_control%rowtype;
+  v_now timestamptz;
+begin
+  if p_run_id is null or p_run_id !~ '^[A-Za-z0-9][A-Za-z0-9_.:-]{7,63}$' or
+     p_actor_hash is null or p_actor_hash !~ '^[a-f0-9]{64}$' or
+     p_allowed_lead_id is null or p_allowed_lead_id !~ '^[a-f0-9]{64}$' or
+     p_authorization_hash is null or p_authorization_hash !~ '^[a-f0-9]{64}$' or
+     p_submission_ids is null or
+     p_ttl_seconds is null or p_ttl_seconds not between 120 and 900 then
+    return pg_catalog.jsonb_build_object(
+      'accepted', false, 'mode', 'live', 'reason_code', 'invalid_request'
+    );
+  end if;
+  select pg_catalog.array_agg(x order by x) into v_ids
+  from pg_catalog.unnest(p_submission_ids) x;
+  v_set_hash := pg_catalog.encode(extensions.digest(pg_catalog.convert_to(
+    pg_catalog.array_to_string(v_ids, pg_catalog.chr(31)), 'UTF8'
+  ), 'sha256'), 'hex');
+  select * into v_control from public.outbound_delivery_control
+  where singleton for update;
+  select * into v_grant
+  from fundae_private.transactional_graph_pilot_authorization_grants
+  where authorization_nonce_hash = p_authorization_hash for update;
+  perform 1 from public.transactional_graph_pilot_runs where status = 'active' for update;
+  perform 1 from public.transactional_dispatch_outbox
+    where submission_id = any(p_submission_ids) for update;
+  perform 1 from public.leads where submission_id = any(p_submission_ids) for update;
+  v_now := pg_catalog.clock_timestamp();
+  if v_control.singleton is null then
+    return pg_catalog.jsonb_build_object(
+      'accepted', false, 'mode', 'live', 'reason_code', 'control_unavailable'
+    );
+  end if;
+  if v_control.master_enabled or v_control.transactional_enabled or v_control.cold_enabled then
+    return pg_catalog.jsonb_build_object(
+      'accepted', false, 'mode', 'live', 'reason_code', 'outbound_must_be_off'
+    );
+  end if;
+  if v_grant.authorization_nonce_hash is null or
+     v_grant.authorized_run_id <> p_run_id or
+     v_grant.actor_hash <> p_actor_hash or
+     v_grant.allowed_lead_id <> p_allowed_lead_id or
+     v_grant.submission_set_hash <> v_set_hash or
+     v_grant.max_ttl_seconds < p_ttl_seconds or
+     v_grant.consumed_at is not null or v_grant.revoked_at is not null or
+     v_grant.expires_at < v_now + pg_catalog.make_interval(secs => p_ttl_seconds) then
+    return pg_catalog.jsonb_build_object(
+      'accepted', false, 'mode', 'live', 'reason_code', 'authorization_unavailable'
+    );
+  end if;
+  if exists (select 1 from public.mailbox_throttle_state
+       where active_reservation_id is not null or blocked_reservation_id is not null) or
+     exists (select 1 from public.mailbox_delivery_reservations
+       where status in ('reserved', 'reconcile_required')) then
+    return pg_catalog.jsonb_build_object(
+      'accepted', false, 'mode', 'live', 'reason_code', 'mailbox_not_clean'
+    );
+  end if;
+  if exists (select 1 from public.transactional_graph_pilot_runs where run_id = p_run_id) or
+     exists (select 1 from public.transactional_graph_pilot_runs where status = 'active') then
+    return pg_catalog.jsonb_build_object(
+      'accepted', false, 'mode', 'live', 'reason_code', 'pilot_run_conflict'
+    );
+  end if;
+  v_reason := fundae_private.transactional_graph_pilot_cohort_reason(
+    p_allowed_lead_id, p_submission_ids
+  );
+  if v_reason is not null then
+    return pg_catalog.jsonb_build_object(
+      'accepted', false, 'mode', 'live', 'reason_code', v_reason
+    );
+  end if;
+  update fundae_private.transactional_graph_pilot_authorization_grants
+  set consumed_at = v_now, consumed_run_id = p_run_id, updated_at = v_now
+  where authorization_nonce_hash = p_authorization_hash
+    and authorized_run_id = p_run_id and actor_hash = p_actor_hash
+    and allowed_lead_id = p_allowed_lead_id
+    and submission_set_hash = v_set_hash
+    and max_ttl_seconds >= p_ttl_seconds
+    and expires_at >= v_now + pg_catalog.make_interval(secs => p_ttl_seconds)
+    and consumed_at is null and revoked_at is null;
+  if not found then
+    return pg_catalog.jsonb_build_object(
+      'accepted', false, 'mode', 'live', 'reason_code', 'authorization_unavailable'
+    );
+  end if;
+  insert into public.transactional_graph_pilot_runs(
+    run_id, actor_hash, authorization_hash, approval_evidence_hash,
+    allowed_lead_id, submission_ids,
+    submission_set_hash, status, expires_at, started_at
+  ) values (
+    p_run_id, p_actor_hash, p_authorization_hash, v_grant.approval_evidence_hash,
+    p_allowed_lead_id, v_ids,
+    v_set_hash, 'active', v_now + pg_catalog.make_interval(secs => p_ttl_seconds), v_now
+  );
+  update public.transactional_dispatch_outbox
+  set pilot_run_id = p_run_id, updated_at = v_now
+  where submission_id = any(v_ids) and pilot_run_id is null;
+  if not found or (select pg_catalog.count(*) from public.transactional_dispatch_outbox
+      where pilot_run_id = p_run_id) <> 4 then
+    raise exception using errcode = '55000', message = 'pilot_binding_failed';
+  end if;
+  update public.outbound_delivery_control
+  set master_enabled = true, transactional_enabled = true, cold_enabled = false,
+      halt_reason = 'TRANSACTIONAL_GRAPH_PILOT_ACTIVE',
+      updated_by_hash = p_actor_hash, updated_at = v_now
+  where singleton;
+  return pg_catalog.jsonb_build_object(
+    'accepted', true, 'mode', 'live', 'reason_code', 'pilot_started',
+    'run_id', p_run_id, 'resources', 4, 'submissions', 4,
+    'expires_at', v_now + pg_catalog.make_interval(secs => p_ttl_seconds),
+    'allowed_lead_id_hash', pg_catalog.encode(extensions.digest(
+      pg_catalog.convert_to(p_allowed_lead_id, 'UTF8'), 'sha256'
+    ), 'hex'),
+    'submission_set_hash', v_set_hash, 'ttl_seconds', p_ttl_seconds,
+    'controls', pg_catalog.jsonb_build_object(
+      'master_enabled', true, 'transactional_enabled', true, 'cold_enabled', false
+    )
+  );
+exception when unique_violation then
+  return pg_catalog.jsonb_build_object(
+    'accepted', false, 'mode', 'live', 'reason_code', 'pilot_run_conflict'
+  );
+end;
+$$;
+
+alter function public.claim_transactional_graph_dispatch(uuid,integer,integer)
+  rename to claim_transactional_graph_dispatch_pre_pilot_20260819;
+create or replace function public.claim_transactional_graph_dispatch(
+  p_worker_id uuid, p_limit integer, p_lease_seconds integer
+) returns jsonb language plpgsql security definer set search_path = ''
+as $$
+declare
+  v_control public.outbound_delivery_control%rowtype;
+  v_run public.transactional_graph_pilot_runs%rowtype;
+  v_result jsonb;
+  v_dispatch_id uuid;
+  v_reservation_id uuid;
+  v_now timestamptz;
+  v_evidence text;
+begin
+  select * into v_control from public.outbound_delivery_control
+  where singleton for update;
+  select * into v_run from public.transactional_graph_pilot_runs
+  where status = 'active' for update;
+  v_now := pg_catalog.clock_timestamp();
+  if not found then
+    if v_control.master_enabled or v_control.transactional_enabled or v_control.cold_enabled then
+      update public.outbound_delivery_control
+      set master_enabled = false, transactional_enabled = false, cold_enabled = false,
+          halt_reason = 'TRANSACTIONAL_GRAPH_PILOT_SCOPE_REQUIRED', updated_at = v_now
+      where singleton;
+    end if;
+    return pg_catalog.jsonb_build_object(
+      'accepted', false, 'reason_code', 'pilot_scope_required', 'claimed', 0,
+      'recovery_required', false, 'resume_existing_reservation', false,
+      'reservation_id', null, 'outbox_state', null,
+      'graph_draft_immutable_id', null, 'draft_neutralized', false,
+      'outcome_evidence_hash', null, 'lease_expires_at', null,
+      'items', '[]'::jsonb
+    );
+  end if;
+  if v_run.expires_at <= v_now then
+    v_evidence := pg_catalog.encode(extensions.digest(pg_catalog.convert_to(
+      'pilot-expired:' || v_run.run_id || ':' || v_now::text, 'UTF8'
+    ), 'sha256'), 'hex');
+    update public.transactional_graph_pilot_runs
+    set status = 'expired', finished_at = v_now, finish_evidence_hash = v_evidence,
+        updated_at = v_now where run_id = v_run.run_id and status = 'active';
+    update public.outbound_delivery_control
+    set master_enabled = false, transactional_enabled = false, cold_enabled = false,
+        halt_reason = 'TRANSACTIONAL_GRAPH_PILOT_EXPIRED', updated_at = v_now
+    where singleton;
+    return pg_catalog.jsonb_build_object(
+      'accepted', false, 'reason_code', 'pilot_scope_expired', 'claimed', 0,
+      'recovery_required', false, 'resume_existing_reservation', false,
+      'reservation_id', null, 'outbox_state', null,
+      'graph_draft_immutable_id', null, 'draft_neutralized', false,
+      'outcome_evidence_hash', null, 'lease_expires_at', null,
+      'items', '[]'::jsonb
+    );
+  end if;
+  if v_control.singleton is null or not v_control.master_enabled or not v_control.transactional_enabled or
+     v_control.cold_enabled then
+    v_evidence := pg_catalog.encode(extensions.digest(pg_catalog.convert_to(
+      'pilot-control-violation:' || v_run.run_id || ':' || v_now::text, 'UTF8'
+    ), 'sha256'), 'hex');
+    update public.transactional_graph_pilot_runs
+    set status = 'halted', finished_at = v_now, finish_evidence_hash = v_evidence,
+        updated_at = v_now where run_id = v_run.run_id and status = 'active';
+    update public.outbound_delivery_control
+    set master_enabled = false, transactional_enabled = false, cold_enabled = false,
+        halt_reason = 'TRANSACTIONAL_GRAPH_PILOT_CONTROL_VIOLATION', updated_at = v_now
+    where singleton;
+    return pg_catalog.jsonb_build_object(
+      'accepted', false, 'reason_code', 'pilot_control_violation', 'claimed', 0,
+      'recovery_required', false, 'resume_existing_reservation', false,
+      'reservation_id', null, 'outbox_state', null,
+      'graph_draft_immutable_id', null, 'draft_neutralized', false,
+      'outcome_evidence_hash', null, 'lease_expires_at', null,
+      'items', '[]'::jsonb
+    );
+  end if;
+  begin
+    v_result := public.claim_transactional_graph_dispatch_pre_pilot_20260819(
+      p_worker_id, p_limit, p_lease_seconds
+    );
+    if pg_catalog.jsonb_array_length(coalesce(v_result -> 'items', '[]'::jsonb)) > 0 then
+      v_dispatch_id := (v_result #>> '{items,0,dispatch_id}')::uuid;
+      if not exists (
+        select 1 from public.transactional_dispatch_outbox d
+        where d.id = v_dispatch_id and d.pilot_run_id = v_run.run_id
+          and d.submission_id = any(v_run.submission_ids)
+      ) then
+        raise exception using errcode = 'P0001', message = 'pilot_scope_violation';
+      end if;
+    end if;
+    if v_result ->> 'reservation_id' is not null then
+      v_reservation_id := (v_result ->> 'reservation_id')::uuid;
+      if not exists (
+        select 1 from public.transactional_dispatch_outbox d
+        where d.reservation_id = v_reservation_id and d.pilot_run_id = v_run.run_id
+          and d.submission_id = any(v_run.submission_ids)
+      ) then
+        raise exception using errcode = 'P0001', message = 'pilot_recovery_scope_violation';
+      end if;
+    end if;
+  exception when others then
+    v_result := null;
+  end;
+  if v_result is null then
+    v_now := pg_catalog.clock_timestamp();
+    v_evidence := pg_catalog.encode(extensions.digest(pg_catalog.convert_to(
+      'pilot-scope-violation:' || v_run.run_id || ':' || v_now::text, 'UTF8'
+    ), 'sha256'), 'hex');
+    update public.transactional_graph_pilot_runs
+    set status = 'halted', finished_at = v_now, finish_evidence_hash = v_evidence,
+        updated_at = v_now where run_id = v_run.run_id and status = 'active';
+    update public.outbound_delivery_control
+    set master_enabled = false, transactional_enabled = false, cold_enabled = false,
+        halt_reason = 'TRANSACTIONAL_GRAPH_PILOT_SCOPE_VIOLATION', updated_at = v_now
+    where singleton;
+    return pg_catalog.jsonb_build_object(
+      'accepted', false, 'reason_code', 'pilot_scope_violation', 'claimed', 0,
+      'recovery_required', false, 'resume_existing_reservation', false,
+      'reservation_id', null, 'outbox_state', null,
+      'graph_draft_immutable_id', null, 'draft_neutralized', false,
+      'outcome_evidence_hash', null, 'lease_expires_at', null,
+      'items', '[]'::jsonb
+    );
+  end if;
+  return v_result || pg_catalog.jsonb_build_object('pilot_run_id', v_run.run_id);
+end;
+$$;
+
+alter function public.reserve_claimed_transactional_graph_dispatch(
+  uuid,uuid,text,text,text,text,text
+) rename to reserve_claimed_transactional_graph_dispatch_pre_pilot_20260819;
+create or replace function public.reserve_claimed_transactional_graph_dispatch(
+  p_dispatch_id uuid, p_worker_id uuid, p_mailbox_key_hash text,
+  p_finalize_capability_hash text, p_package_hmac_sha256 text,
+  p_send_capability_hash text, p_opaque_marker text
+) returns jsonb language plpgsql security definer set search_path = ''
+as $$
+declare
+  v_control public.outbound_delivery_control%rowtype;
+  v_dispatch public.transactional_dispatch_outbox%rowtype;
+  v_run public.transactional_graph_pilot_runs%rowtype;
+  v_now timestamptz;
+  v_evidence text;
+begin
+  select * into v_control from public.outbound_delivery_control
+  where singleton for update;
+  select * into v_dispatch from public.transactional_dispatch_outbox
+  where id = p_dispatch_id for update;
+  if found and v_dispatch.pilot_run_id is not null then
+    select * into v_run from public.transactional_graph_pilot_runs
+    where run_id = v_dispatch.pilot_run_id for update;
+  end if;
+  v_now := pg_catalog.clock_timestamp();
+  if v_dispatch.id is null or v_run.run_id is null or v_run.status <> 'active' or
+     v_dispatch.submission_id <> all(v_run.submission_ids) or
+     not exists (select 1 from public.leads l where l.submission_id = v_dispatch.submission_id
+       and l.lead_id = v_run.allowed_lead_id and l.form_type = v_dispatch.resource) then
+    update public.outbound_delivery_control
+    set master_enabled = false, transactional_enabled = false, cold_enabled = false,
+        halt_reason = 'TRANSACTIONAL_GRAPH_PILOT_SCOPE_VIOLATION', updated_at = v_now
+    where singleton;
+    return pg_catalog.jsonb_build_object(
+      'authorized', false, 'duplicate', false, 'reason_code', 'pilot_scope_violation'
+    );
+  end if;
+  if v_run.expires_at <= v_now then
+    v_evidence := pg_catalog.encode(extensions.digest(pg_catalog.convert_to(
+      'pilot-expired:' || v_run.run_id || ':' || v_now::text, 'UTF8'
+    ), 'sha256'), 'hex');
+    update public.transactional_graph_pilot_runs
+    set status = 'expired', finished_at = v_now, finish_evidence_hash = v_evidence,
+        updated_at = v_now where run_id = v_run.run_id and status = 'active';
+    update public.outbound_delivery_control
+    set master_enabled = false, transactional_enabled = false, cold_enabled = false,
+        halt_reason = 'TRANSACTIONAL_GRAPH_PILOT_EXPIRED', updated_at = v_now
+    where singleton;
+    return pg_catalog.jsonb_build_object(
+      'authorized', false, 'duplicate', false, 'reason_code', 'pilot_scope_expired'
+    );
+  end if;
+  if v_control.singleton is null or not v_control.master_enabled or not v_control.transactional_enabled or
+     v_control.cold_enabled then
+    update public.outbound_delivery_control
+    set master_enabled = false, transactional_enabled = false, cold_enabled = false,
+        halt_reason = 'TRANSACTIONAL_GRAPH_PILOT_CONTROL_VIOLATION', updated_at = v_now
+    where singleton;
+    return pg_catalog.jsonb_build_object(
+      'authorized', false, 'duplicate', false, 'reason_code', 'pilot_control_violation'
+    );
+  end if;
+  return public.reserve_claimed_transactional_graph_dispatch_pre_pilot_20260819(
+    p_dispatch_id, p_worker_id, p_mailbox_key_hash, p_finalize_capability_hash,
+    p_package_hmac_sha256, p_send_capability_hash, p_opaque_marker
+  ) || pg_catalog.jsonb_build_object('pilot_run_id', v_run.run_id);
+end;
+$$;
+
+alter function public.authorize_graph_draft_send(uuid,text,text,text)
+  rename to authorize_graph_draft_send_pre_pilot_20260819;
+create or replace function public.authorize_graph_draft_send(
+  p_reservation_id uuid, p_send_capability_hash text, p_stop_snapshot_hash text,
+  p_observed_change_key_hash text
+) returns jsonb language plpgsql security definer set search_path = ''
+as $$
+declare
+  v_control public.outbound_delivery_control%rowtype;
+  v_dispatch public.transactional_dispatch_outbox%rowtype;
+  v_run public.transactional_graph_pilot_runs%rowtype;
+  v_now timestamptz;
+  v_evidence text;
+begin
+  select * into v_control from public.outbound_delivery_control
+  where singleton for update;
+  select d.* into v_dispatch from public.transactional_dispatch_outbox d
+  where d.reservation_id = p_reservation_id for update;
+  if not found then
+    return public.authorize_graph_draft_send_pre_pilot_20260819(
+      p_reservation_id, p_send_capability_hash, p_stop_snapshot_hash,
+      p_observed_change_key_hash
+    );
+  end if;
+  if v_dispatch.pilot_run_id is not null then
+    select * into v_run from public.transactional_graph_pilot_runs
+    where run_id = v_dispatch.pilot_run_id for update;
+  end if;
+  v_now := pg_catalog.clock_timestamp();
+  if v_run.run_id is null or v_run.status <> 'active' or
+     v_dispatch.submission_id <> all(v_run.submission_ids) or
+     not exists (select 1 from public.leads l where l.submission_id = v_dispatch.submission_id
+       and l.lead_id = v_run.allowed_lead_id and l.form_type = v_dispatch.resource) or
+     v_run.expires_at <= v_now or v_control.singleton is null or
+     not v_control.master_enabled or not v_control.transactional_enabled or
+     v_control.cold_enabled then
+    if v_run.run_id is not null and v_run.status = 'active' then
+      v_evidence := pg_catalog.encode(extensions.digest(pg_catalog.convert_to(
+        'pilot-authorization-stopped:' || v_run.run_id || ':' || v_now::text, 'UTF8'
+      ), 'sha256'), 'hex');
+      update public.transactional_graph_pilot_runs
+      set status = case when v_run.expires_at <= v_now then 'expired' else 'halted' end,
+          finished_at = v_now, finish_evidence_hash = v_evidence, updated_at = v_now
+      where run_id = v_run.run_id and status = 'active';
+    end if;
+    update public.outbound_delivery_control
+    set master_enabled = false, transactional_enabled = false, cold_enabled = false,
+        halt_reason = 'TRANSACTIONAL_GRAPH_PILOT_SEND_BLOCKED', updated_at = v_now
+    where singleton;
+    return pg_catalog.jsonb_build_object(
+      'authorized', false, 'duplicate', false,
+      'reason_code', 'draft_neutralization_required',
+      'pilot_reason_code', case when v_run.expires_at <= v_now
+        then 'pilot_scope_expired'
+        when v_control.singleton is null or not v_control.master_enabled or
+          not v_control.transactional_enabled or v_control.cold_enabled
+        then 'pilot_control_violation' else 'pilot_scope_violation' end,
+      'reservation_id', p_reservation_id, 'mailbox_halted', true,
+      'retry_after_seconds', 0
+    );
+  end if;
+  return public.authorize_graph_draft_send_pre_pilot_20260819(
+    p_reservation_id, p_send_capability_hash, p_stop_snapshot_hash,
+    p_observed_change_key_hash
+  ) || pg_catalog.jsonb_build_object('pilot_run_id', v_run.run_id);
+end;
+$$;
+
+create or replace function public.finish_transactional_graph_pilot(
+  p_run_id text, p_actor_hash text, p_outcome text, p_evidence_hash text
+) returns jsonb language plpgsql security definer set search_path = ''
+as $$
+declare
+  v_run public.transactional_graph_pilot_runs%rowtype;
+  v_now timestamptz;
+  v_confirmed integer := 0;
+  v_complete boolean := false;
+  v_reason text;
+begin
+  if p_run_id is null or p_actor_hash is null or
+     p_actor_hash !~ '^[a-f0-9]{64}$' or
+     p_outcome is null or p_outcome not in ('completed', 'halted') or
+     p_evidence_hash is null or p_evidence_hash !~ '^[a-f0-9]{64}$' then
+    return pg_catalog.jsonb_build_object('accepted', false, 'reason_code', 'invalid_request');
+  end if;
+  perform 1 from public.outbound_delivery_control where singleton for update;
+  select * into v_run from public.transactional_graph_pilot_runs
+  where run_id = p_run_id for update;
+  v_now := pg_catalog.clock_timestamp();
+  if not found then
+    update public.outbound_delivery_control
+    set master_enabled = false, transactional_enabled = false, cold_enabled = false,
+        halt_reason = 'TRANSACTIONAL_GRAPH_PILOT_FINISH_UNKNOWN',
+        updated_by_hash = p_actor_hash, updated_at = v_now where singleton;
+    return pg_catalog.jsonb_build_object(
+      'accepted', false, 'reason_code', 'pilot_run_unavailable', 'scope_active', false,
+      'controls', pg_catalog.jsonb_build_object(
+        'master_enabled', false, 'transactional_enabled', false, 'cold_enabled', false
+      )
+    );
+  end if;
+  if v_run.actor_hash <> p_actor_hash then
+    update public.transactional_graph_pilot_runs
+    set status = 'halted', finished_at = v_now,
+        finish_evidence_hash = pg_catalog.encode(extensions.digest(
+          pg_catalog.convert_to(
+            'pilot-finish-actor-mismatch:' || v_run.run_id || ':' || v_now::text,
+            'UTF8'
+          ), 'sha256'
+        ), 'hex'), updated_at = v_now
+    where run_id = v_run.run_id and status = 'active';
+    update public.outbound_delivery_control
+    set master_enabled = false, transactional_enabled = false, cold_enabled = false,
+        halt_reason = 'TRANSACTIONAL_GRAPH_PILOT_FINISH_ACTOR_MISMATCH',
+        updated_at = v_now where singleton;
+    return pg_catalog.jsonb_build_object(
+      'accepted', false, 'reason_code', 'pilot_actor_mismatch', 'scope_active', false,
+      'controls', pg_catalog.jsonb_build_object(
+        'master_enabled', false, 'transactional_enabled', false, 'cold_enabled', false
+      )
+    );
+  end if;
+  select pg_catalog.count(*) filter (where d.status = 'confirmed_sent'
+      and d.outcome_evidence_hash is not null and d.reservation_id is not null
+      and g.state = 'confirmed_sent'
+      and g.sent_items_evidence_hash = d.outcome_evidence_hash
+      and g.internet_message_id_hash is not null)
+    into v_confirmed
+  from public.transactional_dispatch_outbox d
+  left join public.graph_outbox g on g.reservation_id = d.reservation_id
+  where d.pilot_run_id = p_run_id and d.submission_id = any(v_run.submission_ids);
+  v_complete := v_confirmed = 4 and
+    (select pg_catalog.count(*) from public.transactional_dispatch_outbox
+      where pilot_run_id = p_run_id) = 4;
+  update public.outbound_delivery_control
+  set master_enabled = false, transactional_enabled = false, cold_enabled = false,
+      halt_reason = case when p_outcome = 'completed' and v_complete
+        then 'TRANSACTIONAL_GRAPH_PILOT_COMPLETED'
+        when p_outcome = 'halted' then 'TRANSACTIONAL_GRAPH_PILOT_HALTED'
+        else 'TRANSACTIONAL_GRAPH_PILOT_COMPLETION_INCOMPLETE' end,
+      updated_by_hash = p_actor_hash, updated_at = v_now where singleton;
+  if v_run.status = 'active' then
+    update public.transactional_graph_pilot_runs
+    set status = case when p_outcome = 'completed' and v_complete
+        then 'completed' else 'halted' end,
+        finished_at = v_now, finish_evidence_hash = p_evidence_hash,
+        updated_at = v_now
+    where run_id = p_run_id;
+  end if;
+  v_reason := case when p_outcome = 'completed' and v_complete then 'pilot_completed'
+    when p_outcome = 'halted' then 'pilot_halted'
+    else 'pilot_completion_incomplete' end;
+  return pg_catalog.jsonb_build_object(
+    'accepted', p_outcome = 'halted' or v_complete,
+    'reason_code', v_reason, 'run_id', p_run_id,
+    'confirmed_sent_count', v_confirmed, 'scope_active', false,
+    'controls', pg_catalog.jsonb_build_object(
+      'master_enabled', false, 'transactional_enabled', false, 'cold_enabled', false
+    )
+  );
+end;
+$$;
+
+alter function public.emergency_halt_outbound_delivery(text,text)
+  rename to emergency_halt_outbound_delivery_pre_pilot_20260819;
+create or replace function public.emergency_halt_outbound_delivery(
+  p_actor_hash text, p_reason text
+) returns jsonb language plpgsql security definer set search_path = ''
+as $$
+declare
+  v_now timestamptz;
+  v_evidence text;
+  v_cleared integer;
+begin
+  if p_actor_hash is null or p_actor_hash !~ '^[a-f0-9]{64}$' or
+     p_reason is null or pg_catalog.length(pg_catalog.btrim(p_reason)) not between 3 and 240 then
+    return pg_catalog.jsonb_build_object('accepted', false, 'reason_code', 'invalid_request');
+  end if;
+  perform 1 from public.outbound_delivery_control where singleton for update;
+  perform 1 from public.transactional_graph_pilot_runs where status = 'active' for update;
+  v_now := pg_catalog.clock_timestamp();
+  v_evidence := pg_catalog.encode(extensions.digest(pg_catalog.convert_to(
+    'emergency-halt:' || p_actor_hash || ':' || pg_catalog.btrim(p_reason) || ':' || v_now::text,
+    'UTF8'
+  ), 'sha256'), 'hex');
+  update public.transactional_graph_pilot_runs
+  set status = 'halted', finished_at = v_now, finish_evidence_hash = v_evidence,
+      updated_at = v_now where status = 'active';
+  get diagnostics v_cleared = row_count;
+  update public.outbound_delivery_control
+  set master_enabled = false, transactional_enabled = false, cold_enabled = false,
+      halt_reason = pg_catalog.btrim(p_reason), updated_by_hash = p_actor_hash,
+      updated_at = v_now where singleton;
+  return pg_catalog.jsonb_build_object(
+    'accepted', true, 'reason_code', 'halted', 'halted_at', v_now,
+    'pilot_scope_cleared', v_cleared > 0,
+    'controls', pg_catalog.jsonb_build_object(
+      'master_enabled', false, 'transactional_enabled', false, 'cold_enabled', false
+    )
+  );
+end;
+$$;
+
+create or replace function fundae_private.enforce_transactional_graph_pilot_deadline()
+returns jsonb language plpgsql security definer set search_path = ''
+as $$
+declare
+  v_control public.outbound_delivery_control%rowtype;
+  v_run public.transactional_graph_pilot_runs%rowtype;
+  v_now timestamptz;
+  v_evidence text;
+  v_reason text;
+begin
+  select * into v_control from public.outbound_delivery_control
+  where singleton for update;
+  select * into v_run from public.transactional_graph_pilot_runs
+  where status = 'active' for update;
+  v_now := pg_catalog.clock_timestamp();
+  if v_control.singleton is null then
+    return pg_catalog.jsonb_build_object(
+      'accepted', false, 'reason_code', 'control_unavailable'
+    );
+  end if;
+  if v_run.run_id is null then
+    if v_control.halt_reason = 'TRANSACTIONAL_GRAPH_PILOT_ACTIVE' and
+       (v_control.master_enabled or v_control.transactional_enabled or
+        v_control.cold_enabled) then
+      v_evidence := pg_catalog.encode(extensions.digest(pg_catalog.convert_to(
+        'pilot-watchdog-orphan:' || v_now::text, 'UTF8'
+      ), 'sha256'), 'hex');
+      update public.outbound_delivery_control
+      set master_enabled = false, transactional_enabled = false, cold_enabled = false,
+          halt_reason = 'TRANSACTIONAL_GRAPH_PILOT_WATCHDOG_ORPHAN',
+          updated_by_hash = v_evidence, updated_at = v_now
+      where singleton;
+      return pg_catalog.jsonb_build_object(
+        'accepted', true, 'reason_code', 'pilot_orphan_halted', 'outbound_off', true
+      );
+    end if;
+    return pg_catalog.jsonb_build_object(
+      'accepted', true, 'reason_code', 'pilot_inactive',
+      'outbound_off', not v_control.master_enabled and
+        not v_control.transactional_enabled and not v_control.cold_enabled
+    );
+  end if;
+  if v_run.expires_at > v_now and v_control.master_enabled and
+     v_control.transactional_enabled and not v_control.cold_enabled and
+     v_control.halt_reason = 'TRANSACTIONAL_GRAPH_PILOT_ACTIVE' then
+    return pg_catalog.jsonb_build_object(
+      'accepted', true, 'reason_code', 'pilot_scope_current',
+      'run_id_hash', pg_catalog.encode(extensions.digest(
+        pg_catalog.convert_to(v_run.run_id, 'UTF8'), 'sha256'
+      ), 'hex'), 'outbound_off', false
+    );
+  end if;
+  v_reason := case when v_run.expires_at <= v_now
+    then 'TRANSACTIONAL_GRAPH_PILOT_EXPIRED'
+    else 'TRANSACTIONAL_GRAPH_PILOT_CONTROL_VIOLATION' end;
+  v_evidence := pg_catalog.encode(extensions.digest(pg_catalog.convert_to(
+    'pilot-watchdog:' || v_run.run_id || ':' || v_reason || ':' || v_now::text,
+    'UTF8'
+  ), 'sha256'), 'hex');
+  update public.transactional_graph_pilot_runs
+  set status = case when v_run.expires_at <= v_now then 'expired' else 'halted' end,
+      finished_at = v_now, finish_evidence_hash = v_evidence, updated_at = v_now
+  where run_id = v_run.run_id and status = 'active';
+  update public.outbound_delivery_control
+  set master_enabled = false, transactional_enabled = false, cold_enabled = false,
+      halt_reason = v_reason, updated_by_hash = v_evidence, updated_at = v_now
+  where singleton;
+  return pg_catalog.jsonb_build_object(
+    'accepted', true,
+    'reason_code', case when v_run.expires_at <= v_now
+      then 'pilot_scope_expired' else 'pilot_control_violation' end,
+    'run_id_hash', pg_catalog.encode(extensions.digest(
+      pg_catalog.convert_to(v_run.run_id, 'UTF8'), 'sha256'
+    ), 'hex'), 'outbound_off', true
+  );
+end;
+$$;
+
+create or replace function public.read_transactional_graph_pilot_ledger(
+  p_run_id text, p_actor_hash text
+) returns jsonb language plpgsql security definer set search_path = ''
+as $$
+declare
+  v_run public.transactional_graph_pilot_runs%rowtype;
+  v_rows jsonb;
+  v_row_count integer;
+  v_resources integer;
+  v_reservations integer;
+  v_unique_reservations integer;
+  v_drafts integer;
+  v_unique_drafts integer;
+  v_confirmed integer;
+  v_confirmed_evidenced integer;
+begin
+  if p_run_id is null or p_run_id !~ '^[A-Za-z0-9][A-Za-z0-9_.:-]{7,63}$' or
+     p_actor_hash is null or p_actor_hash !~ '^[a-f0-9]{64}$' then
+    return pg_catalog.jsonb_build_object('accepted', false, 'reason_code', 'invalid_request');
+  end if;
+  select * into v_run from public.transactional_graph_pilot_runs
+  where run_id = p_run_id and actor_hash = p_actor_hash;
+  if not found then
+    return pg_catalog.jsonb_build_object(
+      'accepted', false, 'reason_code', 'pilot_ledger_unavailable'
+    );
+  end if;
+  select pg_catalog.count(*), pg_catalog.count(distinct d.resource),
+         pg_catalog.count(d.reservation_id),
+         pg_catalog.count(distinct d.reservation_id),
+         pg_catalog.count(g.graph_draft_immutable_id),
+         pg_catalog.count(distinct g.graph_draft_immutable_id),
+         pg_catalog.count(*) filter (where d.status = 'confirmed_sent'),
+         pg_catalog.count(*) filter (where d.status = 'confirmed_sent'
+           and g.state = 'confirmed_sent'
+           and g.sent_items_evidence_hash = d.outcome_evidence_hash
+           and g.sent_items_evidence_hash is not null
+           and g.internet_message_id_hash is not null),
+         coalesce(pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object(
+           'resource', d.resource, 'status', d.status,
+           'dispatch_id_hash', pg_catalog.encode(extensions.digest(
+             pg_catalog.convert_to(d.id::text, 'UTF8'), 'sha256'
+           ), 'hex'),
+           'reservation_id_hash', case when d.reservation_id is null then null else
+             pg_catalog.encode(extensions.digest(pg_catalog.convert_to(
+               d.reservation_id::text, 'UTF8'
+             ), 'sha256'), 'hex') end,
+           'draft_immutable_id_hash', case when g.graph_draft_immutable_id is null then null else
+             pg_catalog.encode(extensions.digest(pg_catalog.convert_to(
+               g.graph_draft_immutable_id, 'UTF8'
+             ), 'sha256'), 'hex') end,
+           'internet_message_id_hash', g.internet_message_id_hash,
+           'evidence_hash', coalesce(
+             g.sent_items_evidence_hash, g.terminal_evidence_hash, d.outcome_evidence_hash
+           )
+         ) order by d.resource), '[]'::jsonb)
+    into v_row_count, v_resources, v_reservations, v_unique_reservations,
+         v_drafts, v_unique_drafts, v_confirmed, v_confirmed_evidenced, v_rows
+  from public.transactional_dispatch_outbox d
+  left join public.graph_outbox g on g.reservation_id = d.reservation_id
+  where d.pilot_run_id = v_run.run_id and d.submission_id = any(v_run.submission_ids);
+  if v_row_count <> 4 or v_resources <> 4 or
+     v_reservations <> v_unique_reservations or v_drafts <> v_unique_drafts or
+     v_confirmed <> v_confirmed_evidenced then
+    return pg_catalog.jsonb_build_object(
+      'accepted', false, 'reason_code', 'pilot_ledger_invariant_violation',
+      'run_id_hash', pg_catalog.encode(extensions.digest(
+        pg_catalog.convert_to(v_run.run_id, 'UTF8'), 'sha256'
+      ), 'hex')
+    );
+  end if;
+  return pg_catalog.jsonb_build_object(
+    'accepted', true, 'reason_code', 'pilot_ledger_read',
+    'run_id_hash', pg_catalog.encode(extensions.digest(
+      pg_catalog.convert_to(v_run.run_id, 'UTF8'), 'sha256'
+    ), 'hex'),
+    'run_status', v_run.status, 'expires_at', v_run.expires_at, 'rows', v_rows
+  );
+end;
+$$;
+
+alter table public.transactional_graph_pilot_runs enable row level security;
+alter table public.transactional_graph_pilot_runs force row level security;
+revoke all privileges on table public.transactional_graph_pilot_runs
+  from public, anon, authenticated, service_role;
+alter table fundae_private.transactional_graph_pilot_authorization_grants
+  enable row level security;
+alter table fundae_private.transactional_graph_pilot_authorization_grants
+  force row level security;
+revoke all privileges on table
+  fundae_private.transactional_graph_pilot_authorization_grants
+  from public, anon, authenticated, service_role;
+
+revoke execute on function public.enforce_transactional_graph_pilot_binding()
+  from public, anon, authenticated, service_role;
+revoke execute on function fundae_private.transactional_graph_pilot_cohort_reason(text,text[])
+  from public, anon, authenticated, service_role;
+revoke execute on function fundae_private.register_transactional_graph_pilot_grant(
+  text,text,text,text,text[],integer,timestamptz,text
+) from public, anon, authenticated, service_role;
+revoke execute on function fundae_private.enforce_transactional_graph_pilot_deadline()
+  from public, anon, authenticated, service_role;
+revoke execute on function public.claim_transactional_graph_dispatch_pre_pilot_20260819(uuid,integer,integer)
+  from public, anon, authenticated, service_role;
+revoke execute on function public.reserve_claimed_transactional_graph_dispatch_pre_pilot_20260819(uuid,uuid,text,text,text,text,text)
+  from public, anon, authenticated, service_role;
+revoke execute on function public.authorize_graph_draft_send_pre_pilot_20260819(uuid,text,text,text)
+  from public, anon, authenticated, service_role;
+revoke execute on function public.emergency_halt_outbound_delivery_pre_pilot_20260819(text,text)
+  from public, anon, authenticated, service_role;
+
+revoke execute on function public.preview_transactional_graph_pilot(text,text,text,text[],integer)
+  from public, anon, authenticated;
+revoke execute on function public.start_transactional_graph_pilot(text,text,text,text[],text,integer)
+  from public, anon, authenticated;
+revoke execute on function public.claim_transactional_graph_dispatch(uuid,integer,integer)
+  from public, anon, authenticated;
+revoke execute on function public.reserve_claimed_transactional_graph_dispatch(uuid,uuid,text,text,text,text,text)
+  from public, anon, authenticated;
+revoke execute on function public.authorize_graph_draft_send(uuid,text,text,text)
+  from public, anon, authenticated;
+revoke execute on function public.finish_transactional_graph_pilot(text,text,text,text)
+  from public, anon, authenticated;
+revoke execute on function public.read_transactional_graph_pilot_ledger(text,text)
+  from public, anon, authenticated;
+revoke execute on function public.emergency_halt_outbound_delivery(text,text)
+  from public, anon, authenticated;
+
+grant execute on function public.preview_transactional_graph_pilot(text,text,text,text[],integer)
+  to service_role;
+grant execute on function public.start_transactional_graph_pilot(text,text,text,text[],text,integer)
+  to service_role;
+grant execute on function public.claim_transactional_graph_dispatch(uuid,integer,integer)
+  to service_role;
+grant execute on function public.reserve_claimed_transactional_graph_dispatch(uuid,uuid,text,text,text,text,text)
+  to service_role;
+grant execute on function public.authorize_graph_draft_send(uuid,text,text,text)
+  to service_role;
+grant execute on function public.finish_transactional_graph_pilot(text,text,text,text)
+  to service_role;
+grant execute on function public.read_transactional_graph_pilot_ledger(text,text)
+  to service_role;
+grant execute on function public.emergency_halt_outbound_delivery(text,text)
+  to service_role;
+grant execute on function fundae_private.register_transactional_graph_pilot_grant(
+  text,text,text,text,text[],integer,timestamptz,text
+) to postgres;
+grant execute on function fundae_private.enforce_transactional_graph_pilot_deadline()
+  to postgres;
+
+select cron.unschedule(jobid)
+from cron.job
+where jobname = 'fundae-transactional-graph-pilot-watchdog';
+select cron.schedule(
+  'fundae-transactional-graph-pilot-watchdog',
+  '* * * * *',
+  $watchdog$select fundae_private.enforce_transactional_graph_pilot_deadline();$watchdog$
+);
+
+-- Applying the contract never activates a lane or a pilot scope.
+update public.outbound_delivery_control
+set master_enabled = false, transactional_enabled = false, cold_enabled = false,
+    halt_reason = 'TRANSACTIONAL_GRAPH_PILOT_NOT_STARTED',
+    updated_at = pg_catalog.clock_timestamp()
+where singleton;
+
+commit;
+
+-- 20260819234000_campaign_terminal_suppression_hardening.sql
+-- Centralize terminal campaign suppressions and make provisioning fail closed.
+-- This migration never enables outbound and does not backfill historical rows.
+begin;
+
+create or replace function fundae_private.enforce_campaign_terminal_suppression()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_contact public.campaign_contacts%rowtype;
+  v_suppression public.campaign_suppressions%rowtype;
+  v_scope text;
+  v_reason text;
+begin
+  if new.event_name not in ('unsubscribe', 'bounce_hard', 'opposition') then
+    return new;
+  end if;
+
+  select * into v_contact
+  from public.campaign_contacts
+  where id = new.campaign_contact_id and campaign_id = new.campaign_id
+  for update;
+  if not found then
+    raise exception using errcode = '23503',
+      message = 'campaign_terminal_suppression_contact_unavailable';
+  end if;
+
+  perform pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended(v_contact.email_hash, 20260819234000)
+  );
+  v_scope := case when new.event_name = 'unsubscribe' then 'all' else 'marketing' end;
+  v_reason := case when new.event_name = 'bounce_hard' then 'hard_bounce' else new.event_name end;
+
+  insert into public.campaign_suppressions(
+    identity_hash, scope, reason, occurred_at, source_event_id,
+    source_campaign_id, source_contact_id
+  ) values (
+    v_contact.email_hash, v_scope, v_reason, new.occurred_at,
+    new.source_event_id, new.campaign_id, new.campaign_contact_id
+  )
+  on conflict(identity_hash) do update set
+    scope = case
+      when public.campaign_suppressions.scope = 'all' or excluded.scope = 'all'
+        then 'all'
+      else 'marketing'
+    end,
+    reason = case
+      when public.campaign_suppressions.scope = 'all' or excluded.scope = 'all'
+        then 'unsubscribe'
+      when public.campaign_suppressions.reason = 'hard_bounce'
+        or excluded.reason = 'hard_bounce' then 'hard_bounce'
+      else 'opposition'
+    end,
+    occurred_at = least(public.campaign_suppressions.occurred_at, excluded.occurred_at),
+    source_event_id = coalesce(
+      public.campaign_suppressions.source_event_id, excluded.source_event_id
+    ),
+    source_campaign_id = coalesce(
+      public.campaign_suppressions.source_campaign_id, excluded.source_campaign_id
+    ),
+    source_contact_id = coalesce(
+      public.campaign_suppressions.source_contact_id, excluded.source_contact_id
+    ),
+    updated_at = pg_catalog.clock_timestamp()
+  returning * into v_suppression;
+
+  update public.campaign_contacts
+  set cold_sequence_status = 'stopped',
+      intent_sequence_status = 'stopped',
+      marketing_lane = 'none',
+      suppression_scope = v_suppression.scope,
+      sequence_status = 'stopped',
+      next_delivery_status = 'stopped',
+      next_scheduled_at = null,
+      locked_at = null,
+      lock_token = null,
+      lock_expires_at = null,
+      stopped_at = case
+        when stopped_at is null then v_suppression.occurred_at
+        else least(stopped_at, v_suppression.occurred_at)
+      end,
+      stopped_reason = v_suppression.reason,
+      suppressed_at = case
+        when suppressed_at is null then v_suppression.occurred_at
+        else least(suppressed_at, v_suppression.occurred_at)
+      end,
+      suppression_reason = v_suppression.reason,
+      updated_at = pg_catalog.clock_timestamp()
+  where email_hash = v_suppression.identity_hash;
+
+  update public.campaign_executions
+  set status = 'stopped',
+      stopped_at = coalesce(stopped_at, v_suppression.occurred_at),
+      stop_reason = v_suppression.reason,
+      updated_at = pg_catalog.clock_timestamp()
+  where status = 'planned' and campaign_contact_id in (
+    select id from public.campaign_contacts
+    where email_hash = v_suppression.identity_hash
+  );
+
+  return new;
+end;
+$$;
+
+create or replace function fundae_private.reject_suppressed_campaign_contact()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if new.marketing_lane <> 'cold' or new.suppression_scope <> 'none' then
+    return new;
+  end if;
+
+  perform pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended(new.email_hash, 20260819234000)
+  );
+  if exists (
+    select 1 from public.campaign_suppressions
+    where identity_hash = new.email_hash
+  ) then
+    raise exception using errcode = '23514',
+      message = 'campaign_contact_suppressed';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists campaign_events_terminal_suppression on public.campaign_events;
+create trigger campaign_events_terminal_suppression
+after insert on public.campaign_events
+for each row
+when (new.event_name in ('unsubscribe', 'bounce_hard', 'opposition'))
+execute function fundae_private.enforce_campaign_terminal_suppression();
+
+drop trigger if exists campaign_contacts_suppression_gate on public.campaign_contacts;
+create trigger campaign_contacts_suppression_gate
+before insert or update of email_hash, marketing_lane, suppression_scope
+on public.campaign_contacts
+for each row
+execute function fundae_private.reject_suppressed_campaign_contact();
+
+revoke execute on function fundae_private.enforce_campaign_terminal_suppression()
+  from public, anon, authenticated, service_role;
+revoke execute on function fundae_private.reject_suppressed_campaign_contact()
+  from public, anon, authenticated, service_role;
+
+-- V3 is the only accepted provisioning domain. This migration has not been
+-- applied in any environment; abort rather than reinterpret legacy manifests.
+do $$
+begin
+  if exists (select 1 from public.cold_campaign_provision_manifests)
+     or exists (select 1 from public.cold_campaign_provision_batches) then
+    raise exception using errcode = '55000',
+      message = 'cold_campaign_v2_state_present';
+  end if;
+end;
+$$;
+
+alter table public.cold_campaign_provision_manifests
+  add column technical_evidence_hash text;
+alter table public.cold_campaign_provision_manifests
+  drop constraint cold_campaign_provision_manifests_hash_domain_check;
+alter table public.cold_campaign_provision_manifests
+  alter column hash_domain set default 'cold-provision-v3';
+alter table public.cold_campaign_provision_manifests
+  alter column technical_evidence_hash set not null;
+alter table public.cold_campaign_provision_manifests
+  add constraint cold_campaign_provision_manifests_hash_domain_check
+    check (hash_domain = 'cold-provision-v3'),
+  add constraint cold_campaign_provision_manifests_technical_evidence_hash_check
+    check (technical_evidence_hash ~ '^[a-f0-9]{64}$');
+
+create or replace function public.apply_cold_campaign_provision_batch(
+  p_manifest_hash text,p_logical_dataset_hash text,p_batch_index integer,p_batch_count integer,p_batch_hash text,
+  p_actor_hash text,p_authorization_hash text,p_campaign_external_id text,p_rows jsonb
+) returns jsonb
+language plpgsql security definer set search_path=''
+as $$
+declare
+  v_control public.cold_campaign_provision_control%rowtype;
+  v_outbound public.outbound_delivery_control%rowtype;
+  v_campaign public.campaigns%rowtype;
+  v_contact public.campaign_contacts%rowtype;
+  v_execution public.campaign_executions%rowtype;
+  v_existing public.cold_campaign_provision_batches%rowtype;
+  v_existing_manifest public.cold_campaign_provision_manifests%rowtype;
+  v_row jsonb;
+  v_now timestamptz;
+  v_row_count integer;
+  v_computed_batch_hash text;
+  v_row_hashes text[];
+  v_technical_evidence_hash text;
+  v_technical_evidence_max text;
+  v_computed_row_hash text;
+  v_token_id uuid;
+  v_token text;
+  v_token_occurrences integer;
+  v_canonical_payload text;
+begin
+  if p_manifest_hash !~ '^[a-f0-9]{64}$' or p_logical_dataset_hash !~ '^[a-f0-9]{64}$' or
+     p_batch_hash !~ '^[a-f0-9]{64}$' or p_actor_hash !~ '^[a-f0-9]{64}$' or
+     p_authorization_hash !~ '^[a-f0-9]{64}$' or
+     p_campaign_external_id !~ '^[A-Za-z0-9][A-Za-z0-9_.:-]{2,127}$' or
+     p_batch_count not between 1 and 100 or
+     p_batch_index not between 0 and p_batch_count-1 or
+     pg_catalog.jsonb_typeof(p_rows)<>'array' then
+    raise exception using errcode='22023',message='provision_request_invalid';
+  end if;
+  v_row_count:=pg_catalog.jsonb_array_length(p_rows);
+  if v_row_count not between 1 and 500 then
+    raise exception using errcode='22023',message='provision_batch_size_invalid';
+  end if;
+  select
+    pg_catalog.encode(extensions.digest(pg_catalog.convert_to(
+      pg_catalog.string_agg(item->>'row_sha256',E'\n' order by item->>'row_sha256'),'UTF8'),'sha256'),'hex'),
+    pg_catalog.array_agg(item->>'row_sha256' order by item->>'row_sha256'),
+    pg_catalog.min(item->>'technical_evidence_sha256'),
+    pg_catalog.max(item->>'technical_evidence_sha256')
+  into v_computed_batch_hash,v_row_hashes,v_technical_evidence_hash,v_technical_evidence_max
+  from pg_catalog.jsonb_array_elements(p_rows) item;
+  if v_computed_batch_hash<>p_batch_hash then
+    raise exception using errcode='22023',message='provision_batch_hash_invalid';
+  end if;
+  if v_technical_evidence_hash is null or
+     v_technical_evidence_hash !~ '^[a-f0-9]{64}$' or
+     v_technical_evidence_hash<>v_technical_evidence_max then
+    raise exception using errcode='22023',message='provision_technical_evidence_invalid';
+  end if;
+
+  -- Recompute every row before the replay shortcut. A caller cannot obtain an
+  -- accepted duplicate response by pairing an old row_sha256 with drifted data.
+  for v_row in select item from pg_catalog.jsonb_array_elements(p_rows) item loop
+    if (select count(*) from pg_catalog.jsonb_object_keys(v_row))<>25 or
+       v_row->>'campaign_external_id'<>p_campaign_external_id or
+       v_row->>'technical_evidence_sha256'<>v_technical_evidence_hash or
+       v_row->>'row_sha256' !~ '^[a-f0-9]{64}$' then
+      raise exception using errcode='22023',message='provision_row_shape_invalid';
+    end if;
+    v_computed_row_hash:=pg_catalog.encode(extensions.digest(pg_catalog.convert_to(
+      pg_catalog.concat_ws(pg_catalog.chr(31),
+        v_row->>'campaign_external_id',v_row->>'contact_id',v_row->>'account_id',
+        v_row->>'email',v_row->>'email_hash',v_row->>'variant',v_row->>'lot',
+        v_row->>'step',v_row->>'scheduled_for',v_row->>'execution_key',
+        v_row->>'recipient_email',v_row->>'subject',v_row->>'html_body',
+        v_row->>'payload_sha256',v_row->>'token_hash',v_row->>'validation_status',
+        v_row->>'unsubscribe_status',v_row->>'opposition_status',
+        v_row->>'hard_bounce_status',v_row->>'suppression_status',
+        v_row->>'duplicate_status',v_row->>'campaign_authorization',
+        v_row->>'company_size',v_row->>'technical_evidence_sha256'
+      ),'UTF8'),'sha256'),'hex');
+    if v_computed_row_hash<>v_row->>'row_sha256' then
+      raise exception using errcode='22023',message='provision_row_hash_invalid';
+    end if;
+  end loop;
+
+  select * into v_control
+  from public.cold_campaign_provision_control where singleton for update;
+  v_now:=pg_catalog.clock_timestamp();
+  if not found or not v_control.enabled or v_control.expires_at<=v_now or
+     v_control.expected_manifest_hash<>p_manifest_hash or
+     v_control.expected_authorization_hash<>p_authorization_hash or
+     v_control.authorized_actor_hash<>p_actor_hash then
+    raise exception using errcode='42501',message='provision_control_closed';
+  end if;
+  select * into v_outbound
+  from public.outbound_delivery_control where singleton for update;
+  v_now:=pg_catalog.clock_timestamp();
+  if not found or v_outbound.master_enabled or v_outbound.cold_enabled then
+    raise exception using errcode='55000',message='outbound_must_remain_off';
+  end if;
+
+  select * into v_existing_manifest
+  from public.cold_campaign_provision_manifests
+  where manifest_hash=p_manifest_hash for update;
+  if found and (
+    v_existing_manifest.hash_domain<>'cold-provision-v3' or
+    v_existing_manifest.actor_hash<>p_actor_hash or
+    v_existing_manifest.logical_dataset_hash<>p_logical_dataset_hash or
+    v_existing_manifest.technical_evidence_hash<>v_technical_evidence_hash or
+    v_existing_manifest.campaign_external_id<>p_campaign_external_id or
+    v_existing_manifest.batch_count<>p_batch_count
+  ) then
+    raise exception using errcode='23505',message='manifest_collision';
+  end if;
+
+  select * into v_existing from public.cold_campaign_provision_batches
+  where manifest_hash=p_manifest_hash and batch_index=p_batch_index for update;
+  if found then
+    if v_existing.batch_hash<>p_batch_hash or
+       v_existing.batch_count<>p_batch_count or
+       v_existing.row_count<>v_row_count or
+       v_existing.actor_hash<>p_actor_hash or
+       v_existing.row_hashes<>v_row_hashes then
+      raise exception using errcode='23505',message='provision_batch_collision';
+    end if;
+    return pg_catalog.jsonb_build_object(
+      'accepted',true,'duplicate',true,'reason_code','batch_replayed'
+    );
+  end if;
+
+  insert into public.campaigns(name,is_active,external_id,timezone,status)
+  values('FUNDAE 2026 Email Campaign',false,p_campaign_external_id,'Europe/Madrid','draft')
+  on conflict(external_id) do nothing;
+  select * into v_campaign
+  from public.campaigns where external_id=p_campaign_external_id for update;
+  if not found or v_campaign.is_active or v_campaign.status<>'draft' then
+    raise exception using errcode='23505',message='campaign_collision';
+  end if;
+  insert into public.cold_campaign_provision_manifests(
+    manifest_hash,campaign_id,actor_hash,logical_dataset_hash,
+    technical_evidence_hash,campaign_external_id,hash_domain,batch_count
+  ) values (
+    p_manifest_hash,v_campaign.id,p_actor_hash,p_logical_dataset_hash,
+    v_technical_evidence_hash,p_campaign_external_id,'cold-provision-v3',p_batch_count
+  ) on conflict(manifest_hash) do nothing;
+  if not exists(
+    select 1 from public.cold_campaign_provision_manifests m
+    where m.manifest_hash=p_manifest_hash and m.campaign_id=v_campaign.id
+      and m.actor_hash=p_actor_hash
+      and m.logical_dataset_hash=p_logical_dataset_hash
+      and m.technical_evidence_hash=v_technical_evidence_hash
+      and m.campaign_external_id=p_campaign_external_id
+      and m.hash_domain='cold-provision-v3'
+      and m.batch_count=p_batch_count and m.status='applying'
+  ) then
+    raise exception using errcode='23505',message='manifest_collision';
+  end if;
+
+  -- The stop-gate validates planned rows while MVCC keeps pilot state private.
+  -- Every path restores draft before commit; any exception rolls back atomically.
+  update public.campaigns set is_active=true,status='pilot' where id=v_campaign.id;
+
+  for v_row in select item from pg_catalog.jsonb_array_elements(p_rows) item loop
+    if (select count(*) from pg_catalog.jsonb_object_keys(v_row))<>25 or exists(
+      select 1 from pg_catalog.jsonb_object_keys(v_row) key where key not in (
+        'campaign_external_id','contact_id','account_id','email','email_hash','variant','lot','step','scheduled_for','execution_key',
+        'recipient_email','subject','html_body','payload_sha256','token_hash','validation_status','unsubscribe_status','opposition_status',
+        'hard_bounce_status','suppression_status','duplicate_status','campaign_authorization','row_sha256','company_size',
+        'technical_evidence_sha256'
+      )
+    ) then
+      raise exception using errcode='22023',message='provision_row_shape_invalid';
+    end if;
+    if v_row->>'campaign_external_id'<>p_campaign_external_id or
+       v_row->>'technical_evidence_sha256'<>v_technical_evidence_hash or
+       v_row->>'validation_status'<>'OK' or
+       v_row->>'unsubscribe_status'<>'CLEAR' or
+       v_row->>'opposition_status'<>'CLEAR' or
+       v_row->>'hard_bounce_status'<>'CLEAR' or
+       v_row->>'suppression_status'<>'CLEAR' or
+       v_row->>'duplicate_status'<>'CLEAR' or
+       v_row->>'campaign_authorization'<>'AUTHORIZED' or
+       (v_row->>'step')::integer not between 1 and 5 or
+       v_row->>'lot' not in ('A','B','C','D') or
+       v_row->>'email_hash' !~ '^[a-f0-9]{64}$' or
+       v_row->>'payload_sha256' !~ '^[a-f0-9]{64}$' or
+       v_row->>'token_hash' !~ '^[a-f0-9]{64}$' or
+       v_row->>'row_sha256' !~ '^[a-f0-9]{64}$' or
+       v_row->>'email'<>pg_catalog.lower(v_row->>'email') or
+       v_row->>'recipient_email'<>v_row->>'email' or
+       not fundae_private.is_cold_campaign_hmac_identity(
+         v_row->>'email',v_row->>'email_hash'
+       ) or pg_catalog.strpos(v_row->>'html_body','{{unsubscribe_url}}')>0 then
+      raise exception using errcode='22023',message='provision_row_gate_invalid';
+    end if;
+    select count(*),min(match[1]) into v_token_occurrences,v_token
+    from pg_catalog.regexp_matches(
+      v_row->>'html_body','(u1[.][A-Za-z0-9_-]{43})','g'
+    ) match;
+    if v_token_occurrences<>1 or
+       pg_catalog.strpos(v_row->>'html_body','/baja?token='||v_token)=0 or
+       pg_catalog.encode(extensions.digest(
+         pg_catalog.convert_to(v_token,'UTF8'),'sha256'
+       ),'hex')<>v_row->>'token_hash' then
+      raise exception using errcode='22023',message='provision_unsubscribe_binding_invalid';
+    end if;
+    v_canonical_payload:='{"recipient":'||pg_catalog.to_json(v_row->>'recipient_email')::text||
+      ',"subject":'||pg_catalog.to_json(v_row->>'subject')::text||
+      ',"body":'||pg_catalog.to_json(v_row->>'html_body')::text||',"attachments":[]}';
+    if pg_catalog.encode(extensions.digest(
+         pg_catalog.convert_to(v_canonical_payload,'UTF8'),'sha256'
+       ),'hex')<>v_row->>'payload_sha256' then
+      raise exception using errcode='22023',message='provision_payload_hash_invalid';
+    end if;
+    v_computed_row_hash:=pg_catalog.encode(extensions.digest(pg_catalog.convert_to(
+      pg_catalog.concat_ws(pg_catalog.chr(31),
+        v_row->>'campaign_external_id',v_row->>'contact_id',v_row->>'account_id',
+        v_row->>'email',v_row->>'email_hash',v_row->>'variant',v_row->>'lot',
+        v_row->>'step',v_row->>'scheduled_for',v_row->>'execution_key',
+        v_row->>'recipient_email',v_row->>'subject',v_row->>'html_body',
+        v_row->>'payload_sha256',v_row->>'token_hash',v_row->>'validation_status',
+        v_row->>'unsubscribe_status',v_row->>'opposition_status',
+        v_row->>'hard_bounce_status',v_row->>'suppression_status',
+        v_row->>'duplicate_status',v_row->>'campaign_authorization',
+        v_row->>'company_size',v_row->>'technical_evidence_sha256'
+      ),'UTF8'),'sha256'),'hex');
+    if v_computed_row_hash<>v_row->>'row_sha256' then
+      raise exception using errcode='22023',message='provision_row_hash_invalid';
+    end if;
+
+    insert into public.campaign_contacts(
+      campaign_id,external_contact_id,external_account_id,email_hash,contact_data,
+      variant,magnet,lot,company_size,current_step,sequence_status,
+      next_delivery_status,marketing_lane,cold_sequence_status,suppression_scope
+    ) values (
+      v_campaign.id,v_row->>'contact_id',v_row->>'account_id',v_row->>'email_hash',
+      pg_catalog.jsonb_build_object('email',v_row->>'email'),v_row->>'variant',
+      v_row->>'variant',v_row->>'lot',nullif(v_row->>'company_size',''),1,
+      'pending','pending','cold','pending','none'
+    ) on conflict(campaign_id,external_contact_id) do nothing;
+    select * into v_contact from public.campaign_contacts
+    where campaign_id=v_campaign.id
+      and external_contact_id=v_row->>'contact_id' for update;
+    if not found or v_contact.external_account_id<>v_row->>'account_id' or
+       v_contact.email_hash<>v_row->>'email_hash' or
+       v_contact.variant<>v_row->>'variant' or v_contact.lot<>v_row->>'lot' or
+       v_contact.contact_data->>'email'<>v_row->>'email' then
+      raise exception using errcode='23505',message='row_collision';
+    end if;
+
+    insert into public.campaign_unsubscribe_tokens(
+      campaign_id,campaign_contact_id,token_hash,token_version
+    ) values (v_campaign.id,v_contact.id,v_row->>'token_hash',1)
+    on conflict(campaign_contact_id,token_version) do nothing;
+    select id into v_token_id from public.campaign_unsubscribe_tokens
+    where campaign_contact_id=v_contact.id and token_version=1
+      and token_hash=v_row->>'token_hash' and revoked_at is null;
+    if not found then
+      raise exception using errcode='23505',message='unsubscribe_token_collision';
+    end if;
+
+    insert into public.campaign_executions(
+      campaign_id,campaign_contact_id,idempotency_key,channel,capture_method,
+      action_name,step,status,scheduled_for,planned_at,metadata
+    ) values (
+      v_campaign.id,v_contact.id,v_row->>'execution_key','email','automation',
+      'delivery_scheduled',(v_row->>'step')::integer,'planned',
+      (v_row->>'scheduled_for')::timestamptz,v_now,'{}'::jsonb
+    ) on conflict(campaign_id,idempotency_key) do nothing;
+    select * into v_execution from public.campaign_executions
+    where campaign_id=v_campaign.id
+      and idempotency_key=v_row->>'execution_key' for update;
+    if not found or v_execution.campaign_contact_id<>v_contact.id or
+       v_execution.step<>(v_row->>'step')::integer or
+       v_execution.status<>'planned' or
+       v_execution.scheduled_for<>(v_row->>'scheduled_for')::timestamptz then
+      raise exception using errcode='23505',message='execution_collision';
+    end if;
+
+    insert into public.cold_campaign_message_payloads(
+      campaign_execution_id,recipient_email,subject,html_body,payload_sha256,
+      unsubscribe_materialized
+    ) values (
+      v_execution.id,v_row->>'recipient_email',v_row->>'subject',
+      v_row->>'html_body',v_row->>'payload_sha256',true
+    ) on conflict(campaign_execution_id) do nothing;
+    if not exists(
+      select 1 from public.cold_campaign_message_payloads p
+      where p.campaign_execution_id=v_execution.id
+        and p.recipient_email=v_row->>'recipient_email'
+        and p.subject=v_row->>'subject' and p.html_body=v_row->>'html_body'
+        and p.payload_sha256=v_row->>'payload_sha256'
+        and p.unsubscribe_materialized
+    ) then
+      raise exception using errcode='23505',message='payload_collision';
+    end if;
+  end loop;
+
+  update public.campaigns set is_active=false,status='draft' where id=v_campaign.id;
+  insert into public.cold_campaign_provision_batches(
+    manifest_hash,batch_index,batch_count,batch_hash,row_count,actor_hash,row_hashes
+  ) values (
+    p_manifest_hash,p_batch_index,p_batch_count,p_batch_hash,v_row_count,
+    p_actor_hash,v_row_hashes
+  ) on conflict(manifest_hash,batch_index) do nothing;
+  return pg_catalog.jsonb_build_object(
+    'accepted',true,'duplicate',false,'reason_code','batch_applied',
+    'row_count',v_row_count
+  );
+end;
+$$;
+
+create or replace function public.finalize_cold_campaign_provision(
+  p_manifest_hash text,p_actor_hash text,p_authorization_hash text
+) returns jsonb
+language plpgsql security definer set search_path=''
+as $$
+declare
+  v_control public.cold_campaign_provision_control%rowtype;
+  v_outbound public.outbound_delivery_control%rowtype;
+  v_manifest public.cold_campaign_provision_manifests%rowtype;
+  v_now timestamptz;
+  v_batches integer;
+  v_rows integer;
+  v_computed_manifest_hash text;
+begin
+  if p_manifest_hash !~ '^[a-f0-9]{64}$' or
+     p_actor_hash !~ '^[a-f0-9]{64}$' or
+     p_authorization_hash !~ '^[a-f0-9]{64}$' then
+    raise exception using errcode='22023',message='finalize_request_invalid';
+  end if;
+  select * into v_control
+  from public.cold_campaign_provision_control where singleton for update;
+  v_now:=pg_catalog.clock_timestamp();
+  if not found or not v_control.enabled or v_control.expires_at<=v_now or
+     v_control.expected_manifest_hash<>p_manifest_hash or
+     v_control.expected_authorization_hash<>p_authorization_hash or
+     v_control.authorized_actor_hash<>p_actor_hash then
+    raise exception using errcode='42501',message='provision_control_closed';
+  end if;
+  select * into v_outbound
+  from public.outbound_delivery_control where singleton for update;
+  if not found or v_outbound.master_enabled or v_outbound.cold_enabled then
+    raise exception using errcode='55000',message='outbound_must_remain_off';
+  end if;
+  select * into v_manifest from public.cold_campaign_provision_manifests
+  where manifest_hash=p_manifest_hash for update;
+  if not found or v_manifest.actor_hash<>p_actor_hash or
+     v_manifest.hash_domain<>'cold-provision-v3' or
+     v_manifest.technical_evidence_hash !~ '^[a-f0-9]{64}$' then
+    raise exception using errcode='23505',message='manifest_collision';
+  end if;
+  if v_manifest.status='prepared_off' then
+    return pg_catalog.jsonb_build_object(
+      'accepted',true,'duplicate',true,'reason_code','already_prepared_off'
+    );
+  end if;
+  select count(*),coalesce(sum(row_count),0)
+  into v_batches,v_rows from public.cold_campaign_provision_batches
+  where manifest_hash=p_manifest_hash;
+  if v_batches<>v_manifest.batch_count or v_rows<>4695 or exists(
+    select 1 from pg_catalog.generate_series(0,v_manifest.batch_count-1) expected
+    where not exists(
+      select 1 from public.cold_campaign_provision_batches b
+      where b.manifest_hash=p_manifest_hash and b.batch_index=expected
+    )
+  ) then
+    raise exception using errcode='55000',message='partial_batch_set';
+  end if;
+  select pg_catalog.encode(extensions.digest(pg_catalog.convert_to(
+    pg_catalog.concat_ws(pg_catalog.chr(31),
+      'cold-provision-v3',v_manifest.logical_dataset_hash,
+      v_manifest.technical_evidence_hash,v_manifest.campaign_external_id,
+      pg_catalog.string_agg(row_hash,E'\n' order by row_hash)
+    ),'UTF8'),'sha256'),'hex')
+  into v_computed_manifest_hash
+  from public.cold_campaign_provision_batches b
+  cross join lateral pg_catalog.unnest(b.row_hashes) as hashes(row_hash)
+  where b.manifest_hash=p_manifest_hash;
+  if v_computed_manifest_hash<>p_manifest_hash or not exists(
+    select 1 from public.campaigns c
+    where c.id=v_manifest.campaign_id
+      and c.external_id=v_manifest.campaign_external_id
+      and not c.is_active and c.status='draft'
+  ) then
+    raise exception using errcode='23514',message='provision_manifest_hash_invalid';
+  end if;
+  if (select count(*) from public.campaign_contacts
+      where campaign_id=v_manifest.campaign_id)<>939 or
+     (select count(*) from public.campaign_contacts
+      where campaign_id=v_manifest.campaign_id and lot='A')<>235 or
+     (select count(*) from public.campaign_contacts
+      where campaign_id=v_manifest.campaign_id and lot='B')<>235 or
+     (select count(*) from public.campaign_contacts
+      where campaign_id=v_manifest.campaign_id and lot='C')<>235 or
+     (select count(*) from public.campaign_contacts
+      where campaign_id=v_manifest.campaign_id and lot='D')<>234 then
+    raise exception using errcode='55000',message='contact_or_lot_count_invalid';
+  end if;
+  if (select count(*) from public.campaign_executions
+      where campaign_id=v_manifest.campaign_id and channel='email'
+        and action_name='delivery_scheduled')<>4695 or
+     (select count(*) from public.cold_campaign_message_payloads p
+      join public.campaign_executions e on e.id=p.campaign_execution_id
+      where e.campaign_id=v_manifest.campaign_id)<>4695 or exists(
+       select 1 from public.campaign_executions e
+       where e.campaign_id=v_manifest.campaign_id
+       group by e.campaign_contact_id
+       having count(*) filter(
+         where e.channel='email' and e.action_name='delivery_scheduled'
+       )<>5 or count(distinct e.step) filter(
+         where e.channel='email' and e.action_name='delivery_scheduled'
+       )<>5
+     ) then
+    raise exception using errcode='55000',message='execution_or_payload_count_invalid';
+  end if;
+  update public.cold_campaign_provision_manifests
+  set status='prepared_off',prepared_at=v_now where manifest_hash=p_manifest_hash;
+  update public.cold_campaign_provision_control
+  set enabled=false,updated_at=v_now where singleton;
+  return pg_catalog.jsonb_build_object(
+    'accepted',true,'duplicate',false,'reason_code','prepared_off',
+    'contacts',939,'payloads',4695,'hash_domain','cold-provision-v3',
+    'technical_evidence_hash',v_manifest.technical_evidence_hash
+  );
+end;
+$$;
+
+revoke execute on function public.apply_cold_campaign_provision_batch(
+  text,text,integer,integer,text,text,text,text,jsonb
+) from public,anon,authenticated;
+revoke execute on function public.finalize_cold_campaign_provision(text,text,text)
+  from public,anon,authenticated;
+grant execute on function public.apply_cold_campaign_provision_batch(
+  text,text,integer,integer,text,text,text,text,jsonb
+) to service_role;
+grant execute on function public.finalize_cold_campaign_provision(text,text,text)
+  to service_role;
+
+-- Applying the contract never activates outbound or provisioning.
+update public.outbound_delivery_control
+set master_enabled = false, transactional_enabled = false, cold_enabled = false,
+    halt_reason = 'CAMPAIGN_TERMINAL_SUPPRESSION_HARDENED',
+    updated_at = pg_catalog.clock_timestamp()
+where singleton;
+update public.cold_campaign_provision_control
+set enabled = false, updated_at = pg_catalog.clock_timestamp()
+where singleton;
+
+commit;
+
+-- 20260819234100_campaign_contact_suppression_insert_gate.sql
+-- Reject new campaign contacts whose canonical identity is already suppressed.
+-- This remains additive and never enables outbound.
+begin;
+
+set local lock_timeout = '10s';
+set local statement_timeout = '5min';
+
+create or replace function fundae_private.reject_suppressed_campaign_contact()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if tg_op <> 'INSERT' and
+     (new.marketing_lane <> 'cold' or new.suppression_scope <> 'none') then
+    return new;
+  end if;
+
+  perform pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended(new.email_hash, 20260819234000)
+  );
+  if exists (
+    select 1 from public.campaign_suppressions
+    where identity_hash = new.email_hash
+  ) then
+    raise exception using errcode = '23514',
+      message = 'campaign_contact_suppressed';
+  end if;
+  return new;
+end;
+$$;
+
+revoke execute on function fundae_private.reject_suppressed_campaign_contact()
+  from public, anon, authenticated, service_role;
+
+commit;
+
+-- 20260819234200_transactional_graph_pilot_authorization_fk_index.sql
+-- Cover the pilot authorization foreign key reported by Supabase advisors.
+begin;
+
+set local lock_timeout = '10s';
+set local statement_timeout = '5min';
+
+create index if not exists transactional_graph_pilot_authorization_fk_idx
+  on public.transactional_graph_pilot_runs (authorization_hash);
+
+commit;

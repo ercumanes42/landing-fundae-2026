@@ -166,7 +166,7 @@ test('candidate selection rejects weak, placeholder and whitespace-drift lead se
   }
 });
 
-test('accepts a completed calculator with its claim and keeps only pending resources sendable', async () => {
+test('classifies a completed calculator and keeps only pending historical candidates', () => {
   const sequential = rows();
   sequential[0] = { ...sequential[0], email_delivery_status: 'email_sent' };
   const claims = [{ submission_id: sequential[0].submission_id, resource: 'calculator' }];
@@ -176,32 +176,6 @@ test('accepts a completed calculator with its claim and keeps only pending resou
   assert.equal(result.candidates.has('calculator'), false);
   assert.equal(result.candidates.has('interactive_checklist'), true);
 
-  const previousSecret = process.env.MAKE_WEBHOOK_SECRET;
-  process.env.MAKE_WEBHOOK_SECRET = 'runtime-test-secret-that-is-at-least-32-bytes';
-  let hookLookups = 0;
-  let posts = 0;
-  const dependencies = {
-    async internalCandidates() { return result; },
-    async makeHookUrl() { hookLookups += 1; return 'https://hook.example.test/private'; },
-    async fetch() { posts += 1; return new Response(null, { status: 200 }); },
-  };
-  try {
-    await assert.rejects(
-      () => sendFreshResource('calculator', 'POST_ONCE_FRESH_V4', dependencies),
-      /internal_candidate_missing/,
-    );
-    assert.equal(hookLookups, 0);
-    assert.equal(posts, 0);
-    const sent = await sendFreshResource('interactive_checklist', 'POST_ONCE_FRESH_V4', dependencies);
-    assert.deepEqual(sent, {
-      resource: 'interactive_checklist', accepted_by_hook: true, http_status: 200,
-    });
-    assert.equal(hookLookups, 1);
-    assert.equal(posts, 1);
-  } finally {
-    if (previousSecret === undefined) delete process.env.MAKE_WEBHOOK_SECRET;
-    else process.env.MAKE_WEBHOOK_SECRET = previousSecret;
-  }
 });
 
 test('rejects completed-without-claim, pending-with-claim and failed states', () => {
@@ -277,66 +251,27 @@ test('builds one deterministic HMAC request without exposing values in a summary
   assert.doesNotMatch(JSON.stringify(summary), /@|submission|lead_id|payload|signature|capability/i);
 });
 
-test('send guard and target35 failure occur before the single hook POST', async () => {
-  const previousSecret = process.env.MAKE_WEBHOOK_SECRET;
-  process.env.MAKE_WEBHOOK_SECRET = 'runtime-test-secret-that-is-at-least-32-bytes';
-  let posts = 0;
+test('legacy Make-Outlook send is superseded and cannot touch candidates, hooks or network', async () => {
+  let dependencyCalls = 0;
   const dependencies = {
     async internalCandidates() {
+      dependencyCalls += 1;
       return selectFreshOutlookCandidates(rows(), [], computedAllowlist, leadHashSecret);
     },
     async makeHookUrl() {
-      throw new Error('make_target35_mismatch');
+      dependencyCalls += 1;
+      return 'https://hook.eu2.make.com/private-path';
     },
     async fetch() {
-      posts += 1;
+      dependencyCalls += 1;
       return new Response(null, { status: 200 });
     },
   };
-  try {
+  for (const confirmation of ['WRONG_CONFIRMATION', 'POST_ONCE_FRESH_V3', 'POST_ONCE_FRESH_V4']) {
     await assert.rejects(
-      () => sendFreshResource('calculator', 'WRONG_CONFIRMATION', dependencies),
-      /send_confirmation_required/,
+      () => sendFreshResource('calculator', confirmation, dependencies),
+      /legacy_make_outlook_send_superseded/,
     );
-    await assert.rejects(
-      () => sendFreshResource('calculator', 'POST_ONCE_FRESH_V3', dependencies),
-      /send_confirmation_required/,
-    );
-    await assert.rejects(
-      () => sendFreshResource('calculator', 'POST_ONCE_FRESH_V4', dependencies),
-      /make_target35_mismatch/,
-    );
-    assert.equal(posts, 0);
-  } finally {
-    if (previousSecret === undefined) delete process.env.MAKE_WEBHOOK_SECRET;
-    else process.env.MAKE_WEBHOOK_SECRET = previousSecret;
   }
-});
-
-test('send performs exactly one no-redirect timeout-bound POST and returns only HTTP metadata', async () => {
-  const previousSecret = process.env.MAKE_WEBHOOK_SECRET;
-  process.env.MAKE_WEBHOOK_SECRET = 'runtime-test-secret-that-is-at-least-32-bytes';
-  let posts = 0;
-  try {
-    const summary = await sendFreshResource('calculator', 'POST_ONCE_FRESH_V4', {
-      async internalCandidates() {
-        return selectFreshOutlookCandidates(rows(), [], computedAllowlist, leadHashSecret);
-      },
-      async makeHookUrl() {
-        return 'https://hook.eu2.make.com/private-path';
-      },
-      async fetch(_url, init) {
-        posts += 1;
-        assert.equal(init.redirect, 'error');
-        assert.ok(init.signal instanceof AbortSignal);
-        return new Response(null, { status: 200 });
-      },
-    });
-    assert.equal(posts, 1);
-    assert.deepEqual(summary, { resource: 'calculator', accepted_by_hook: true, http_status: 200 });
-    assert.doesNotMatch(JSON.stringify(summary), /@|submission|lead_id|payload|signature|capability/i);
-  } finally {
-    if (previousSecret === undefined) delete process.env.MAKE_WEBHOOK_SECRET;
-    else process.env.MAKE_WEBHOOK_SECRET = previousSecret;
-  }
+  assert.equal(dependencyCalls, 0);
 });

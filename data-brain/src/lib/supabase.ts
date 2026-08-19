@@ -266,14 +266,32 @@ export async function selectAllRowsPaged<T = JsonRecord>(
 export async function callRpc<T = JsonRecord>(
   functionName: string,
   args: JsonRecord,
+  options: { timeoutMs?: number; signal?: AbortSignal } = {},
 ): Promise<T> {
   assertEnv();
 
-  const response = await fetch(supabaseUrl(`rpc/${functionName}`), {
-    method: 'POST',
-    headers: headers(),
-    body: JSON.stringify(args),
-  });
+  const timeoutMs = options.timeoutMs ?? 0;
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 0 || timeoutMs > 60_000) {
+    throw new Error('Supabase RPC timeout is invalid');
+  }
+  const controller = new AbortController();
+  const abortFromCaller = () => controller.abort(options.signal?.reason);
+  if (options.signal?.aborted) abortFromCaller();
+  else options.signal?.addEventListener('abort', abortFromCaller, { once: true });
+  const timeout = timeoutMs > 0
+    ? setTimeout(() => controller.abort(new Error('Supabase RPC timed out')), timeoutMs)
+    : null;
 
-  return parseSupabaseResponse<T>(response);
+  try {
+    const response = await fetch(supabaseUrl(`rpc/${functionName}`), {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify(args),
+      signal: controller.signal,
+    });
+    return await parseSupabaseResponse<T>(response);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+    options.signal?.removeEventListener('abort', abortFromCaller);
+  }
 }

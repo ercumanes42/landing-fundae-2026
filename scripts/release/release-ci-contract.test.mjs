@@ -5,9 +5,11 @@ import test from 'node:test';
 const workflow = readFileSync(new URL('../../.github/workflows/release-gates.yml', import.meta.url), 'utf8');
 const verifier = readFileSync(new URL('./verify-release.mjs', import.meta.url), 'utf8');
 const packageJson = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8'));
+const vercelJson = JSON.parse(readFileSync(new URL('../../vercel.json', import.meta.url), 'utf8'));
 
 const gates = [
   'test:release-candidate',
+  'test:release-deploy-gate',
   'test:supabase-gate-pack',
   'release:supabase:gates:static',
 ];
@@ -25,4 +27,28 @@ test('the Supabase static gate npm entrypoint is cross-platform', () => {
     'node scripts/release/run-supabase-static-gates.mjs',
   );
   assert.doesNotMatch(workflow, /powershell\.exe/i);
+});
+
+test('the legal deploy gate is enforced only for an explicit production target', () => {
+  assert.equal(
+    packageJson.scripts['release:deploy:gate'],
+    'node scripts/release/legal-deploy-gate.mjs',
+  );
+  assert.equal(
+    packageJson.scripts['test:release-deploy-gate'],
+    'node --test scripts/release/legal-deploy-gate.test.mjs',
+  );
+  assert.equal(workflow.match(/npm run release:deploy:gate/g)?.length, 1);
+  assert.match(
+    workflow,
+    /if: github\.event_name == 'push' && github\.ref == 'refs\/heads\/main'/,
+  );
+  assert.equal(verifier.match(/npmArgs\(\['run', 'release:deploy:gate'\]\)/g)?.length, 1);
+  assert.match(verifier, /process\.env\.FUNDAE_RELEASE_TARGET === 'production'/);
+  assert.doesNotMatch(packageJson.scripts.build, /release:deploy:gate/);
+  assert.equal(
+    packageJson.scripts['build:vercel'],
+    'node scripts/release/legal-deploy-gate.mjs --vercel-production && vite build',
+  );
+  assert.equal(vercelJson.buildCommand, 'npm run build:vercel');
 });

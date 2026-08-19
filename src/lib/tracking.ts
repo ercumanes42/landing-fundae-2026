@@ -14,6 +14,7 @@ import {
   subscribeAnalyticsConsent,
 } from './consent';
 import { buildCampaignAwareUrl } from './campaignUrl';
+import { BROWSER_STORAGE_REGISTRY } from './browserStorage';
 
 declare global {
   interface Window {
@@ -24,13 +25,13 @@ declare global {
   }
 }
 
-const JOURNEY_KEY = 'fundae_journey_v2';
-const SESSION_KEY = 'fundae_session_v2';
-const FIRST_TOUCH_KEY = 'fundae_first_touch_v2';
-const LAST_TOUCH_KEY = 'fundae_last_touch_v2';
-const CAMPAIGN_CONTEXT_KEY = 'fundae_campaign_context_v1';
-const JOURNEY_TTL_MS = 30 * 24 * 60 * 60 * 1000;
-const SESSION_IDLE_MS = 30 * 60 * 1000;
+const JOURNEY_KEY = BROWSER_STORAGE_REGISTRY.journey.key;
+const SESSION_KEY = BROWSER_STORAGE_REGISTRY.session.key;
+const FIRST_TOUCH_KEY = BROWSER_STORAGE_REGISTRY.firstTouch.key;
+const LAST_TOUCH_KEY = BROWSER_STORAGE_REGISTRY.lastTouch.key;
+const CAMPAIGN_CONTEXT_KEY = BROWSER_STORAGE_REGISTRY.campaignContext.key;
+const JOURNEY_TTL_MS = BROWSER_STORAGE_REGISTRY.journey.ttlMs;
+const SESSION_IDLE_MS = BROWSER_STORAGE_REGISTRY.session.ttlMs;
 const EVENT_VERSION = '2.0' as const;
 const SAFE_TOKEN = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/;
 const CAMPAIGN_CONTACT_ID_PATTERN = /^[A-Za-z0-9_-]{3,100}$/;

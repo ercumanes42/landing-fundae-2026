@@ -13,3 +13,7 @@ Este directorio es el contexto compartido y append-only de la release. No contie
 - `adrs/`: decisiones de arquitectura.
 
 Reglas: el sistema permanece OFF; `PASS` exige evidencia del árbol exacto; una prueba local no demuestra producción; deploys, migraciones y envíos reales requieren gates y autorización directa. El manifiesto schema 2 hashea el núcleo crítico incluso cuando está untracked, pero CI rechaza ese estado hasta que el propietario lo incluya explícitamente en Git.
+
+## Gate legal de despliegue
+
+`npm run release:deploy:gate` es un gate exclusivo de producción y fail-closed. Actualmente termina con código de proceso `1` y el código estable `FUNDAE_LEGAL_DEPLOY_GATE_BLOCKED` porque Privacidad y Cookies siguen en borrador. `npm run test:release-deploy-gate` valida el contrato sin convertir el copy en definitivo; la build y la QA local pueden continuar. `verify:release` con `FUNDAE_RELEASE_TARGET=production`, los pushes a `main` y el `buildCommand` de Vercel para `VERCEL_ENV=production` ejecutan el bloqueo real; los previews no se bloquean por este gate.

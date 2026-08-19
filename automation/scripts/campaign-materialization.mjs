@@ -14,9 +14,11 @@ export const TECHNICAL_STATUS_FIELDS = [
   'suppression status',
   'duplicate status',
 ];
+export const TECHNICAL_EVIDENCE_FIELD = 'technical evidence sha256';
 export const CONTROLLED_COLUMNS = [
   'campaign policy version',
   ...TECHNICAL_STATUS_FIELDS,
+  TECHNICAL_EVIDENCE_FIELD,
   'campaign authorization',
   'eligibility status',
 ];
@@ -157,6 +159,7 @@ export function controlledFieldDefaults() {
     'hard bounce status': 'PENDING_RECHECK',
     'suppression status': 'PENDING_RECHECK',
     'duplicate status': 'CLEAR',
+    [TECHNICAL_EVIDENCE_FIELD]: '',
     'campaign authorization': 'PENDING',
     'eligibility status': 'PENDING_TECHNICAL_GATES',
   };

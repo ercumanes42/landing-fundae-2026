@@ -43,6 +43,43 @@ test('mobile layout has no horizontal overflow and consent has equal choices', a
   await expect(page.getByRole('button', { name: /Aceptar analítica/i })).toBeVisible();
 });
 
+test('privacy preferences remain accessible and withdrawal clears analytics storage', async ({ page }) => {
+  await page.goto(base + '/', { waitUntil: 'networkidle' });
+  await page.getByRole('button', { name: /Aceptar analítica/i }).click();
+  const preferences = page.getByRole('button', { name: 'Preferencias de privacidad' });
+  await expect(preferences).toBeVisible();
+
+  await page.evaluate(() => {
+    localStorage.setItem('fundae_journey_v2', 'stored');
+    localStorage.setItem('fundae_first_touch_v2', 'stored');
+    localStorage.setItem('fundae_last_touch_v2', 'stored');
+    sessionStorage.setItem('fundae_session_v2', 'stored');
+    sessionStorage.setItem('fundae_campaign_context_v1', 'stored');
+  });
+
+  await preferences.click();
+  await expect(page.locator('#privacy-preferences')).toBeFocused();
+  await expect(page.getByRole('button', { name: 'Rechazar' })).toHaveAttribute('aria-pressed', 'false');
+  await page.getByRole('button', { name: 'Rechazar' }).click();
+  await expect(preferences).toBeVisible();
+  await expect(preferences).toBeFocused();
+
+  const stored = await page.evaluate(() => ({
+    consent: JSON.parse(localStorage.getItem('fundae_analytics_consent_v1') ?? 'null'),
+    journey: localStorage.getItem('fundae_journey_v2'),
+    firstTouch: localStorage.getItem('fundae_first_touch_v2'),
+    lastTouch: localStorage.getItem('fundae_last_touch_v2'),
+    session: sessionStorage.getItem('fundae_session_v2'),
+    campaignContext: sessionStorage.getItem('fundae_campaign_context_v1'),
+  }));
+  expect(stored.consent.state).toBe('rejected');
+  expect(stored.journey).toBeNull();
+  expect(stored.firstTouch).toBeNull();
+  expect(stored.lastTouch).toBeNull();
+  expect(stored.session).toBeNull();
+  expect(stored.campaignContext).toBeNull();
+});
+
 test('desktop landing visual capture', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto(base + '/', { waitUntil: 'networkidle' });

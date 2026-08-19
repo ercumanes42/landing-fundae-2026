@@ -260,9 +260,18 @@ begin
       ))
     );
     raise exception using errcode = '23514', message = 'provisioning_accepted_while_closed';
-  exception when insufficient_privilege then
-    null;
+  exception when invalid_parameter_value then
+    if sqlerrm <> 'provision_technical_evidence_invalid' then
+      raise;
+    end if;
   end;
+
+  if exists (
+    select 1 from public.cold_campaign_provision_manifests
+    where campaign_external_id = 'FUNDAE_STAGING_SMOKE'
+  ) then
+    raise exception using errcode = '23514', message = 'invalid_provisioning_input_wrote_state';
+  end if;
 end;
 $$;
 

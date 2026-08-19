@@ -37,6 +37,11 @@ jobs:
         run: node scripts/release/verify-manifest.mjs --require-tracked-core
       - name: Verify release candidate planner contracts
         run: npm run test:release-candidate
+      - name: Verify legal deploy gate contracts
+        run: npm run test:release-deploy-gate
+      - name: Enforce production legal deploy gate
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: npm run release:deploy:gate
       - name: Verify Supabase gate-pack contracts
         run: npm run test:supabase-gate-pack
       - name: Verify Supabase static release gates

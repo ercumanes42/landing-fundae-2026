@@ -1,19 +1,14 @@
+import {
+  BROWSER_STORAGE_REGISTRY,
+  browserStorageEntriesForCleanup,
+  type BrowserStorageCleanup,
+} from './browserStorage';
+
 export type AnalyticsConsent = 'unknown' | 'accepted' | 'rejected';
 
 export const ANALYTICS_CONSENT_VERSION = '2026-08-19';
 
-const ANALYTICS_CONSENT_KEY = 'fundae_analytics_consent_v1';
-const ANALYTICS_STORAGE_KEYS = [
-  'fundae_identity_v1',
-  'fundae_journey_v2',
-  'fundae_session_v1',
-  'fundae_session_v2',
-  'fundae_first_touch_v1',
-  'fundae_first_touch_v2',
-  'fundae_last_touch_v1',
-  'fundae_last_touch_v2',
-  'fundae_campaign_context_v1',
-] as const;
+const ANALYTICS_CONSENT_KEY = BROWSER_STORAGE_REGISTRY.analyticsConsent.key;
 
 interface StoredConsent {
   state: Exclude<AnalyticsConsent, 'unknown'>;
@@ -35,14 +30,15 @@ function isStoredConsent(value: unknown): value is StoredConsent {
     Number.isFinite(Date.parse(record.updated_at));
 }
 
-function clearAnalyticsStorage(): void {
+function clearAnalyticsStorage(trigger: BrowserStorageCleanup): void {
   if (typeof window === 'undefined') return;
-  for (const key of ANALYTICS_STORAGE_KEYS) {
-    try {
-      window.localStorage.removeItem(key);
-      window.sessionStorage.removeItem(key);
-    } catch {
-      // Storage can be unavailable in strict privacy modes.
+  for (const entry of browserStorageEntriesForCleanup(trigger)) {
+    for (const storageArea of entry.storageAreas) {
+      try {
+        window[storageArea].removeItem(entry.key);
+      } catch {
+        // Storage can be unavailable in strict privacy modes.
+      }
     }
   }
 }
@@ -55,7 +51,7 @@ function invalidateStoredConsent(): AnalyticsConsent {
   } catch {
     // Storage can be unavailable in strict privacy modes.
   }
-  clearAnalyticsStorage();
+  clearAnalyticsStorage('policy-version-change');
   return memoryConsent;
 }
 
@@ -103,7 +99,7 @@ export function setAnalyticsConsent(value: Exclude<AnalyticsConsent, 'unknown'>)
   } catch {
     // The explicit decision remains effective in memory for the current page.
   }
-  if (value === 'rejected') clearAnalyticsStorage();
+  if (value === 'rejected') clearAnalyticsStorage('consent-withdrawal');
   notify(value);
 }
 

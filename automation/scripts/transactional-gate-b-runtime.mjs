@@ -347,19 +347,10 @@ export function freshHookRequestInit(request) {
 }
 
 export async function sendFreshResource(resource, confirmation, dependencies = {}) {
-  if (!RESOURCES.includes(resource)) fail('resource_invalid');
-  if (confirmation !== SEND_CONFIRMATION) fail('send_confirmation_required');
-  const secret = process.env.MAKE_WEBHOOK_SECRET ?? '';
-  const loadCandidates = dependencies.internalCandidates ?? internalCandidates;
-  const loadHookUrl = dependencies.makeHookUrl ?? makeHookUrl;
-  const post = dependencies.fetch ?? fetch;
-  const { candidates } = await loadCandidates();
-  const candidate = candidates.get(resource);
-  if (!candidate) fail('internal_candidate_missing');
-  const request = signedFreshHookRequest(candidate, secret);
-  const hookUrl = await loadHookUrl();
-  const response = await post(hookUrl, freshHookRequestInit(request));
-  return { resource, accepted_by_hook: response.ok, http_status: response.status };
+  void resource;
+  void confirmation;
+  void dependencies;
+  fail('legacy_make_outlook_send_superseded');
 }
 
 const isMain = process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
@@ -369,11 +360,7 @@ if (isMain) {
     if (command === 'precheck') await precheck();
     else if (command === 'make-ready') await makeStatePrecheck(true);
     else if (command === 'make-close-precheck') await makeStatePrecheck(false);
-    else if (command === 'send') {
-      const result = await sendFreshResource(resource, confirmation);
-      process.stdout.write(JSON.stringify(result));
-      if (!result.accepted_by_hook) process.exitCode = 3;
-    }
+    else if (command === 'send') await sendFreshResource(resource, confirmation);
     else fail('usage_invalid');
   } catch (error) {
     process.stderr.write(`GATE_B_FAIL:${error instanceof Error ? error.message : 'unknown'}`);

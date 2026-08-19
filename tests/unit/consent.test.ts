@@ -26,6 +26,7 @@ const {
   setAnalyticsConsent,
   subscribeAnalyticsConsent,
 } = await import('../../src/lib/consent');
+const { BROWSER_STORAGE_REGISTRY } = await import('../../src/lib/browserStorage');
 
 test('only the current policy version can restore analytics consent', () => {
   localStorage.clear();
@@ -67,12 +68,13 @@ test('unknown consent emits nothing until an explicit accepted decision', () => 
 });
 
 test('withdrawal clears journey/session/touch storage and notifies subscribers once', () => {
-  for (const key of [
-    'fundae_journey_v2', 'fundae_session_v2', 'fundae_first_touch_v2',
-    'fundae_last_touch_v2', 'fundae_campaign_context_v1',
-  ]) {
-    localStorage.setItem(key, 'stored');
-    sessionStorage.setItem(key, 'stored');
+  const withdrawalEntries = Object.values(BROWSER_STORAGE_REGISTRY).filter(
+    (entry) => entry.cleanup.includes('consent-withdrawal'),
+  );
+  for (const entry of withdrawalEntries) {
+    for (const storageArea of entry.storageAreas) {
+      ({ localStorage, sessionStorage })[storageArea].setItem(entry.key, 'stored');
+    }
   }
   const observed: string[] = [];
   const unsubscribe = subscribeAnalyticsConsent((state) => observed.push(state));
@@ -80,13 +82,12 @@ test('withdrawal clears journey/session/touch storage and notifies subscribers o
   unsubscribe();
   assert.equal(getAnalyticsConsent(), 'rejected');
   assert.deepEqual(observed, ['rejected']);
-  for (const key of [
-    'fundae_journey_v2', 'fundae_session_v2', 'fundae_first_touch_v2',
-    'fundae_last_touch_v2', 'fundae_campaign_context_v1',
-  ]) {
-    assert.equal(localStorage.getItem(key), null);
-    assert.equal(sessionStorage.getItem(key), null);
+  for (const entry of withdrawalEntries) {
+    for (const storageArea of entry.storageAreas) {
+      assert.equal(({ localStorage, sessionStorage })[storageArea].getItem(entry.key), null);
+    }
   }
+  assert.notEqual(localStorage.getItem(BROWSER_STORAGE_REGISTRY.analyticsConsent.key), null);
 });
 
 test('an explicit decision remains effective in memory when storage is unavailable', () => {

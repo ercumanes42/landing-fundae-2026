@@ -17,6 +17,7 @@ const report = {
   lots: { A: 235, B: 235, C: 235, D: 234 }, bodies: 4695,
   identified_bodies: 4695, unsubscribe_placeholders: 4695,
   logical_dataset_sha256: 'a'.repeat(64),
+  technical_evidence_sha256: 'b'.repeat(64),
 };
 const summary = {
   contacts: 939, lots: { A: 235, B: 235, C: 235, D: 234 },
@@ -24,6 +25,7 @@ const summary = {
   optOutCoverage: { totalBodies: 4695, missingBodies: 0 },
   copyCoverage: { identifiedBodies: 4695, canonicalMismatches: 0, unresolvedPlaceholderBodies: 0 },
   policyCoverage: {
+    technicalEvidenceSha256: 'b'.repeat(64),
     technicalStatuses: {
       'unsubscribe status': { CLEAR: 939 }, 'opposition status': { CLEAR: 939 },
       'hard bounce status': { CLEAR: 939 }, 'suppression status': { CLEAR: 939 },
@@ -33,11 +35,11 @@ const summary = {
   },
 };
 
-test('default dry-run reads the controlled copy, reports exactly three NO-GO gates and performs zero network', async () => {
+test('default dry-run reads the controlled copy, reports every current NO-GO gate and performs zero network', async () => {
   let network = 0;
   const result = await runProvisioner({ apply: false, fetchImpl: async () => { network += 1; throw new Error('network forbidden'); } });
   assert.equal(result.ready, false);
-  assert.deepEqual(result.gates, ['VALIDATION_NOT_OK','TECHNICAL_EXCLUSIONS_NOT_CLEAR','CAMPAIGN_NOT_AUTHORIZED']);
+  assert.deepEqual(result.gates, ['VALIDATION_NOT_OK','TECHNICAL_EXCLUSIONS_NOT_CLEAR','TECHNICAL_EVIDENCE_MISSING_OR_DRIFT','CAMPAIGN_NOT_AUTHORIZED']);
   assert.equal(result.summary.contacts, 939);
   assert.equal(result.summary.payloads, 4695);
   assert.equal(network, 0);
@@ -55,16 +57,21 @@ test('gate evaluator rejects hash drift, wrong count/lot and pending exclusion w
 });
 
 test('manifest is deterministic on replay and changes on row-hash drift', () => {
-  const rows = Array.from({ length: 4695 }, (_, index) => ({ campaign_external_id: 'FUNDAE_2026_EMAIL_V1', row_sha256: hash(`row-${index}`) }));
-  const first = buildProvisionManifest(rows, 'a'.repeat(64));
-  const replay = buildProvisionManifest(structuredClone(rows), 'a'.repeat(64));
+  const technicalEvidenceSha256 = 'b'.repeat(64);
+  const rows = Array.from({ length: 4695 }, (_, index) => ({
+    campaign_external_id: 'FUNDAE_2026_EMAIL_V1',
+    technical_evidence_sha256: technicalEvidenceSha256,
+    row_sha256: hash(`row-${index}`),
+  }));
+  const first = buildProvisionManifest(rows, 'a'.repeat(64), technicalEvidenceSha256);
+  const replay = buildProvisionManifest(structuredClone(rows), 'a'.repeat(64), technicalEvidenceSha256);
   assert.equal(first.manifestHash, replay.manifestHash);
   assert.deepEqual(first.batches.map((batch) => batch.hash), replay.batches.map((batch) => batch.hash));
   rows[100].row_sha256 = hash('drift');
-  assert.notEqual(buildProvisionManifest(rows, 'a'.repeat(64)).manifestHash, first.manifestHash);
+  assert.notEqual(buildProvisionManifest(rows, 'a'.repeat(64), technicalEvidenceSha256).manifestHash, first.manifestHash);
   const campaignDrift = structuredClone(rows);
   campaignDrift[0].campaign_external_id = 'FUNDAE_2026_EMAIL_TAMPERED';
-  assert.throws(() => buildProvisionManifest(campaignDrift, 'a'.repeat(64)), /APPLY_MANIFEST_INPUT_INVALID/);
+  assert.throws(() => buildProvisionManifest(campaignDrift, 'a'.repeat(64), technicalEvidenceSha256), /APPLY_MANIFEST_INPUT_INVALID/);
 });
 
 test('Excel serial dates, canonical payload and unit-separator row hash are deterministic', () => {
@@ -75,6 +82,7 @@ test('Excel serial dates, canonical payload and unit-separator row hash are dete
     'tipo de empresa': 'micro', 'validacion pre envio': 'OK', 'unsubscribe status': 'CLEAR',
     'opposition status': 'CLEAR', 'hard bounce status': 'CLEAR', 'suppression status': 'CLEAR',
     'duplicate status': 'CLEAR', 'campaign authorization': 'AUTHORIZED',
+    'technical evidence sha256': 'b'.repeat(64),
   };
   const dates = ['2026-09-01T08:00:00.000Z','2026-09-15T08:00:00.000Z','2026-10-01T08:00:00.000Z','2026-10-15T08:00:00.000Z','2026-11-03T08:00:00.000Z'];
   for (let step = 1; step <= 5; step += 1) {
@@ -99,7 +107,7 @@ test('Excel serial dates, canonical payload and unit-separator row hash are dete
       row.campaign_external_id,row.contact_id,row.account_id,row.email,row.email_hash,row.variant,row.lot,String(row.step),
       row.scheduled_for,row.execution_key,row.recipient_email,row.subject,row.html_body,row.payload_sha256,row.token_hash,
       row.validation_status,row.unsubscribe_status,row.opposition_status,row.hard_bounce_status,row.suppression_status,
-      row.duplicate_status,row.campaign_authorization,row.company_size,
+      row.duplicate_status,row.campaign_authorization,row.company_size,row.technical_evidence_sha256,
     ];
     assert.equal(row.row_sha256, hash(fields.join('\x1f')));
   }
@@ -125,9 +133,9 @@ test('provisioner rejects weak, placeholder and whitespace-drift lead secrets be
   }), []);
 });
 const applyInput = {
-  manifest: { manifestHash: 'a'.repeat(64), logicalDatasetSha256: '9'.repeat(64), campaignExternalId: 'FUNDAE_2026_EMAIL_V1', batchCount: 2, batches: [
-    { index: 0, hash: 'b'.repeat(64), rows: [{ row_sha256: 'c'.repeat(64) }] },
-    { index: 1, hash: 'd'.repeat(64), rows: [{ row_sha256: 'e'.repeat(64) }] },
+  manifest: { schemaVersion: 'cold-provision-v3', manifestHash: 'a'.repeat(64), logicalDatasetSha256: '9'.repeat(64), technicalEvidenceSha256: '8'.repeat(64), campaignExternalId: 'FUNDAE_2026_EMAIL_V1', batchCount: 2, batches: [
+    { index: 0, hash: 'b'.repeat(64), rows: [{ row_sha256: 'c'.repeat(64), technical_evidence_sha256: '8'.repeat(64) }] },
+    { index: 1, hash: 'd'.repeat(64), rows: [{ row_sha256: 'e'.repeat(64), technical_evidence_sha256: '8'.repeat(64) }] },
   ] },
   campaignExternalId: 'FUNDAE_2026_EMAIL_V1', actorHash: 'f'.repeat(64),
   authorizationToken: 'authorization-'.padEnd(40, 'x'),
@@ -163,6 +171,18 @@ test('apply double gate rejects before network', async () => {
   assert.equal(calls, 0);
 });
 
+test('apply rejects v2 and technical-evidence drift before network', async () => {
+  let calls = 0;
+  const noNetwork = async () => { calls += 1; throw new Error('network forbidden'); };
+  await assert.rejects(() => applyProvisionManifest({
+    ...applyInput, manifest: { ...applyInput.manifest, schemaVersion: 'cold-provision-v2' },
+  }, noNetwork), /APPLY_MANIFEST_V3_REQUIRED/);
+  const drifted = structuredClone(applyInput);
+  drifted.manifest.batches[1].rows[0].technical_evidence_sha256 = '7'.repeat(64);
+  await assert.rejects(() => applyProvisionManifest(drifted, noNetwork), /APPLY_DOUBLE_GATE_CLOSED/);
+  assert.equal(calls, 0);
+});
+
 test('SQL import contract is OFF, private, idempotent and collision-safe', () => {
   const sql = readFileSync(new URL('../../data-brain/supabase/migrations/20260819200000_cold_campaign_provisioning.sql', import.meta.url), 'utf8').toLowerCase();
   for (const marker of [
@@ -179,6 +199,43 @@ test('SQL import contract is OFF, private, idempotent and collision-safe', () =>
     'alter table public.cold_campaign_provision_control force row level security',
     'revoke execute on function public.apply_cold_campaign_provision_batch',
   ]) assert.ok(sql.includes(marker), `missing provisioning contract: ${marker}`);
+});
+
+test('SQL v3 supersedes v2 and binds technical evidence into rows and manifest', () => {
+  const migration = readFileSync(new URL(
+    '../../data-brain/supabase/migrations/20260819234000_campaign_terminal_suppression_hardening.sql',
+    import.meta.url,
+  ), 'utf8').replaceAll('\r\n', '\n');
+  const schema = readFileSync(new URL('../../data-brain/supabase/schema.sql', import.meta.url), 'utf8')
+    .replaceAll('\r\n', '\n');
+  const marker = '-- 20260819234000_campaign_terminal_suppression_hardening.sql';
+  const schemaMirror = schema.slice(schema.lastIndexOf(marker) + marker.length).trim();
+  assert.equal(schemaMirror, migration.trim());
+  for (const contract of [
+    "hash_domain = 'cold-provision-v3'",
+    'technical_evidence_hash text',
+    "v_row->>'company_size',v_row->>'technical_evidence_sha256'",
+    "'cold-provision-v3',v_manifest.logical_dataset_hash",
+    'v_manifest.technical_evidence_hash,v_manifest.campaign_external_id',
+    'v_existing_manifest.technical_evidence_hash<>v_technical_evidence_hash',
+    'provision_technical_evidence_invalid',
+    'cold_campaign_v2_state_present',
+  ]) assert.ok(migration.includes(contract), `missing v3 binding: ${contract}`);
+  const apply = migration.slice(
+    migration.lastIndexOf('create or replace function public.apply_cold_campaign_provision_batch('),
+    migration.lastIndexOf('create or replace function public.finalize_cold_campaign_provision('),
+  );
+  const finalize = migration.slice(
+    migration.lastIndexOf('create or replace function public.finalize_cold_campaign_provision('),
+    migration.lastIndexOf('-- Applying the contract never activates outbound or provisioning.'),
+  );
+  assert.equal(apply.includes('cold-provision-v2'), false);
+  assert.equal(finalize.includes('cold-provision-v2'), false);
+  assert.ok(
+    apply.indexOf("v_computed_row_hash<>v_row->>'row_sha256'") <
+      apply.indexOf("'reason_code','batch_replayed'"),
+    'row hashes must be recomputed before the idempotent replay shortcut',
+  );
 });
 
 test('SQL provisioning accepts HMAC identities and rejects the legacy plain-SHA predicate', () => {

@@ -2,6 +2,8 @@
 
 Estado: cierre limitado al Aviso Legal. No es asesoramiento legal ni acredita la vigencia registral actual de la sociedad. Privacidad y Cookies permanecen `NO-GO`.
 
+Deploy gate: `BLOCKED`
+
 ## Alcance verificado
 
 | Dato publicado | Evidencia pública | Resultado |
@@ -70,3 +72,7 @@ La clave legacy `fundae_pending_leads` solo se elimina; el código actual no la 
 - Cookies: `NO-GO` hasta inventario del despliegue.
 - Publicación global: `NO-GO` mientras los dos gates anteriores permanezcan abiertos.
 - Matriz técnica: `PASS-LOCAL` como inventario estático; no cambia ningún gate jurídico ni acredita runtime.
+
+## Control técnico de despliegue
+
+El gate offline `npm run release:deploy:gate` exige que Aviso Legal, Privacidad y Cookies estén marcados explícitamente como `verified` en la fuente y que este documento contenga un único marcador `Deploy gate` con valor `VERIFIED`. Falla cerrado ante estados en borrador, ausentes, duplicados o malformados y mientras el cierre documental siga bloqueado. Vercel ejecuta el mismo gate antes de su build cuando `VERCEL_ENV=production`; los previews y la build local siguen disponibles para QA. A fecha de este documento devuelve `FUNDAE_LEGAL_DEPLOY_GATE_BLOCKED` y código de proceso `1`; no puede usarse una build local o preview como prueba de aptitud para producción.

@@ -99,4 +99,10 @@ Remaining release blockers: approved receiver fault receipts, OAuth/application-
 evidence and direct authorization for four fresh automatic E2E deliveries. Runtime and alert
 delivery remain OFF until those gates pass.
 
+The four-resource pilot uses a postgres-only, one-shot authorization grant. Its
+preview never returns a consumable token; start consumes the hash-bound
+run/actor/lead/cohort/TTL grant atomically. RPC deadlines, SIGINT/SIGTERM
+best-effort halt and the private Supabase Cron watchdog provide independent
+shutdown layers. None of these controls authorize a real send by themselves.
+
 Gate verdict: local implementation/mock fault tests PASS; G3 release/activation BLOCKED.

@@ -245,3 +245,11 @@ No afirmar 100%, producción o E2E live hasta: release reproducible; SQL real y 
 - `20260819230000_durable_operational_alert_delivery.sql` se aplicó al staging autorizado. Postcheck devolvió `fundae_release_postcheck_ok`; smoke rollback-only devolvió `fundae_release_behavior_smoke_ok`; outbound, purge y provisioning continuaron OFF. El staging volvió a `PAUSED`.
 - QA autoritativa: Data Brain 301/301 + anti-omisión 1/1, setup/readiness 37/37, typecheck/build PASS; automation 78/78; candidate/CI contract 10/10; gate-pack 6/6; Static y pins 7/7 PASS.
 - CI ejecuta ahora los gates release ya existentes y el runner Supabase Static selecciona PowerShell de forma portable Windows/Linux. Sigue faltando el run real de GitHub sobre checkout limpio.
+
+## Cierre técnico y staging final — 19 de agosto de 2026
+
+- Se aplicaron en el staging autorizado y sin PII las migraciones de piloto Graph acotado, supresión terminal global, provisioning `cold-provision-v3`, bloqueo de inserción de identidades suprimidas e índice de la FK de autorización. Postcheck y los tres smokes rollback-only terminaron PASS.
+- Inventario final: `master_enabled=false`, `transactional_enabled=false`, `cold_enabled=false`, 0 pilotos activos y el índice de autorización presente. El proyecto staging volvió a quedar `PAUSED`.
+- Advisors finales: 0 WARN/ERROR; 41 INFO de RLS deny-all/service-only y 49 INFO de índices sin uso por staging vacío; 0 foreign keys sin índice.
+- QA local vigente: landing 29/29 + E2E 17/17; automation 85/85; Data Brain 324/324 + anti-omisión 1/1, setup 37/37, typecheck/build PASS; gate pack 10/10.
+- G2 continúa `IN_PROGRESS / STAGING_PASS`; no hubo producción, deploy, Graph/HubSpot/Make live ni envíos. Privacidad/Cookies, GitHub CI, NETWORK_G2 y los gates operativos reales siguen pendientes.

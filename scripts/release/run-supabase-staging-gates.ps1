@@ -26,14 +26,20 @@ $migrationFiles = @(
   '20260819200000_cold_campaign_provisioning.sql',
   '20260819210000_release_safety_barriers.sql',
   '20260819220000_advisor_index_hardening.sql',
-  '20260819230000_durable_operational_alert_delivery.sql'
+  '20260819230000_durable_operational_alert_delivery.sql',
+  '20260819233000_transactional_graph_pilot_scope.sql',
+  '20260819234000_campaign_terminal_suppression_hardening.sql',
+  '20260819234100_campaign_contact_suppression_insert_gate.sql',
+  '20260819234200_transactional_graph_pilot_authorization_fk_index.sql'
 ) | ForEach-Object { Join-Path $migrationRoot $_ }
 $precheck = Join-Path $sqlRoot 'FUNDAE_RELEASE_PRECHECK_20260819.sql'
 $postcheck = Join-Path $sqlRoot 'FUNDAE_RELEASE_POSTCHECK_20260819.sql'
 $behaviorSmoke = Join-Path $sqlRoot 'FUNDAE_RELEASE_BEHAVIOR_SMOKE_20260819.sql'
+$pilotSmoke = Join-Path $sqlRoot 'TRANSACTIONAL_GRAPH_PILOT_SMOKE_20260819.sql'
+$suppressionSmoke = Join-Path $sqlRoot 'CAMPAIGN_SUPPRESSION_SMOKE_20260819.sql'
 $forwardRollback = Join-Path $sqlRoot 'FUNDAE_RELEASE_FORWARD_ROLLBACK_20260819.sql'
 $postRollback = Join-Path $sqlRoot 'FUNDAE_RELEASE_POST_ROLLBACK_20260819.sql'
-$allFiles = @($precheck) + $migrationFiles + @($postcheck, $behaviorSmoke, $forwardRollback, $postRollback)
+$allFiles = @($precheck) + $migrationFiles + @($postcheck, $behaviorSmoke, $pilotSmoke, $suppressionSmoke, $forwardRollback, $postRollback)
 
 function Get-LowerSha256([string]$Value) {
   $sha = [System.Security.Cryptography.SHA256]::Create()
@@ -113,6 +119,8 @@ if ($Mode -eq 'ApplyAndSmoke') {
   foreach ($migration in $migrationFiles) { Invoke-GateSql $migration }
   Invoke-GateSql $postcheck
   Invoke-GateSql $behaviorSmoke
+  Invoke-GateSql $pilotSmoke
+  Invoke-GateSql $suppressionSmoke
   Write-Output 'FUNDAE_SUPABASE_STAGING_APPLY_AND_SMOKE_OK'
   exit 0
 }

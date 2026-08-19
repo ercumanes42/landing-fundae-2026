@@ -9,6 +9,7 @@ import {
   materializeCampaignCopies,
   readCampaignPolicy,
   readCopyMatrix,
+  TECHNICAL_EVIDENCE_FIELD,
   TECHNICAL_STATUS_FIELDS,
 } from './campaign-materialization.mjs';
 
@@ -205,13 +206,20 @@ export function validateCampaignRows(rows, { requireReady = false } = {}) {
     missingBodies: emailBodies.length - optOutCoveredBodies,
   };
   const controlledColumnsMissing = CONTROLLED_COLUMNS.filter((column) => !headers.has(column));
-  const isControlledCopy = controlledColumnsMissing.length === 0;
+  const isControlledCopy = controlledColumnsMissing.every((column) => column === TECHNICAL_EVIDENCE_FIELD);
   const policy = readCampaignPolicy();
   const copyMatrix = readCopyMatrix();
   const policyVersions = countBy(rows, 'campaign policy version');
   const technicalStatuses = Object.fromEntries(
     TECHNICAL_STATUS_FIELDS.map((field) => [field, countBy(rows, field)]),
   );
+  const technicalEvidenceValues = rows.map((row) => text(row, TECHNICAL_EVIDENCE_FIELD));
+  const uniqueTechnicalEvidence = [...new Set(technicalEvidenceValues.filter(Boolean))];
+  const technicalEvidenceSha256 = technicalEvidenceValues.length === rows.length &&
+    technicalEvidenceValues.every((item) => /^[a-f0-9]{64}$/.test(item)) &&
+    uniqueTechnicalEvidence.length === 1
+    ? uniqueTechnicalEvidence[0]
+    : null;
   const authorizations = countBy(rows, 'campaign authorization');
   let copyMismatches = 0;
   let identifiedBodies = 0;
@@ -252,6 +260,7 @@ export function validateCampaignRows(rows, { requireReady = false } = {}) {
     controlledColumnsMissing,
     versionedRows: rows.filter((row) => text(row, 'campaign policy version') === CAMPAIGN_POLICY_VERSION).length,
     technicalStatuses,
+    technicalEvidenceSha256,
     authorizations,
     stoppedRows,
     correctlyBlockedStopRows,
@@ -335,7 +344,12 @@ export function validateCampaignRows(rows, { requireReady = false } = {}) {
       break;
     }
 
-    if (text(row, 'habilitado envio').toUpperCase() === 'CONDICIONADO') {
+    const technicallyStopped = TECHNICAL_STATUS_FIELDS.some(
+      (field) => text(row, field).toUpperCase() === 'STOP',
+    );
+    const wasConditional = text(row, 'habilitado envio').toUpperCase() === 'CONDICIONADO' ||
+      (technicallyStopped && Boolean(text(row, 'contacto principal id')));
+    if (wasConditional) {
       conditionalCount += 1;
       const primary = byContactId.get(text(row, 'contacto principal id'));
       if (!primary) {

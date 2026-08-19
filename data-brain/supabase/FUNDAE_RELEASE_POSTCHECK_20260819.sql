@@ -27,7 +27,7 @@ begin
     'operational_alert_receipts', 'operational_alert_audit',
     'journey_retention_control', 'journey_retention_runs',
     'cold_campaign_provision_control', 'cold_campaign_provision_manifests',
-    'cold_campaign_provision_batches'
+    'cold_campaign_provision_batches', 'transactional_graph_pilot_runs'
   ]) required(required_name)
   where pg_catalog.to_regclass('public.' || required_name) is null;
   if v_missing is not null then
@@ -67,7 +67,7 @@ begin
       'operational_alert_receipts', 'operational_alert_audit',
       'journey_retention_control', 'journey_retention_runs',
       'cold_campaign_provision_control', 'cold_campaign_provision_manifests',
-      'cold_campaign_provision_batches'
+      'cold_campaign_provision_batches', 'transactional_graph_pilot_runs'
     ]) and (not c.relrowsecurity or not c.relforcerowsecurity);
   if v_bad_rls is not null then
     raise exception using errcode = '42501',
@@ -90,7 +90,7 @@ begin
         'operational_alert_receipts', 'operational_alert_audit',
         'journey_retention_control', 'journey_retention_runs',
         'cold_campaign_provision_control', 'cold_campaign_provision_manifests',
-        'cold_campaign_provision_batches'
+        'cold_campaign_provision_batches', 'transactional_graph_pilot_runs'
       ]) and (
         pg_catalog.has_table_privilege(roles.role_name, c.oid, 'SELECT')
         or pg_catalog.has_table_privilege(roles.role_name, c.oid, 'INSERT')
@@ -120,12 +120,50 @@ begin
     'public.claim_operational_alert_delivery(text,integer,text)',
     'public.finalize_operational_alert_delivery(text,text,text,uuid,text,text,text)',
     'public.halt_transactional_graph_dispatch(uuid,uuid,text,text)',
+    'public.preview_transactional_graph_pilot(text,text,text,text[],integer)',
+    'public.start_transactional_graph_pilot(text,text,text,text[],text,integer)',
+    'public.finish_transactional_graph_pilot(text,text,text,text)',
+    'public.read_transactional_graph_pilot_ledger(text,text)',
     'public.record_campaign_event_atomic(text,text,text,timestamptz,text,jsonb,jsonb)'
   ]) required(signature)
   where pg_catalog.to_regprocedure(signature) is null;
   if v_missing_rpc is not null then
     raise exception using errcode = '55000',
       message = 'fundae_release_postcheck_missing_rpc', detail = v_missing_rpc;
+  end if;
+
+  if exists (
+    select 1 from pg_catalog.unnest(array[
+      'public.preview_transactional_graph_pilot(text,text,text,text[],integer)',
+      'public.start_transactional_graph_pilot(text,text,text,text[],text,integer)',
+      'public.claim_transactional_graph_dispatch(uuid,integer,integer)',
+      'public.reserve_claimed_transactional_graph_dispatch(uuid,uuid,text,text,text,text,text)',
+      'public.authorize_graph_draft_send(uuid,text,text,text)',
+      'public.finish_transactional_graph_pilot(text,text,text,text)',
+      'public.read_transactional_graph_pilot_ledger(text,text)',
+      'public.emergency_halt_outbound_delivery(text,text)'
+    ]) required(signature)
+    where not pg_catalog.has_function_privilege('service_role', signature, 'EXECUTE')
+  ) then
+    raise exception using errcode = '42501',
+      message = 'fundae_release_postcheck_pilot_rpc_service_grant_missing';
+  end if;
+
+  if exists (
+    select 1 from pg_catalog.pg_proc p
+    join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = any(array[
+      'preview_transactional_graph_pilot', 'start_transactional_graph_pilot',
+      'claim_transactional_graph_dispatch',
+      'reserve_claimed_transactional_graph_dispatch', 'authorize_graph_draft_send',
+      'finish_transactional_graph_pilot', 'read_transactional_graph_pilot_ledger',
+      'emergency_halt_outbound_delivery'
+    ]) and (not p.prosecdef or not coalesce(
+      p.proconfig @> array['search_path=""']::text[], false
+    ))
+  ) then
+    raise exception using errcode = '42501',
+      message = 'fundae_release_postcheck_pilot_rpc_security_invalid';
   end if;
 
   if pg_catalog.to_regprocedure(
@@ -165,11 +203,86 @@ begin
       message = 'fundae_release_postcheck_hmac_helper_exposed';
   end if;
 
+  if pg_catalog.to_regprocedure(
+    'fundae_private.enforce_campaign_terminal_suppression()'
+  ) is null or pg_catalog.to_regprocedure(
+    'fundae_private.reject_suppressed_campaign_contact()'
+  ) is null then
+    raise exception using errcode = '55000',
+      message = 'fundae_release_postcheck_suppression_helpers_missing';
+  end if;
+
+  if exists (
+    select 1 from pg_catalog.pg_proc p
+    join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'fundae_private'
+      and p.proname in (
+        'enforce_campaign_terminal_suppression',
+        'reject_suppressed_campaign_contact'
+      ) and (not p.prosecdef or not coalesce(
+        p.proconfig @> array['search_path=""']::text[], false
+      ))
+  ) then
+    raise exception using errcode = '42501',
+      message = 'fundae_release_postcheck_suppression_helper_security_invalid';
+  end if;
+
+  if exists (
+    select 1 from pg_catalog.pg_proc p
+    join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+    cross join lateral pg_catalog.aclexplode(
+      coalesce(p.proacl, pg_catalog.acldefault('f', p.proowner))
+    ) acl
+    where n.nspname = 'fundae_private'
+      and p.proname in (
+        'enforce_campaign_terminal_suppression',
+        'reject_suppressed_campaign_contact'
+      ) and acl.privilege_type = 'EXECUTE'
+      and (acl.grantee = 0 or acl.grantee in (
+        select oid from pg_catalog.pg_roles
+        where rolname in ('anon','authenticated','service_role')
+      ))
+  ) then
+    raise exception using errcode = '42501',
+      message = 'fundae_release_postcheck_suppression_helper_exposed';
+  end if;
+
+  if exists (
+    select 1 from pg_catalog.unnest(array[
+      'campaign_events_terminal_suppression',
+      'campaign_contacts_suppression_gate'
+    ]) required(trigger_name)
+    where not exists (
+      select 1 from pg_catalog.pg_trigger t
+      where t.tgname = required.trigger_name
+        and not t.tgisinternal and t.tgenabled <> 'D'
+    )
+  ) then
+    raise exception using errcode = '55000',
+      message = 'fundae_release_postcheck_suppression_trigger_missing';
+  end if;
+
+  if pg_catalog.strpos(pg_catalog.pg_get_functiondef(pg_catalog.to_regprocedure(
+       'fundae_private.enforce_campaign_terminal_suppression()'
+     )), 'insert into public.campaign_suppressions') = 0 or
+     pg_catalog.strpos(pg_catalog.pg_get_functiondef(pg_catalog.to_regprocedure(
+       'fundae_private.reject_suppressed_campaign_contact()'
+     )), 'where identity_hash = new.email_hash') = 0 or
+     pg_catalog.strpos(pg_catalog.pg_get_functiondef(pg_catalog.to_regprocedure(
+       'fundae_private.reject_suppressed_campaign_contact()'
+     )), 'if tg_op <> ''INSERT''') = 0 then
+    raise exception using errcode = '55000',
+      message = 'fundae_release_postcheck_suppression_contract_invalid';
+  end if;
+
   if pg_catalog.strpos(
-       pg_catalog.pg_get_functiondef(pg_catalog.to_regprocedure(
-         'public.apply_cold_campaign_provision_batch(text,text,integer,integer,text,text,text,text,jsonb)'
-       )),
-       'not fundae_private.is_cold_campaign_hmac_identity(v_row->>''email'',v_row->>''email_hash'')'
+       pg_catalog.regexp_replace(
+         pg_catalog.pg_get_functiondef(pg_catalog.to_regprocedure(
+           'public.apply_cold_campaign_provision_batch(text,text,integer,integer,text,text,text,text,jsonb)'
+         )),
+         '[[:space:]]', '', 'g'
+       ),
+       'notfundae_private.is_cold_campaign_hmac_identity(v_row->>''email'',v_row->>''email_hash'')'
      ) = 0
      or pg_catalog.strpos(
        pg_catalog.pg_get_functiondef(pg_catalog.to_regprocedure(
@@ -179,6 +292,67 @@ begin
      ) <> 0 then
     raise exception using errcode = '55000',
       message = 'fundae_release_postcheck_provision_identity_predicate_invalid';
+  end if;
+
+  if not exists (
+    select 1
+    from pg_catalog.pg_attribute a
+    join pg_catalog.pg_class c on c.oid = a.attrelid
+    join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public'
+      and c.relname = 'cold_campaign_provision_manifests'
+      and a.attname = 'technical_evidence_hash'
+      and a.attnum > 0 and not a.attisdropped and a.attnotnull
+  ) or not exists (
+    select 1
+    from pg_catalog.pg_constraint con
+    where con.conrelid = 'public.cold_campaign_provision_manifests'::regclass
+      and con.contype = 'c'
+      and pg_catalog.strpos(
+        pg_catalog.pg_get_constraintdef(con.oid),
+        'hash_domain = ''cold-provision-v3''::text'
+      ) > 0
+  ) then
+    raise exception using errcode = '55000',
+      message = 'fundae_release_postcheck_provision_v3_schema_invalid';
+  end if;
+
+  if pg_catalog.strpos(
+       pg_catalog.pg_get_functiondef(pg_catalog.to_regprocedure(
+         'public.apply_cold_campaign_provision_batch(text,text,integer,integer,text,text,text,text,jsonb)'
+       )),
+       'v_row->>''company_size'',v_row->>''technical_evidence_sha256'''
+     ) = 0 or
+     pg_catalog.strpos(
+       pg_catalog.pg_get_functiondef(pg_catalog.to_regprocedure(
+         'public.apply_cold_campaign_provision_batch(text,text,integer,integer,text,text,text,text,jsonb)'
+       )),
+       'v_existing_manifest.technical_evidence_hash<>v_technical_evidence_hash'
+     ) = 0 or
+     pg_catalog.strpos(
+       pg_catalog.pg_get_functiondef(pg_catalog.to_regprocedure(
+         'public.finalize_cold_campaign_provision(text,text,text)'
+       )),
+       '''cold-provision-v3'',v_manifest.logical_dataset_hash'
+     ) = 0 or
+     pg_catalog.strpos(
+       pg_catalog.pg_get_functiondef(pg_catalog.to_regprocedure(
+         'public.finalize_cold_campaign_provision(text,text,text)'
+       )),
+       'v_manifest.technical_evidence_hash,v_manifest.campaign_external_id'
+     ) = 0 or
+     pg_catalog.strpos(
+       pg_catalog.pg_get_functiondef(pg_catalog.to_regprocedure(
+         'public.apply_cold_campaign_provision_batch(text,text,integer,integer,text,text,text,text,jsonb)'
+       )), 'cold-provision-v2'
+     ) <> 0 or
+     pg_catalog.strpos(
+       pg_catalog.pg_get_functiondef(pg_catalog.to_regprocedure(
+         'public.finalize_cold_campaign_provision(text,text,text)'
+       )), 'cold-provision-v2'
+     ) <> 0 then
+    raise exception using errcode = '55000',
+      message = 'fundae_release_postcheck_provision_v3_binding_invalid';
   end if;
 
   if exists (
@@ -197,7 +371,9 @@ begin
         'purge_expired_journey_events', 'apply_cold_campaign_provision_batch',
         'finalize_cold_campaign_provision', 'record_campaign_event_atomic',
         'enqueue_operational_alert_delivery', 'claim_operational_alert_delivery',
-        'finalize_operational_alert_delivery', 'halt_transactional_graph_dispatch'
+        'finalize_operational_alert_delivery', 'halt_transactional_graph_dispatch',
+        'preview_transactional_graph_pilot', 'start_transactional_graph_pilot',
+        'finish_transactional_graph_pilot', 'read_transactional_graph_pilot_ledger'
       ]) and acl.privilege_type = 'EXECUTE'
       and (acl.grantee = 0 or acl.grantee in (
         select oid from pg_catalog.pg_roles where rolname in ('anon','authenticated')
@@ -211,7 +387,8 @@ begin
     select 1 from pg_catalog.pg_proc p
     join pg_catalog.pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public'
-      and p.proname like '%\_pre\_safety\_20260819' escape '\'
+      and (p.proname like '%\_pre\_safety\_20260819' escape '\'
+        or p.proname like '%\_pre\_pilot\_20260819' escape '\')
       and pg_catalog.has_function_privilege('service_role', p.oid, 'EXECUTE')
   ) then
     raise exception using errcode = '42501',
@@ -235,7 +412,12 @@ begin
       'enqueue_operational_alert_delivery', 'claim_operational_alert_delivery',
       'finalize_operational_alert_delivery', 'halt_transactional_graph_dispatch',
       'capture_graph_outbox_ambiguity', 'capture_cold_dispatch_ambiguity',
-      'capture_transactional_dispatch_ambiguity'
+      'capture_transactional_dispatch_ambiguity',
+      'preview_transactional_graph_pilot', 'start_transactional_graph_pilot',
+      'claim_transactional_graph_dispatch',
+      'reserve_claimed_transactional_graph_dispatch', 'authorize_graph_draft_send',
+      'finish_transactional_graph_pilot', 'read_transactional_graph_pilot_ledger',
+      'emergency_halt_outbound_delivery'
     ]) and not coalesce(
       p.proconfig @> array['search_path=""']::text[], false
     );
@@ -313,6 +495,123 @@ begin
   end if;
 
   if exists (
+    select 1 from public.transactional_graph_pilot_runs where status = 'active'
+  ) or exists (
+    select 1 from public.transactional_graph_pilot_runs
+    where pg_catalog.array_length(submission_ids, 1) <> 4
+  ) or pg_catalog.has_table_privilege(
+    'service_role', 'public.transactional_graph_pilot_runs', 'SELECT'
+  ) or pg_catalog.has_table_privilege(
+    'service_role', 'public.transactional_graph_pilot_runs', 'INSERT'
+  ) or pg_catalog.has_table_privilege(
+    'service_role', 'public.transactional_graph_pilot_runs', 'UPDATE'
+  ) or pg_catalog.has_table_privilege(
+    'service_role', 'public.transactional_graph_pilot_runs', 'DELETE'
+  ) then
+    raise exception using errcode = '42501',
+      message = 'fundae_release_postcheck_pilot_scope_not_closed';
+  end if;
+
+  if pg_catalog.to_regclass(
+    'public.transactional_graph_pilot_authorization_fk_idx'
+  ) is null then
+    raise exception using errcode = '55000',
+      message = 'fundae_release_postcheck_pilot_authorization_fk_index_missing';
+  end if;
+
+  if not exists (
+    select 1 from pg_catalog.pg_trigger t
+    join pg_catalog.pg_class c on c.oid = t.tgrelid
+    join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relname = 'transactional_dispatch_outbox'
+      and t.tgname = 'transactional_dispatch_pilot_binding' and not t.tgisinternal
+  ) or pg_catalog.to_regclass('public.transactional_graph_pilot_one_active_idx') is null
+     or pg_catalog.to_regclass('public.transactional_dispatch_pilot_run_idx') is null then
+    raise exception using errcode = '55000',
+      message = 'fundae_release_postcheck_pilot_scope_contract_missing';
+  end if;
+
+  if pg_catalog.strpos(pg_catalog.pg_get_functiondef(pg_catalog.to_regprocedure(
+       'public.read_transactional_graph_pilot_ledger(text,text)'
+     )), '''draft_immutable_id_hash''') = 0 or
+     pg_catalog.strpos(pg_catalog.pg_get_functiondef(pg_catalog.to_regprocedure(
+       'public.read_transactional_graph_pilot_ledger(text,text)'
+     )), 'g.sent_items_evidence_hash = d.outcome_evidence_hash') = 0 or
+     pg_catalog.strpos(pg_catalog.pg_get_functiondef(pg_catalog.to_regprocedure(
+       'public.read_transactional_graph_pilot_ledger(text,text)'
+     )), 'pg_catalog.count(distinct g.graph_draft_immutable_id)') = 0 then
+    raise exception using errcode = '55000',
+      message = 'fundae_release_postcheck_pilot_ledger_contract_invalid';
+  end if;
+
+  if pg_catalog.to_regclass(
+       'fundae_private.transactional_graph_pilot_authorization_grants'
+     ) is null or
+     not exists (
+       select 1 from pg_catalog.pg_class c
+       join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+       where n.nspname = 'fundae_private'
+         and c.relname = 'transactional_graph_pilot_authorization_grants'
+         and c.relrowsecurity and c.relforcerowsecurity
+     ) or
+     pg_catalog.has_table_privilege(
+       'service_role',
+       'fundae_private.transactional_graph_pilot_authorization_grants',
+       'SELECT'
+     ) or pg_catalog.has_table_privilege(
+       'service_role',
+       'fundae_private.transactional_graph_pilot_authorization_grants',
+       'INSERT'
+     ) or pg_catalog.has_table_privilege(
+       'service_role',
+       'fundae_private.transactional_graph_pilot_authorization_grants',
+       'UPDATE'
+     ) or pg_catalog.has_table_privilege(
+       'service_role',
+       'fundae_private.transactional_graph_pilot_authorization_grants',
+       'DELETE'
+     ) then
+    raise exception using errcode = '42501',
+      message = 'fundae_release_postcheck_pilot_grant_acl_invalid';
+  end if;
+
+  if pg_catalog.has_function_privilege(
+       'service_role',
+       'fundae_private.register_transactional_graph_pilot_grant(text,text,text,text,text[],integer,timestamptz,text)',
+       'EXECUTE'
+     ) or pg_catalog.has_function_privilege(
+       'service_role',
+       'fundae_private.enforce_transactional_graph_pilot_deadline()',
+       'EXECUTE'
+     ) or pg_catalog.strpos(pg_catalog.pg_get_functiondef(pg_catalog.to_regprocedure(
+       'public.preview_transactional_graph_pilot(text,text,text,text[],integer)'
+     )), 'required_authorization_hash') > 0 or
+     pg_catalog.strpos(pg_catalog.pg_get_functiondef(pg_catalog.to_regprocedure(
+       'public.preview_transactional_graph_pilot(text,text,text,text[],integer)'
+     )), '''authorization_required'', true') = 0 or
+     pg_catalog.strpos(pg_catalog.pg_get_functiondef(pg_catalog.to_regprocedure(
+       'public.start_transactional_graph_pilot(text,text,text,text[],text,integer)'
+     )), 'consumed_at is null and revoked_at is null') = 0 or
+     pg_catalog.strpos(pg_catalog.pg_get_functiondef(pg_catalog.to_regprocedure(
+       'public.start_transactional_graph_pilot(text,text,text,text[],text,integer)'
+     )), 'for update') = 0 then
+    raise exception using errcode = '42501',
+      message = 'fundae_release_postcheck_pilot_grant_contract_invalid';
+  end if;
+
+  if not exists (
+    select 1 from cron.job
+    where jobname = 'fundae-transactional-graph-pilot-watchdog'
+      and schedule = '* * * * *'
+      and active
+      and command =
+        'select fundae_private.enforce_transactional_graph_pilot_deadline();'
+  ) then
+    raise exception using errcode = '55000',
+      message = 'fundae_release_postcheck_pilot_watchdog_missing';
+  end if;
+
+  if exists (
     select 1 from public.campaigns
     where external_id = 'FUNDAE_2026_EMAIL_V1' and is_active
   ) then
@@ -360,6 +659,10 @@ begin
       'mailbox_state_active_reservation_fk_idx',
       'mailbox_state_blocked_reservation_fk_idx',
       'operational_alert_receipts_dedupe_fk_idx'
+      ,'graph_outbox_pkey'
+      ,'graph_outbox_mailbox_draft_immutable_idx'
+      ,'transactional_graph_pilot_one_active_idx'
+      ,'transactional_dispatch_pilot_run_idx'
     ]) as expected(index_name)
     where pg_catalog.to_regclass('public.' || expected.index_name) is null
   ) then

@@ -9,8 +9,7 @@ const matrix = readFileSync(
   new URL("../../docs/fundae-release/PRIVACY_RETENTION_MATRIX.md", import.meta.url),
   "utf8",
 );
-const consent = readFileSync(new URL("../../src/lib/consent.ts", import.meta.url), "utf8");
-const tracking = readFileSync(new URL("../../src/lib/tracking.ts", import.meta.url), "utf8");
+const browserStorage = readFileSync(new URL("../../src/lib/browserStorage.ts", import.meta.url), "utf8");
 const retentionSql = readFileSync(
   new URL("../../data-brain/supabase/migrations/20260819190000_journey_retention_control.sql", import.meta.url),
   "utf8",
@@ -18,7 +17,7 @@ const retentionSql = readFileSync(
 
 test("privacy matrix covers every current analytics storage identifier", () => {
   const sourceKeys = new Set(
-    [...(`${consent}\n${tracking}`.matchAll(
+    [...(browserStorage.matchAll(
       /["'](fundae_(?:analytics_consent|identity|journey|session|first_touch|last_touch|campaign_context)_[a-z0-9]+)["']/g,
     ))].map((match) => match[1]),
   );
