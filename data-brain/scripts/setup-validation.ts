@@ -1,4 +1,5 @@
 import { parseDashboardCredentialStore } from '../src/lib/dashboard-auth';
+import { isValidLeadHashSecret } from '../src/lib/env';
 
 export type Environment = Record<string, string | undefined>;
 
@@ -295,7 +296,10 @@ export function validateSetup(environment: Environment): SetupValidationResult {
   for (const key of STRONG_SECRET_KEYS) {
     const secret = valueOf(environment, key);
     if (!secret) continue;
-    if (Buffer.byteLength(secret, 'utf8') < 32 || isPlaceholder(secret)) {
+    const invalid = key === 'LEAD_HASH_SECRET'
+      ? !isValidLeadHashSecret(environment[key] ?? '')
+      : Buffer.byteLength(secret, 'utf8') < 32 || isPlaceholder(secret);
+    if (invalid) {
       issues.push({ severity: 'p0', key, message: `${key} debe ser un secreto no-placeholder de al menos 32 bytes.` });
     }
   }

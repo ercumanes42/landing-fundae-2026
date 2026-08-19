@@ -27,6 +27,7 @@ type EnvKey =
   | 'HUBSPOT_API_VERSION'
   | 'HUBSPOT_SYNC_ENABLED'
   | 'OPERATIONAL_OBSERVABILITY_ENABLED'
+  | 'OPERATIONAL_ALERT_DELIVERY_ENABLED'
   | 'OBSERVABILITY_WORKER_SECRET'
   | 'MAKE_WEBHOOK_URL'
   | 'OUTBOUND_MASTER_ENABLED'
@@ -75,12 +76,16 @@ const REQUIRED_ENV: EnvKey[] = [
   'LEAD_HASH_SECRET',
 ];
 
+const LEAD_HASH_SECRET_PLACEHOLDER_PATTERN = /(?:replace[-_ ]?with|change[-_ ]?me|changeme|placeholder|example|xxxxx|your[-_ ]?(?:key|secret|password)|tu[-_ ]?(?:clave|secreto)|secret[-_ ]?here|^todo$)/i;
+export const LEAD_HASH_SECRET_INVALID = 'LEAD_HASH_SECRET_INVALID';
+
 const DEFAULTS: Partial<Record<EnvKey, string>> = {
   OPENAI_MODEL_SUMMARY: 'gpt-4o-mini',
   OPENAI_MODEL_ANALYST: 'gpt-4o',
   HUBSPOT_API_VERSION: '2026-03',
   HUBSPOT_SYNC_ENABLED: 'false',
   OPERATIONAL_OBSERVABILITY_ENABLED: 'false',
+  OPERATIONAL_ALERT_DELIVERY_ENABLED: 'false',
   CAMPAIGN_DEFAULT_EXTERNAL_ID: 'FUNDAE_2026_EMAIL_V1',
   LANDING_ALLOWED_ORIGINS: 'http://localhost:3001',
   OUTBOUND_MASTER_ENABLED: 'false',
@@ -106,6 +111,23 @@ const DEFAULTS: Partial<Record<EnvKey, string>> = {
 
 export function env(key: EnvKey): string {
   return process.env[key] || DEFAULTS[key] || '';
+}
+
+/**
+ * Lead identities are stable HMACs. Accept only an untrimmed, non-placeholder
+ * secret with at least 32 UTF-8 bytes so every runtime path fails closed.
+ */
+export function isValidLeadHashSecret(value: string): boolean {
+  return value.length > 0
+    && value === value.trim()
+    && Buffer.byteLength(value, 'utf8') >= 32
+    && !LEAD_HASH_SECRET_PLACEHOLDER_PATTERN.test(value);
+}
+
+export function leadHashSecret(): string {
+  const value = env('LEAD_HASH_SECRET');
+  if (!isValidLeadHashSecret(value)) throw new Error(LEAD_HASH_SECRET_INVALID);
+  return value;
 }
 
 export type OutboundCapabilityFlag =
@@ -137,14 +159,19 @@ export function isInboundCapabilityEnabled(capability: InboundCapabilityFlag): b
 
 export function validateEnv(): { ok: true } | { ok: false; missing: EnvKey[] } {
   const missing = REQUIRED_ENV.filter((key) => !env(key));
-  return missing.length === 0 ? { ok: true } : { ok: false, missing };
+  const configuredLeadHashSecret = env('LEAD_HASH_SECRET');
+  if (configuredLeadHashSecret && !isValidLeadHashSecret(configuredLeadHashSecret)) {
+    missing.push('LEAD_HASH_SECRET');
+  }
+  const uniqueMissing = [...new Set(missing)];
+  return uniqueMissing.length === 0 ? { ok: true } : { ok: false, missing: uniqueMissing };
 }
 
 export function assertEnv(): void {
   const validation = validateEnv();
   if (!validation.ok) {
     throw new Error(
-      `Data Brain missing required environment variables: ${validation.missing.join(
+      `Data Brain missing or invalid required environment variables: ${validation.missing.join(
         ', ',
       )}`,
     );

@@ -13,7 +13,8 @@ import {
 import type { TransactionalResource } from './transactional-delivery';
 
 const capability = 'a'.repeat(43);
-const leadId = createHmac('sha256', 'hash-test').update('internal@example.test').digest('hex');
+const leadHashSecretFixture = 'delivery-package-hash-test'.padEnd(32, 'q');
+const leadId = createHmac('sha256', leadHashSecretFixture).update('internal@example.test').digest('hex');
 const resources: TransactionalResource[] = [
   'calculator',
   'interactive_checklist',
@@ -25,7 +26,7 @@ const environment = {
   SUPABASE_URL: 'https://supabase.test',
   SUPABASE_ANON_KEY: 'anon-test',
   SUPABASE_SERVICE_ROLE_KEY: 'service-test',
-  LEAD_HASH_SECRET: 'hash-test',
+  LEAD_HASH_SECRET: leadHashSecretFixture,
   UNSUBSCRIBE_TOKEN_SECRET: 'unsubscribe-test',
   DATA_BRAIN_ADMIN_USER: 'admin-test',
   DATA_BRAIN_ADMIN_PASSWORD: 'password-test',

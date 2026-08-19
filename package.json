@@ -25,10 +25,10 @@
     "release:manifest": "node scripts/release/baseline-manifest.mjs",
     "release:manifest:verify": "node scripts/release/verify-manifest.mjs",
     "release:candidate:dry-run": "node scripts/release/plan-release-candidate.mjs",
-    "test:release-candidate": "node --test scripts/release/release-candidate-plan.test.mjs",
+    "test:release-candidate": "node --test scripts/release/release-candidate-plan.test.mjs scripts/release/release-ci-contract.test.mjs",
     "release:ci-pins": "node scripts/release/verify-ci-pins.mjs",
     "test:supabase-gate-pack": "node --test scripts/release/supabase-gate-pack.test.mjs",
-    "release:supabase:gates:static": "powershell.exe -NoProfile -File scripts/release/run-supabase-staging-gates.ps1 -Mode Static",
+    "release:supabase:gates:static": "node scripts/release/run-supabase-static-gates.mjs",
     "verify:release": "node scripts/release/verify-release.mjs"
   },
   "dependencies": {

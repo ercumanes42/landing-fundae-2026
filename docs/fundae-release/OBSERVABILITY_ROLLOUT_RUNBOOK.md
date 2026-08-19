@@ -1,12 +1,14 @@
 # Operational observability and rollout runbook
 
-Status: local implementation, `OPERATIONAL_OBSERVABILITY_ENABLED=false`. No SQL was applied, no external alert channel was configured, and no live canary or email was sent.
+Status: local implementation, `OPERATIONAL_OBSERVABILITY_ENABLED=false` and `OPERATIONAL_ALERT_DELIVERY_ENABLED=false`. The durable-delivery SQL was applied to the independent authorized staging project; postcheck and rollback-only behavior smoke passed, outbound controls remained OFF, and the project was returned to `PAUSED`. Production is unchanged, no external alert channel is configured, and no live canary or email was sent.
 
 ## Signal contract
 
 `POST /api/internal/observability` and `GET /api/internal/observability` require a bearer `OBSERVABILITY_WORKER_SECRET` of at least 32 characters. Heartbeat/evaluate audit as a fixed server-derived HMAC machine actor; caller-supplied actor identity is ignored. The endpoint does not expose acknowledge/resolve until dashboard RBAC (`admin`/`operator`) is integrated. Bodies are read as a bounded stream with an 8 KiB hard limit, including requests without `Content-Length`. The switch is independent from outbound and defaults to `false`; while OFF the endpoint returns before any RPC or network call.
 
-The service-only RPC returns bounded aggregate counts only. Heartbeat metrics are flat numeric/boolean/null values; strings, nested JSON and PII-bearing payloads are rejected. Direct tables have forced RLS and no grants. Alert identity is `SHA-256(signal_code + summary_code)`; evaluation receipts make replay idempotent. Acknowledge and resolve are audited, and an active signal reopens a resolved alert.
+The service-only RPC returns bounded aggregate counts only. Heartbeat metrics are flat numeric/boolean/null values; strings, nested JSON and PII-bearing payloads are rejected. Direct tables have forced RLS and no grants. Evaluation receipts make alert replay idempotent. Graph/dispatch ambiguity additionally materializes a PII-free delivery receipt in the same DB transaction that sets `ambiguous_halted` and disables the affected lane.
+
+`deliver_alert` performs one bounded claim. The worker posts only the stored `code`, reservation hash and evidence hash. A failed/timeout webhook is finalized as `pending` with exponential backoff; an expired lease is reclaimable, attempt 8 becomes `dead_letter`, and `delivered` replay performs zero webhook calls. External delivery is best-effort; persistence is mandatory and precedes it.
 
 | Signal | Warning | Critical / kill |
 |---|---|---|
@@ -41,7 +43,7 @@ Kill on any ambiguous Graph result, duplicate reservation/draft/send evidence, s
 Rollback order:
 
 1. Stop cron/worker ingress; do not start another claim.
-2. Set `OUTBOUND_MASTER_ENABLED=false`, `TRANSACTIONAL_OUTLOOK_ENABLED=false`, `COLD_CAMPAIGN_ENABLED=false`, `HUBSPOT_SYNC_ENABLED=false` and keep legacy flags false.
+2. Set `OUTBOUND_MASTER_ENABLED=false`, `TRANSACTIONAL_OUTLOOK_ENABLED=false`, `COLD_CAMPAIGN_ENABLED=false`, `HUBSPOT_SYNC_ENABLED=false`, `OPERATIONAL_ALERT_DELIVERY_ENABLED=false` and keep legacy flags false. Pending alert intent remains stored.
 3. Snapshot aggregate states: `reserved`, `draft_creating`, `draft_created`, `send_submitted`, `ambiguous_halted`, queued/claimed campaign work and pending inbound stops.
 4. Before send authorization, neutralize and verify the exact draft, then release only through the canonical terminal RPC.
 5. Point of no return: once authorization is consumed and the Graph send POST is submitted, a flag cannot recall the message. Stop later claims and perform read-only same-ID/Sent Items reconciliation; never create a replacement draft.
@@ -49,7 +51,7 @@ Rollback order:
 
 ## Remaining release evidence
 
-- Apply `20260819183000_operational_observability.sql` only in authorized staging after backup/precheck.
+- Preserve the staging evidence for `20260819230000_durable_operational_alert_delivery.sql`: authorized independent project, postcheck and rollback-only behavior smoke PASS, outbound OFF, project `PAUSED`. Production application remains pending and requires its own authorization, backup and precheck.
 - Verify grants/RLS and concurrent reconcile/ack/resolve semantics in PostgreSQL; run advisors and representative `EXPLAIN (ANALYZE, BUFFERS)`.
 - Connect real heartbeat producers and an approved alert receiver; inject each fault and retain alert receipts.
 - Keep G8 `IN_PROGRESS`, G9/G10 `BLOCKED` until live-scoped evidence and direct authorization exist.

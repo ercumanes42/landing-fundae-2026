@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 
+import { executeConfiguredOperationalAlertDeliveryOnce } from '@/lib/durable-operational-alerts';
 import {
   authorizeOperationalRequest,
   getOperationalSnapshot,
@@ -81,6 +82,11 @@ export async function POST(request: Request) {
       const snapshot = await getOperationalSnapshot();
       const result = await reconcileOperationalAlerts(snapshot, operationalMachineActorHash());
       return NextResponse.json({ accepted: true, alert_count: result.alerts.length, evaluation_key: result.evaluation_key }, { headers: RESPONSE_HEADERS });
+    } else if (body.action === 'deliver_alert') {
+      const result = await executeConfiguredOperationalAlertDeliveryOnce();
+      return NextResponse.json({ accepted: result.state !== 'off', ...result }, {
+        status: result.state === 'off' ? 409 : 200, headers: RESPONSE_HEADERS,
+      });
     } else {
       throw new Error('action is invalid');
     }

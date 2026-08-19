@@ -152,6 +152,20 @@ test('selects exactly the fresh v4 cohort and one deliverable inert row per reso
   assert.equal(new Set([...result.candidates.values()].map((row) => row.lead_id)).size, 1);
 });
 
+test('candidate selection rejects weak, placeholder and whitespace-drift lead secrets', () => {
+  for (const secret of [
+    'k'.repeat(31),
+    'replace-with-a-long-random-secret-value',
+    ` ${'k'.repeat(32)}`,
+    `${'k'.repeat(32)} `,
+  ]) {
+    assert.throws(
+      () => selectFreshOutlookCandidates(rows(), [], computedAllowlist, secret),
+      /lead_hash_secret_invalid/,
+    );
+  }
+});
+
 test('accepts a completed calculator with its claim and keeps only pending resources sendable', async () => {
   const sequential = rows();
   sequential[0] = { ...sequential[0], email_delivery_status: 'email_sent' };

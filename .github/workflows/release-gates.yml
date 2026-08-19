@@ -35,6 +35,12 @@ jobs:
         run: npm run release:ci-pins
       - name: Require every release-core input to be tracked
         run: node scripts/release/verify-manifest.mjs --require-tracked-core
+      - name: Verify release candidate planner contracts
+        run: npm run test:release-candidate
+      - name: Verify Supabase gate-pack contracts
+        run: npm run test:supabase-gate-pack
+      - name: Verify Supabase static release gates
+        run: npm run release:supabase:gates:static
       - run: npm run test:unit
       - run: npm run lint
       - run: npm run build

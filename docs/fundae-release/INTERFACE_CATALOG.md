@@ -59,8 +59,10 @@ Tipos mínimos: `page_view`, quartiles de vídeo, `tool_start`, steps, `tool_com
 
 ## Operational observability
 
-- Endpoint service-only: `GET|POST /api/internal/observability`, bearer dedicado; solo heartbeat/evaluate con actor máquina HMAC derivado en servidor. No expone acknowledge/resolve hasta integrar RBAC dashboard.
-- RPC: `record_operational_heartbeat`, `get_operational_observability_snapshot`, `reconcile_operational_alerts`, `transition_operational_alert`.
+- Endpoint service-only: `GET|POST /api/internal/observability`, bearer dedicado; admite `heartbeat`, `evaluate` y un tick `deliver_alert`. No expone acknowledge/resolve hasta integrar RBAC dashboard.
+- `OPERATIONAL_ALERT_DELIVERY_ENABLED=false` es independiente de outbound. OFF conserva la intención durable y hace cero llamadas al webhook.
+- RPC durable: `enqueue_operational_alert_delivery`, `claim_operational_alert_delivery`, `finalize_operational_alert_delivery`; claim con lease/`SKIP LOCKED`, retry acotado y replay idempotente.
+- RPC observabilidad: `record_operational_heartbeat`, `get_operational_observability_snapshot`, `reconcile_operational_alerts`, `transition_operational_alert`.
 - Solo agregados y métricas escalares; sin PII, payloads, IDs Graph, Message-ID, emails ni tablas completas.
-- Alertas deduplicadas con receipts de evaluación; `open -> acknowledged -> resolved`, con reapertura y auditoría append-only.
+- Alertas deduplicadas con receipts de evaluación/entrega; `open -> acknowledged -> resolved`, con reapertura, auditoría append-only y entrega `pending -> claimed -> delivered|dead_letter`.
 - Umbrales, canarios, point-of-no-return y rollback: `OBSERVABILITY_ROLLOUT_RUNBOOK.md`.

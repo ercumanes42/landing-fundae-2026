@@ -25,7 +25,7 @@ const environment = {
   SUPABASE_URL: 'https://supabase.test',
   SUPABASE_ANON_KEY: 'anon-test',
   SUPABASE_SERVICE_ROLE_KEY: 'service-test',
-  LEAD_HASH_SECRET: 'capture-isolation-secret',
+  LEAD_HASH_SECRET: 'capture-isolation-secret'.padEnd(32, 'q'),
   DATA_BRAIN_ADMIN_USER: 'admin-test',
   DATA_BRAIN_ADMIN_PASSWORD: adminPassword,
   DATA_BRAIN_AUTH_CREDENTIALS: dashboardCredentialStore,

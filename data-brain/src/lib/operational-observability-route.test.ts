@@ -29,18 +29,19 @@ function json(value: unknown, status = 200): Response {
 
 async function withRuntime(action: () => Promise<void>) {
   const keys = [
-    'OPERATIONAL_OBSERVABILITY_ENABLED', 'OBSERVABILITY_WORKER_SECRET',
+    'OPERATIONAL_OBSERVABILITY_ENABLED', 'OPERATIONAL_ALERT_DELIVERY_ENABLED', 'OBSERVABILITY_WORKER_SECRET',
     'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'SUPABASE_SERVICE_ROLE_KEY', 'LEAD_HASH_SECRET',
   ];
   const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
   const previousFetch = globalThis.fetch;
   Object.assign(process.env, {
     OPERATIONAL_OBSERVABILITY_ENABLED: 'true',
+    OPERATIONAL_ALERT_DELIVERY_ENABLED: 'false',
     OBSERVABILITY_WORKER_SECRET: SECRET,
     SUPABASE_URL: 'https://local.invalid',
     SUPABASE_ANON_KEY: 'anon',
     SUPABASE_SERVICE_ROLE_KEY: 'service',
-    LEAD_HASH_SECRET: 'hash-secret',
+    LEAD_HASH_SECRET: 'observability-hash-secret'.padEnd(32, 'q'),
   });
   try {
     await action();
@@ -109,6 +110,15 @@ test('shared worker endpoint denies human acknowledge and resolve actions', () =
     const response = await POST(request(JSON.stringify({ action, dedupe_key: 'c'.repeat(64) })));
     assert.equal(response.status, 400);
   }
+  assert.equal(fetchCalls, 0);
+}));
+
+test('deliver_alert remains independently OFF and performs zero RPC or webhook work', () => withRuntime(async () => {
+  let fetchCalls = 0;
+  globalThis.fetch = async () => { fetchCalls += 1; return json({}); };
+  const response = await POST(request(JSON.stringify({ action: 'deliver_alert' })));
+  assert.equal(response.status, 409);
+  assert.equal((await response.json()).reasonCode, 'alert_delivery_off');
   assert.equal(fetchCalls, 0);
 }));
 

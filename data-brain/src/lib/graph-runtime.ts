@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
 import { executeColdCampaignTick } from './cold-campaign-dispatch';
+import { persistAndAttemptCriticalOperationalAlert } from './durable-operational-alerts';
 import { env, isOutboundCapabilityEnabled } from './env';
 import { executeGraphDispatchOnce } from './graph-dispatch';
 import { SecureMicrosoftGraphClient } from './graph-secure-client';
@@ -82,20 +83,7 @@ export function createGraphTokenProvider(options: {
 }
 
 async function sendAlert(event: { code: string; reservationHash: string; evidenceHash: string }): Promise<void> {
-  const endpoint = required('NOTIFICATION_WEBHOOK_URL', 12);
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 5_000);
-  try {
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ source: 'graph_outbox', severity: 'critical', ...event }),
-      signal: controller.signal,
-    });
-    if (!response.ok) throw new Error('Graph alert delivery failed');
-  } finally {
-    clearTimeout(timeout);
-  }
+  await persistAndAttemptCriticalOperationalAlert(event);
 }
 
 export async function executeConfiguredTransactionalGraphJob(input: unknown) {

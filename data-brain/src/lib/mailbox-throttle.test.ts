@@ -20,7 +20,8 @@ const mailboxHash = 'c'.repeat(64);
 const intakeCapability = 'a'.repeat(43);
 const reservationId = '018f4f6a-2b2c-7c8d-8e9f-0123456789ab';
 const submissionId = 'pilot_e2e_v2_calculator';
-const leadId = createHmac('sha256', 'hash-test').update('internal@example.test').digest('hex');
+const leadHashSecretFixture = 'mailbox-hash-test'.padEnd(32, 'q');
+const leadId = createHmac('sha256', leadHashSecretFixture).update('internal@example.test').digest('hex');
 
 const calculatorPayload = {
   submission_id: submissionId,
@@ -57,7 +58,7 @@ async function withMockedRpc(
     SUPABASE_URL: 'https://supabase.test',
     SUPABASE_ANON_KEY: 'anon-test',
     SUPABASE_SERVICE_ROLE_KEY: 'service-test',
-    LEAD_HASH_SECRET: 'hash-test',
+    LEAD_HASH_SECRET: leadHashSecretFixture,
     UNSUBSCRIBE_TOKEN_SECRET: 'unsubscribe-test',
     DATA_BRAIN_ADMIN_USER: 'admin-test',
     DATA_BRAIN_ADMIN_PASSWORD: 'password-test',
@@ -96,7 +97,7 @@ async function withMockedReservationBackend(
     SUPABASE_URL: 'https://supabase.test',
     SUPABASE_ANON_KEY: 'anon-test',
     SUPABASE_SERVICE_ROLE_KEY: 'service-test',
-    LEAD_HASH_SECRET: 'hash-test',
+    LEAD_HASH_SECRET: leadHashSecretFixture,
     UNSUBSCRIBE_TOKEN_SECRET: 'unsubscribe-test',
     DATA_BRAIN_ADMIN_USER: 'admin-test',
     DATA_BRAIN_ADMIN_PASSWORD: 'password-test',
@@ -338,7 +339,7 @@ test('public Outlook callback rejects sent before the mailbox finalization RPC',
     SUPABASE_URL: 'https://supabase.test',
     SUPABASE_ANON_KEY: 'anon-test',
     SUPABASE_SERVICE_ROLE_KEY: 'service-test',
-    LEAD_HASH_SECRET: 'hash-test',
+    LEAD_HASH_SECRET: leadHashSecretFixture,
   })) {
     previous.set(key, process.env[key]);
     process.env[key] = value;

@@ -15,16 +15,23 @@ const HASH = /^[a-f0-9]{64}$/;
 const ACTOR = /^[a-f0-9]{64}$/;
 const APPLY_ACK = 'FUNDAE_STAGING_PROVISION_APPLY_V1';
 const TOKEN_PATTERN = /^u1\.[A-Za-z0-9_-]{43}$/;
+const LEAD_HASH_SECRET_PLACEHOLDER_PATTERN = /(?:replace[-_ ]?with|change[-_ ]?me|changeme|placeholder|example|xxxxx|your[-_ ]?(?:key|secret|password)|tu[-_ ]?(?:clave|secreto)|secret[-_ ]?here|^todo$)/i;
 
 function sha256(value) {
   return createHash('sha256').update(value).digest('hex');
 }
 
-function canonicalLeadId(email, secret) {
-  if (Buffer.byteLength(secret, 'utf8') < 32 || /replace|change.?me|placeholder|example|xxxxx/i.test(secret)) {
+function assertLeadHashSecret(secret) {
+  if (typeof secret !== 'string' || secret !== secret.trim() ||
+      Buffer.byteLength(secret, 'utf8') < 32 || LEAD_HASH_SECRET_PLACEHOLDER_PATTERN.test(secret)) {
     throw new Error('APPLY_LEAD_HASH_SECRET_INVALID');
   }
-  return createHmac('sha256', secret).update(email.trim().toLowerCase()).digest('hex');
+  return secret;
+}
+
+function canonicalLeadId(email, secret) {
+  const validatedSecret = assertLeadHashSecret(secret);
+  return createHmac('sha256', validatedSecret).update(email.trim().toLowerCase()).digest('hex');
 }
 
 function fileHash(filePath) {
@@ -109,6 +116,7 @@ function canonicalRowHash(row) {
 }
 
 export function prepareProvisionRows(rows, { unsubscribeSecret, unsubscribeBaseUrl, leadHashSecret }) {
+  assertLeadHashSecret(leadHashSecret);
   const base = new URL(unsubscribeBaseUrl);
   if (base.protocol !== 'https:' || base.username || base.password || base.pathname !== '/') throw new Error('APPLY_UNSUBSCRIBE_ORIGIN_INVALID');
   const provisionRows = [];

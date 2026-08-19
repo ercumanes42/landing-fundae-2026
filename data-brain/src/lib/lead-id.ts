@@ -1,5 +1,5 @@
 import { createHmac } from 'node:crypto';
-import { env } from './env';
+import { leadHashSecret } from './env';
 
 export function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
@@ -7,7 +7,7 @@ export function normalizeEmail(email: string): string {
 
 export function buildLeadId(email: string): string {
   const normalized = normalizeEmail(email);
-  return createHmac('sha256', env('LEAD_HASH_SECRET'))
+  return createHmac('sha256', leadHashSecret())
     .update(normalized)
     .digest('hex');
 }

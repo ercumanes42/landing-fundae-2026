@@ -29,10 +29,21 @@
     ]
   },
   "response_contract": {
+    "fields": ["accepted", "state", "reason_code", "dispatch_id", "reservation_id", "alert_attempted", "alert_delivered"],
     "success_states": ["empty", "confirmed_sent"],
     "deferred_states": ["off", "deferred"],
     "halt_states": ["ambiguous_halted"],
-    "never_retry_blindly": true
+    "never_retry_blindly": true,
+    "http_status_policy": {
+      "200": "complete_execution_without_retry",
+      "409": "controlled_no_progress_wait_for_next_scheduled_tick",
+      "503": "halt_execution_create_incomplete_execution_and_alert_operator"
+    },
+    "retry_policy": {
+      "automatic_retries": 0,
+      "incomplete_executions": true,
+      "retry_requires_operator_review": true
+    }
   },
   "feature_gates": {
     "outbound_master": false,
@@ -41,7 +52,7 @@
   "verification_required": [
     "Verify the exact HTTP module slug and connection in the selected Make team",
     "Create the scenario inactive and verify an OFF response with zero Graph traffic",
-    "Run the four-recipient internal sandbox only after direct user authorization",
+    "Run the four-resource single-approved-sink sandbox only after direct user authorization",
     "Keep the scenario inactive until all transactional gates pass"
   ]
 }

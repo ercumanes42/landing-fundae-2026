@@ -347,4 +347,18 @@ export class GraphOutboxRepository {
       p_evidence_hash: input.evidenceHash,
     }));
   }
+
+  async haltDispatch(input: {
+    dispatchId: string;
+    workerId: string;
+    reasonCode: string;
+    evidenceHash: string;
+  }): Promise<GraphRpcResult> {
+    return parseResult(await this.rpc('halt_transactional_graph_dispatch', {
+      p_dispatch_id: input.dispatchId,
+      p_worker_id: input.workerId,
+      p_reason_code: input.reasonCode,
+      p_evidence_hash: input.evidenceHash,
+    }));
+  }
 }

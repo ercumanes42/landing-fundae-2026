@@ -187,6 +187,10 @@ export async function executeColdCampaignTick(deps: ColdTickDependencies): Promi
       p_outcome: item.outboxState, p_evidence_hash: item.outcomeEvidenceHash,
     });
     if (finalized.accepted !== true) {
+      await deps.rpc('halt_cold_campaign_dispatch', {
+        p_dispatch_id: item.dispatchId, p_worker_id: deps.workerId, p_worker_token: deps.workerToken,
+        p_reason_code: 'RECOVERY_FINALIZE_REJECTED', p_evidence_hash: item.outcomeEvidenceHash,
+      });
       const alert = await attemptCriticalAlert(
         deps, 'AMBIGUOUS_COLD_RECOVERY_FINALIZE_REJECTED', reservationId, item.outcomeEvidenceHash,
       );
@@ -215,6 +219,10 @@ export async function executeColdCampaignTick(deps: ColdTickDependencies): Promi
     p_outcome: workerResult.state, p_evidence_hash: workerResult.evidenceHash,
   });
   if (finalized.accepted !== true) {
+    await deps.rpc('halt_cold_campaign_dispatch', {
+      p_dispatch_id: item.dispatchId, p_worker_id: deps.workerId, p_worker_token: deps.workerToken,
+      p_reason_code: 'FINALIZE_REJECTED', p_evidence_hash: workerResult.evidenceHash,
+    });
     const alert = await attemptCriticalAlert(
       deps, 'AMBIGUOUS_COLD_FINALIZE_REJECTED', reservationId, workerResult.evidenceHash,
     );

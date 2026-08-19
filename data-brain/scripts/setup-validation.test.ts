@@ -82,6 +82,20 @@ test('rejects weak, placeholder and repeated critical secrets', () => {
   assert.ok(result.issues.some((issue) => issue.key.includes('MAKE_WEBHOOK_SECRET')));
 });
 
+test('LEAD_HASH_SECRET setup validation matches runtime byte and whitespace rules', () => {
+  assert.equal(validateSetup(validEnvironment({ LEAD_HASH_SECRET: 'ñ'.repeat(16) })).ready, true);
+  for (const LEAD_HASH_SECRET of [
+    'a'.repeat(31),
+    'replace-with-a-long-random-secret-value',
+    ` ${'a'.repeat(32)}`,
+    `${'a'.repeat(32)} `,
+  ]) {
+    const result = validateSetup(validEnvironment({ LEAD_HASH_SECRET }));
+    assert.equal(result.ready, false);
+    assert.ok(result.issues.some((issue) => issue.key === 'LEAD_HASH_SECRET'));
+  }
+});
+
 test('rejects malformed auth stores and legacy mode', () => {
   const malformed = validateSetup(validEnvironment({ DATA_BRAIN_AUTH_CREDENTIALS: '{}' }));
   assert.equal(malformed.ready, false);

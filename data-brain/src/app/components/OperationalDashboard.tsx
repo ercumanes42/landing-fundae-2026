@@ -93,7 +93,7 @@ function StateCard({ title, detail }: { title: string; detail: string }) {
 
 export function OperationalDashboard(props: Props) {
   if (props.state === 'configuration_error') {
-    return <StateCard title="Configuración incompleta" detail={`Faltan variables requeridas: ${props.missing.join(', ')}.`} />;
+    return <StateCard title="Configuración incompleta" detail={`Variables requeridas ausentes o inválidas: ${props.missing.join(', ')}.`} />;
   }
   if (props.state === 'access_denied') {
     return <StateCard title="Acceso no autorizado" detail="La identidad del dashboard no pudo validarse. No se consultó ningún dataset." />;

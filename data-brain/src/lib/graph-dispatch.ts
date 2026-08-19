@@ -154,6 +154,12 @@ export async function executeGraphDispatchOnce(
       evidenceHash: workerResult.evidenceHash,
     });
     if (!finalized.accepted) {
+      await deps.repository.haltDispatch({
+        dispatchId: item.dispatchId,
+        workerId: deps.workerId,
+        reasonCode: 'DISPATCH_FINALIZE_REJECTED',
+        evidenceHash: workerResult.evidenceHash,
+      });
       const alert = await attemptCriticalAlert(
         deps,
         'AMBIGUOUS_DISPATCH_FINALIZE_REJECTED',

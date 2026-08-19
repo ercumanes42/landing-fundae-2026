@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 
 const releaseDir = dirname(fileURLToPath(import.meta.url));
 const root = join(releaseDir, '..', '..');
+const powerShell = process.platform === 'win32' ? 'powershell.exe' : 'pwsh';
 const sqlRoot = join(root, 'data-brain', 'supabase');
 const sqlFiles = [
   'FUNDAE_RELEASE_PRECHECK_20260819.sql',
@@ -37,6 +38,7 @@ const migrationFiles = [
   '20260819170000_cold_campaign_scheduler.sql', '20260819183000_operational_observability.sql',
   '20260819190000_journey_retention_control.sql', '20260819200000_cold_campaign_provisioning.sql',
   '20260819210000_release_safety_barriers.sql', '20260819220000_advisor_index_hardening.sql',
+  '20260819230000_durable_operational_alert_delivery.sql',
 ];
 
 function runStaticFixture(noopContent) {
@@ -51,7 +53,7 @@ function runStaticFixture(noopContent) {
   for (const file of migrationFiles) cpSync(join(sqlRoot, 'migrations', file), join(fixtureMigrationRoot, file));
   writeFileSync(join(fixtureMigrationRoot, noopMigrationName), noopContent, 'utf8');
   try {
-    return spawnSync('powershell.exe', [
+    return spawnSync(powerShell, [
       '-NoProfile', '-File', join(fixtureReleaseDir, 'run-supabase-staging-gates.ps1'), '-Mode', 'Static',
     ], { cwd: fixtureRoot, encoding: 'utf8', windowsHide: true });
   } finally {
@@ -111,6 +113,13 @@ test('the PowerShell runner is fail-closed and never embeds credentials', () => 
   assert.doesNotMatch(runner, /PGPASSWORD\s*=/i);
   assert.doesNotMatch(runner, /postgres(?:ql)?:\/\//i);
   for (const migration of migrationFiles) assert.match(runner, new RegExp(migration.replaceAll('.', '\\.'), 'u'));
+});
+
+test('the npm entrypoint selects a platform PowerShell without embedding credentials', () => {
+  const wrapper = readFileSync(join(releaseDir, 'run-supabase-static-gates.mjs'), 'utf8');
+  assert.match(wrapper, /process\.platform === 'win32' \? 'powershell\.exe' : 'pwsh'/);
+  assert.match(wrapper, /'-Mode',[\s\S]*'Static'/);
+  assert.doesNotMatch(wrapper, /PGPASSWORD|postgres(?:ql)?:\/\//i);
 });
 
 test('the runner rejects both an empty file and arbitrary non-empty SQL with the decision marker', () => {

@@ -104,6 +104,26 @@ test('Excel serial dates, canonical payload and unit-separator row hash are dete
     assert.equal(row.row_sha256, hash(fields.join('\x1f')));
   }
 });
+
+test('provisioner rejects weak, placeholder and whitespace-drift lead secrets before processing rows', () => {
+  for (const leadHashSecret of [
+    'k'.repeat(31),
+    'replace-with-a-long-random-secret-value',
+    ` ${'k'.repeat(32)}`,
+    `${'k'.repeat(32)} `,
+  ]) {
+    assert.throws(() => prepareProvisionRows([], {
+      unsubscribeSecret: 'u'.repeat(32),
+      unsubscribeBaseUrl: 'https://example.invalid/',
+      leadHashSecret,
+    }), /APPLY_LEAD_HASH_SECRET_INVALID/);
+  }
+  assert.deepEqual(prepareProvisionRows([], {
+    unsubscribeSecret: 'u'.repeat(32),
+    unsubscribeBaseUrl: 'https://example.invalid/',
+    leadHashSecret: 'ñ'.repeat(16),
+  }), []);
+});
 const applyInput = {
   manifest: { manifestHash: 'a'.repeat(64), logicalDatasetSha256: '9'.repeat(64), campaignExternalId: 'FUNDAE_2026_EMAIL_V1', batchCount: 2, batches: [
     { index: 0, hash: 'b'.repeat(64), rows: [{ row_sha256: 'c'.repeat(64) }] },

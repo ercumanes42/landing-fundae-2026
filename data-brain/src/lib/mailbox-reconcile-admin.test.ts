@@ -19,7 +19,7 @@ const baseInput = {
   evidence: 'operator-confirmed-in-outlook',
 } as const;
 
-process.env.LEAD_HASH_SECRET = 'lead-hash-test-secret';
+process.env.LEAD_HASH_SECRET = 'lead-hash-test-secret'.padEnd(32, 'q');
 
 function dependencies(
   overrides: Partial<MailboxReconcileAdminDependencies> = {},

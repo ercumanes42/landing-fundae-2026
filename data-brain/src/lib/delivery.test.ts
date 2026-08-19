@@ -12,7 +12,7 @@ const requiredEnv = {
   SUPABASE_URL: 'https://supabase.test',
   SUPABASE_ANON_KEY: 'anon-test',
   SUPABASE_SERVICE_ROLE_KEY: 'service-test',
-  LEAD_HASH_SECRET: 'hash-test',
+  LEAD_HASH_SECRET: 'delivery-hash-test'.padEnd(32, 'q'),
   UNSUBSCRIBE_TOKEN_SECRET: 'Z7fL3xP8vN2qR6mK9cD4wH1sB5tY0gUa',
   DATA_BRAIN_ADMIN_USER: 'admin-test',
   DATA_BRAIN_ADMIN_PASSWORD: 'password-test',

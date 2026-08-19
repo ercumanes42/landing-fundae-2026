@@ -84,6 +84,9 @@ if (process.version !== expectedNode || npmVersion !== expectedNpm) {
 
 execute('reviewed GitHub Actions pins', process.execPath, ['scripts/release/verify-ci-pins.mjs']);
 execute('release core manifest (local policy)', process.execPath, ['scripts/release/verify-manifest.mjs']);
+execute('release candidate planner contracts', npmCommand, npmArgs(['run', 'test:release-candidate']));
+execute('Supabase gate-pack contracts', npmCommand, npmArgs(['run', 'test:supabase-gate-pack']));
+execute('Supabase static release gates', npmCommand, npmArgs(['run', 'release:supabase:gates:static']));
 execute('landing unit tests', npmCommand, npmArgs(['run', 'test:unit']));
 execute('landing typecheck', npmCommand, npmArgs(['run', 'lint']));
 execute('automation static tests', npmCommand, npmArgs(['run', 'test:automation']));

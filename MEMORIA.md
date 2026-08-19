@@ -236,3 +236,12 @@ No afirmar 100%, producción o E2E live hasta: release reproducible; SQL real y 
 - El primer intento de esta migración falló por `pg_catalog.coalesce`; PostgreSQL revirtió toda la transacción. Se corrigió a la expresión especial `coalesce`, se repitió el gate local 5/5 y el segundo apply terminó correctamente.
 - Snapshot local previo a documentación: Data Brain 288/288 + anti-omisión 1/1, setup/readiness 36/36, typecheck/build PASS; automation 74/74; Graph/cold 42/42; Make 6/6; provisioner HMAC 10/10. El staging volvió a quedar `PAUSED` y nunca se habilitó outbound.
 - G2 permanece `IN_PROGRESS / STAGING_PASS`; G3, G6 y G7 no están autorizados para live. No hubo producción, deploy, OAuth/Graph real, HubSpot sandbox, importación Make ni envíos.
+
+## Hardening final offline y alertas durables — 19 de agosto de 2026
+
+- `LEAD_HASH_SECRET` exige al menos 32 bytes UTF-8, sin placeholders ni whitespace exterior, con rotación fail-closed y sin dual-read. Captura, `buildLeadId`, provisioner y gates usan la misma política.
+- El preflight HubSpot requiere autenticación antes de rate-limit/fetch, es GET-only/no-store y valida portal más un manifiesto redacted de 33 propiedades. No habilita `HUBSPOT_SYNC_ENABLED` ni sustituye el sandbox.
+- Las ambigüedades Graph/cold/transactional apagan su lane y encolan una intención de alerta durable con claim, lease, retry exponencial, ocho intentos, dead-letter y replay idempotente. La entrega externa permanece OFF hasta configurar webhook.
+- `20260819230000_durable_operational_alert_delivery.sql` se aplicó al staging autorizado. Postcheck devolvió `fundae_release_postcheck_ok`; smoke rollback-only devolvió `fundae_release_behavior_smoke_ok`; outbound, purge y provisioning continuaron OFF. El staging volvió a `PAUSED`.
+- QA autoritativa: Data Brain 301/301 + anti-omisión 1/1, setup/readiness 37/37, typecheck/build PASS; automation 78/78; candidate/CI contract 10/10; gate-pack 6/6; Static y pins 7/7 PASS.
+- CI ejecuta ahora los gates release ya existentes y el runner Supabase Static selecciona PowerShell de forma portable Windows/Linux. Sigue faltando el run real de GitHub sobre checkout limpio.

@@ -22,6 +22,11 @@ test('sender is a non-importable single-call scheduler with Data Brain authority
   assert.equal(sender.scenario.modules[0].body, null);
   assert.equal(sender.database_gates.outbound_master, false);
   assert.equal(sender.database_gates.cold_campaign, false);
+  assert.deepEqual(sender.response_contract.fields.slice(-2), ['alert_attempted', 'alert_delivered']);
+  assert.equal(sender.response_contract.http_status_policy['409'], 'controlled_no_progress_wait_for_next_scheduled_tick');
+  assert.equal(sender.response_contract.http_status_policy['503'], 'halt_execution_create_incomplete_execution_and_alert_operator');
+  assert.equal(sender.response_contract.retry_policy.automatic_retries, 0);
+  assert.equal(sender.response_contract.retry_policy.retry_requires_operator_review, true);
 });
 
 test('reply monitor distinguishes deterministic replies, NDR and explicit BAJA handling', () => {
@@ -49,6 +54,12 @@ test('transactional dispatcher is a non-importable scheduler with no message dat
   assert.equal(transactional.feature_gates.outbound_master, false);
   assert.equal(transactional.feature_gates.transactional_outlook, false);
   assert.deepEqual(Object.keys(transactional.feature_gates).sort(), ['outbound_master', 'transactional_outlook']);
+  assert.deepEqual(transactional.response_contract.fields.slice(-2), ['alert_attempted', 'alert_delivered']);
+  assert.equal(transactional.response_contract.http_status_policy['409'], 'controlled_no_progress_wait_for_next_scheduled_tick');
+  assert.equal(transactional.response_contract.http_status_policy['503'], 'halt_execution_create_incomplete_execution_and_alert_operator');
+  assert.equal(transactional.response_contract.retry_policy.automatic_retries, 0);
+  assert.equal(transactional.response_contract.retry_policy.incomplete_executions, true);
+  assert.match(transactional.verification_required.join('\n'), /four-resource single-approved-sink/i);
 });
 
 test('canonical operations artifacts contain no retired queue or fictitious dispatch gate', () => {

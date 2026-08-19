@@ -17,6 +17,7 @@ const MAKE_HOOK_ID = '4318951';
 const FRESH_SUBMISSION_PREFIX = 'pilot_outlook_e2e_v3_';
 const SEND_CONFIRMATION = 'POST_ONCE_FRESH_V4';
 const HOOK_TIMEOUT_MS = 15_000;
+const LEAD_HASH_SECRET_PLACEHOLDER_PATTERN = /(?:replace[-_ ]?with|change[-_ ]?me|changeme|placeholder|example|xxxxx|your[-_ ]?(?:key|secret|password)|tu[-_ ]?(?:clave|secreto)|secret[-_ ]?here|^todo$)/i;
 const V4_INTERACTIVE_ANSWERS = {
   company_size: '1-5',
   credit_visibility: 'No todavía',
@@ -128,7 +129,12 @@ export function selectFreshOutlookCandidates(rows, claims, allowlist, leadHashSe
     allowed.size !== allowlist.length ||
     allowlist.some((value) => typeof value !== 'string' || !/^[a-f0-9]{64}$/.test(value))
   ) fail('pilot_allowlist_invalid');
-  if (Buffer.byteLength(leadHashSecret ?? '', 'utf8') < 32) fail('lead_hash_secret_invalid');
+  if (
+    typeof leadHashSecret !== 'string' ||
+    leadHashSecret !== leadHashSecret.trim() ||
+    Buffer.byteLength(leadHashSecret, 'utf8') < 32 ||
+    LEAD_HASH_SECRET_PLACEHOLDER_PATTERN.test(leadHashSecret)
+  ) fail('lead_hash_secret_invalid');
 
   const candidates = new Map();
   const counts = {};

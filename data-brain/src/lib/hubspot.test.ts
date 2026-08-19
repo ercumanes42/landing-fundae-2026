@@ -3,6 +3,7 @@ import { afterEach, beforeEach, test } from 'node:test';
 
 import {
   HUBSPOT_CONTACT_ID_PROPERTY,
+  HUBSPOT_PROPERTY_MANIFEST,
   HUBSPOT_TASK_ID_PROPERTY,
   hubSpotContactProperties,
   parseHubSpotWebhookEvent,
@@ -38,6 +39,7 @@ beforeEach(() => {
   process.env.OUTBOUND_MASTER_ENABLED = 'true';
   process.env.HUBSPOT_SYNC_ENABLED = 'true';
   process.env.HUBSPOT_ACCESS_TOKEN = 'test-token-never-sent';
+  process.env.HUBSPOT_PORTAL_ID = '9001';
   process.env.HUBSPOT_API_VERSION = '2026-03';
 });
 
@@ -294,26 +296,107 @@ test('HubSpot flag and outbound master independently dominate before any network
   }
 });
 
-test('read-only preflight requires a token but not outbound or HubSpot write flags', async () => {
+function propertyCatalog(objectType: keyof typeof HUBSPOT_PROPERTY_MANIFEST) {
+  return {
+    results: HUBSPOT_PROPERTY_MANIFEST[objectType].map((expected) => ({
+      name: expected.name,
+      type: expected.acceptedTypes[0],
+      hasUniqueValue: expected.unique,
+    })),
+  };
+}
+
+test('read-only preflight verifies expected portal and the complete property manifest with flags off', async () => {
   process.env.OUTBOUND_MASTER_ENABLED = 'false';
   process.env.HUBSPOT_SYNC_ENABLED = 'false';
   const requests: Array<{ url: string; method: string }> = [];
   globalThis.fetch = async (input, init) => {
     const url = String(input);
     requests.push({ url, method: init?.method || 'GET' });
-    const propertyName = url.split('/').at(-1);
-    return json({ name: propertyName, hasUniqueValue: true });
+    if (url.endsWith('/account-info/2026-03/details')) return json({ portalId: 9001 });
+    const objectType = url.split('/').at(-1) as keyof typeof HUBSPOT_PROPERTY_MANIFEST;
+    return json(propertyCatalog(objectType));
   };
-  assert.deepEqual(await testHubSpotConnection(), { ok: true });
-  assert.equal(requests.length, 3);
+  assert.deepEqual(await testHubSpotConnection(), {
+    ok: true,
+    mode: 'read_only',
+    portal: { matches_expected: true },
+    objects: {
+      contacts: { checked_properties: HUBSPOT_PROPERTY_MANIFEST.contacts.length },
+      companies: { checked_properties: HUBSPOT_PROPERTY_MANIFEST.companies.length },
+      tasks: { checked_properties: HUBSPOT_PROPERTY_MANIFEST.tasks.length },
+    },
+  });
+  assert.equal(requests.length, 4);
   assert.ok(requests.every(({ method }) => method === 'GET'));
-  assert.ok(requests.some(({ url }) => url.endsWith('/contacts/fundae_lead_id')));
+  assert.ok(requests.some(({ url }) => url.endsWith('/crm/properties/2026-03/contacts')));
 
   delete process.env.HUBSPOT_ACCESS_TOKEN;
   assert.deepEqual(await testHubSpotConnection(), {
     ok: false,
-    error: 'HUBSPOT_ACCESS_TOKEN is not configured',
+    mode: 'read_only',
+    failure_code: 'configuration_invalid',
   });
+});
+
+test('read-only preflight reports missing and wrong-type properties without upstream content', async () => {
+  for (const expectedFailure of ['property_missing', 'property_type_mismatch'] as const) {
+    globalThis.fetch = async (input) => {
+      const url = String(input);
+      if (url.endsWith('/account-info/2026-03/details')) return json({ portalId: 9001 });
+      const objectType = url.split('/').at(-1) as keyof typeof HUBSPOT_PROPERTY_MANIFEST;
+      const catalog = propertyCatalog(objectType);
+      if (objectType === 'contacts') {
+        if (expectedFailure === 'property_missing') {
+          catalog.results = catalog.results.filter(({ name }) => name !== HUBSPOT_CONTACT_ID_PROPERTY);
+        } else {
+          const target = catalog.results.find(({ name }) => name === HUBSPOT_CONTACT_ID_PROPERTY)!;
+          target.type = 'number';
+        }
+      }
+      return json(catalog);
+    };
+    const report = await testHubSpotConnection();
+    assert.deepEqual(report, {
+      ok: false,
+      mode: 'read_only',
+      failure_code: expectedFailure,
+      check: { object: 'contacts', property: HUBSPOT_CONTACT_ID_PROPERTY },
+    });
+    assert.doesNotMatch(JSON.stringify(report), /portalId|test-token|correlation/i);
+  }
+});
+
+test('read-only preflight rejects a different portal without reading property catalogs', async () => {
+  let requests = 0;
+  globalThis.fetch = async () => {
+    requests += 1;
+    return json({ portalId: 9002 });
+  };
+  const report = await testHubSpotConnection();
+  assert.deepEqual(report, { ok: false, mode: 'read_only', failure_code: 'portal_mismatch' });
+  assert.equal(requests, 1);
+  assert.doesNotMatch(JSON.stringify(report), /9001|9002|portalId/);
+});
+
+test('read-only preflight redacts denied and partial upstream responses', async () => {
+  for (const [status, failureCode] of [
+    [403, 'upstream_access_denied'],
+    [207, 'upstream_partial_response'],
+  ] as const) {
+    let requests = 0;
+    globalThis.fetch = async () => {
+      requests += 1;
+      return json({
+        message: 'sensitive upstream detail',
+        correlationId: 'do-not-return',
+      }, status);
+    };
+    const report = await testHubSpotConnection();
+    assert.deepEqual(report, { ok: false, mode: 'read_only', failure_code: failureCode });
+    assert.equal(requests, 1);
+    assert.doesNotMatch(JSON.stringify(report), /sensitive|correlation|do-not-return/i);
+  }
 });
 
 test('webhook correlation does not trust eventId alone and fails closed on missing or mismatched identity', () => {

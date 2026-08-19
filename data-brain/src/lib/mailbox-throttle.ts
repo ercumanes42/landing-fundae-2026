@@ -1,6 +1,6 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 
-import { env, isOutboundCapabilityEnabled } from './env';
+import { env, isOutboundCapabilityEnabled, leadHashSecret } from './env';
 import { callRpc } from './supabase';
 import {
   buildTransactionalDeliveryPackage,
@@ -166,7 +166,7 @@ export interface MailboxFinalizeInput {
 }
 
 export function providerMessageHash(providerMessageId: string): string {
-  return createHmac('sha256', env('LEAD_HASH_SECRET'))
+  return createHmac('sha256', leadHashSecret())
     .update(`outlook-provider-message-v1\0${providerMessageId}`, 'utf8')
     .digest('hex');
 }

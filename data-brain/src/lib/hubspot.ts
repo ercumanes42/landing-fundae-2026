@@ -7,6 +7,87 @@ export const HUBSPOT_CAMPAIGN_CONTACT_ID_PROPERTY = 'fundae_contact_id';
 export const HUBSPOT_COMPANY_ID_PROPERTY = 'fundae_account_id';
 export const HUBSPOT_TASK_ID_PROPERTY = 'fundae_task_idempotency_key';
 
+export type HubSpotManifestObject = 'contacts' | 'companies' | 'tasks';
+
+export interface HubSpotPropertyExpectation {
+  name: string;
+  acceptedTypes: readonly string[];
+  unique: boolean;
+}
+
+const property = (
+  name: string,
+  acceptedTypes: readonly string[] = ['string'],
+  unique = false,
+): HubSpotPropertyExpectation => ({ name, acceptedTypes, unique });
+
+/** Every HubSpot property read or written by the FUNDAE runtime. */
+export const HUBSPOT_PROPERTY_MANIFEST: Readonly<Record<HubSpotManifestObject, readonly HubSpotPropertyExpectation[]>> = {
+  contacts: [
+    property('email'),
+    property('firstname'),
+    property('lastname'),
+    property('company'),
+    property('jobtitle'),
+    property(HUBSPOT_CONTACT_ID_PROPERTY, ['string'], true),
+    property(HUBSPOT_CAMPAIGN_CONTACT_ID_PROPERTY),
+    property(HUBSPOT_COMPANY_ID_PROPERTY),
+    property('fundae_campaign_id'),
+    property('fundae_variant'),
+    property('fundae_magnet'),
+    property('fundae_sequence_status', ['string', 'enumeration']),
+    property('fundae_company_size', ['string', 'enumeration']),
+    property('fundae_reply_type', ['string', 'enumeration']),
+    property('fundae_pipeline_value', ['number']),
+    property('fundae_positive_reply_at', ['datetime']),
+    property('fundae_suppression_scope', ['string', 'enumeration']),
+    property('fundae_suppression_reason', ['string', 'enumeration']),
+    property('fundae_unsubscribed_at', ['datetime']),
+    property('fundae_hard_bounce_at', ['datetime']),
+    property('fundae_meeting_status', ['string', 'enumeration']),
+    property('fundae_opportunity_status', ['string', 'enumeration']),
+  ],
+  companies: [
+    property('name'),
+    property(HUBSPOT_COMPANY_ID_PROPERTY, ['string'], true),
+    property('fundae_campaign_id'),
+    property('fundae_company_size', ['string', 'enumeration']),
+  ],
+  tasks: [
+    property(HUBSPOT_TASK_ID_PROPERTY, ['string'], true),
+    property('hs_timestamp', ['datetime']),
+    property('hs_task_subject'),
+    property('hs_task_body'),
+    property('hs_task_status', ['enumeration']),
+    property('hs_task_priority', ['enumeration']),
+    property('hs_task_type', ['enumeration']),
+  ],
+};
+
+export type HubSpotPreflightFailureCode =
+  | 'configuration_invalid'
+  | 'upstream_access_denied'
+  | 'upstream_partial_response'
+  | 'upstream_unavailable'
+  | 'portal_mismatch'
+  | 'property_missing'
+  | 'property_type_mismatch'
+  | 'property_uniqueness_mismatch';
+
+export type HubSpotPreflightReport =
+  | {
+      ok: true;
+      mode: 'read_only';
+      portal: { matches_expected: true };
+      objects: Record<HubSpotManifestObject, { checked_properties: number }>;
+    }
+  | {
+      ok: false;
+      mode: 'read_only';
+      failure_code: HubSpotPreflightFailureCode;
+      check?: { object: HubSpotManifestObject; property: string };
+    };
+
 export interface HubSpotCampaignContact {
   leadId: string;
   externalContactId: string;
@@ -60,6 +141,18 @@ type HubSpotBatchResponse = {
   errors?: HubSpotBatchError[];
 };
 
+type HubSpotPropertyResponse = {
+  name?: string;
+  type?: string;
+  hasUniqueValue?: boolean;
+};
+
+class HubSpotRequestError extends Error {
+  constructor(readonly status: number) {
+    super('HubSpot request failed');
+  }
+}
+
 type BatchOutcome = {
   ids: Map<string, string>;
   rejected: Set<string>;
@@ -109,9 +202,11 @@ async function requestHubSpot<T>(
     category?: string;
     correlationId?: string;
   };
-  if (!response.ok && response.status !== 207) {
-    const category = typeof body.category === 'string' ? body.category : 'HTTP_ERROR';
-    throw new Error(`HubSpot ${category} (${response.status})`);
+  const accepted = access === 'read'
+    ? response.status === 200
+    : response.ok || response.status === 207;
+  if (!accepted) {
+    throw new HubSpotRequestError(response.status);
   }
   return body;
 }
@@ -462,24 +557,110 @@ export function parseHubSpotWebhookEvent(value: unknown, expectedPortalId: strin
   return { sourceEventId, hubspotContactId: objectId, propertyName, propertyValue, occurredAt: date.toISOString() };
 }
 
-async function verifyUniqueProperty(objectType: string, propertyName: string): Promise<void> {
-  const property = await requestHubSpot<{ name?: string; hasUniqueValue?: boolean }>(
-    `/crm/properties/${apiVersion()}/${objectType}/${propertyName}`,
+function configuredPortalId(): string {
+  const value = env('HUBSPOT_PORTAL_ID').trim();
+  if (!/^[1-9]\d{0,19}$/.test(value)) throw new Error('HubSpot preflight configuration is invalid');
+  return value;
+}
+
+async function readHubSpotPortalId(): Promise<string | null> {
+  const details = await requestHubSpot<{ portalId?: unknown }>(
+    `/account-info/${apiVersion()}/details`,
     { method: 'GET' },
     'read',
   );
-  if (property.name !== propertyName || property.hasUniqueValue !== true) {
-    throw new Error(`HubSpot unique property missing for ${objectType}`);
-  }
+  const value = typeof details.portalId === 'number' && Number.isSafeInteger(details.portalId)
+    ? String(details.portalId)
+    : typeof details.portalId === 'string' && /^[1-9]\d{0,19}$/.test(details.portalId)
+      ? details.portalId
+      : null;
+  return value;
 }
 
-export async function testHubSpotConnection(): Promise<{ ok: true } | { ok: false; error: string }> {
-  try {
-    await verifyUniqueProperty('contacts', HUBSPOT_CONTACT_ID_PROPERTY);
-    await verifyUniqueProperty('companies', HUBSPOT_COMPANY_ID_PROPERTY);
-    await verifyUniqueProperty('tasks', HUBSPOT_TASK_ID_PROPERTY);
-    return { ok: true };
-  } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : 'Unknown HubSpot error' };
+async function readHubSpotPropertyCatalog(
+  objectType: HubSpotManifestObject,
+): Promise<Map<string, HubSpotPropertyResponse> | null> {
+  const body = await requestHubSpot<{ results?: unknown }>(
+    `/crm/properties/${apiVersion()}/${objectType}`,
+    { method: 'GET' },
+    'read',
+  );
+  if (!Array.isArray(body.results)) return null;
+  const properties = new Map<string, HubSpotPropertyResponse>();
+  for (const raw of body.results) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+    const candidate = raw as HubSpotPropertyResponse;
+    if (typeof candidate.name !== 'string' || properties.has(candidate.name)) return null;
+    properties.set(candidate.name, candidate);
   }
+  return properties;
+}
+
+function upstreamFailure(error: unknown): HubSpotPreflightReport {
+  if (error instanceof HubSpotRequestError) {
+    if (error.status === 401 || error.status === 403) {
+      return { ok: false, mode: 'read_only', failure_code: 'upstream_access_denied' };
+    }
+    if (error.status === 207) {
+      return { ok: false, mode: 'read_only', failure_code: 'upstream_partial_response' };
+    }
+  }
+  return { ok: false, mode: 'read_only', failure_code: 'upstream_unavailable' };
+}
+
+export async function testHubSpotConnection(): Promise<HubSpotPreflightReport> {
+  let expectedPortalId: string;
+  try {
+    assertHubSpotConfigured();
+    apiVersion();
+    expectedPortalId = configuredPortalId();
+  } catch {
+    return { ok: false, mode: 'read_only', failure_code: 'configuration_invalid' };
+  }
+
+  let observedPortalId: string | null;
+  try {
+    observedPortalId = await readHubSpotPortalId();
+  } catch (error) {
+    return upstreamFailure(error);
+  }
+  if (!observedPortalId) {
+    return { ok: false, mode: 'read_only', failure_code: 'upstream_unavailable' };
+  }
+  if (observedPortalId !== expectedPortalId) {
+    return { ok: false, mode: 'read_only', failure_code: 'portal_mismatch' };
+  }
+
+  const objects = {} as Record<HubSpotManifestObject, { checked_properties: number }>;
+  for (const objectType of Object.keys(HUBSPOT_PROPERTY_MANIFEST) as HubSpotManifestObject[]) {
+    let catalog: Map<string, HubSpotPropertyResponse> | null;
+    try {
+      catalog = await readHubSpotPropertyCatalog(objectType);
+    } catch (error) {
+      return upstreamFailure(error);
+    }
+    if (!catalog) {
+      return { ok: false, mode: 'read_only', failure_code: 'upstream_unavailable' };
+    }
+    for (const expected of HUBSPOT_PROPERTY_MANIFEST[objectType]) {
+      const observed = catalog.get(expected.name);
+      const check = { object: objectType, property: expected.name };
+      if (!observed) {
+        return { ok: false, mode: 'read_only', failure_code: 'property_missing', check };
+      }
+      if (typeof observed.type !== 'string' || !expected.acceptedTypes.includes(observed.type)) {
+        return { ok: false, mode: 'read_only', failure_code: 'property_type_mismatch', check };
+      }
+      if (observed.hasUniqueValue !== expected.unique) {
+        return { ok: false, mode: 'read_only', failure_code: 'property_uniqueness_mismatch', check };
+      }
+    }
+    objects[objectType] = { checked_properties: HUBSPOT_PROPERTY_MANIFEST[objectType].length };
+  }
+  return {
+    ok: true,
+    mode: 'read_only',
+    portal: { matches_expected: true },
+    objects,
+  };
 }

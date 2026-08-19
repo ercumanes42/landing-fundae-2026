@@ -116,6 +116,10 @@ begin
     'public.purge_expired_journey_events(timestamptz,integer,boolean)',
     'public.apply_cold_campaign_provision_batch(text,text,integer,integer,text,text,text,text,jsonb)',
     'public.finalize_cold_campaign_provision(text,text,text)',
+    'public.enqueue_operational_alert_delivery(text,text,text,text)',
+    'public.claim_operational_alert_delivery(text,integer,text)',
+    'public.finalize_operational_alert_delivery(text,text,text,uuid,text,text,text)',
+    'public.halt_transactional_graph_dispatch(uuid,uuid,text,text)',
     'public.record_campaign_event_atomic(text,text,text,timestamptz,text,jsonb,jsonb)'
   ]) required(signature)
   where pg_catalog.to_regprocedure(signature) is null;
@@ -191,7 +195,9 @@ begin
         'dashboard_get_sample', 'claim_cold_campaign_dispatch',
         'bind_cold_campaign_reservation', 'get_operational_observability_snapshot',
         'purge_expired_journey_events', 'apply_cold_campaign_provision_batch',
-        'finalize_cold_campaign_provision', 'record_campaign_event_atomic'
+        'finalize_cold_campaign_provision', 'record_campaign_event_atomic',
+        'enqueue_operational_alert_delivery', 'claim_operational_alert_delivery',
+        'finalize_operational_alert_delivery', 'halt_transactional_graph_dispatch'
       ]) and acl.privilege_type = 'EXECUTE'
       and (acl.grantee = 0 or acl.grantee in (
         select oid from pg_catalog.pg_roles where rolname in ('anon','authenticated')
@@ -225,13 +231,47 @@ begin
       'finalize_cold_campaign_dispatch', 'record_operational_heartbeat',
       'reconcile_operational_alerts', 'purge_expired_journey_events',
       'apply_cold_campaign_provision_batch', 'finalize_cold_campaign_provision',
-      'cold_outbound_barrier_reason', 'record_campaign_event_atomic'
+      'cold_outbound_barrier_reason', 'record_campaign_event_atomic',
+      'enqueue_operational_alert_delivery', 'claim_operational_alert_delivery',
+      'finalize_operational_alert_delivery', 'halt_transactional_graph_dispatch',
+      'capture_graph_outbox_ambiguity', 'capture_cold_dispatch_ambiguity',
+      'capture_transactional_dispatch_ambiguity'
     ]) and not coalesce(
       p.proconfig @> array['search_path=""']::text[], false
     );
   if v_bad_definers is not null then
     raise exception using errcode = '42501',
       message = 'fundae_release_postcheck_insecure_definer', detail = v_bad_definers;
+  end if;
+
+  if exists (
+    select 1 from pg_catalog.unnest(array[
+      'delivery_status','reservation_hash','evidence_hash','delivery_attempt_count',
+      'next_attempt_at','claimed_by_hash','claim_token_hash','claim_expires_at',
+      'delivered_at','last_attempt_evidence_hash','last_failure_code','delivery_updated_at'
+    ]) required(column_name)
+    where not exists (
+      select 1 from pg_catalog.pg_attribute a
+      where a.attrelid='public.operational_alert_receipts'::regclass
+        and a.attname=required.column_name and a.attnum>0 and not a.attisdropped
+    )
+  ) then
+    raise exception using errcode='55000',
+      message='fundae_release_postcheck_alert_delivery_columns_missing';
+  end if;
+
+  if exists (
+    select 1 from pg_catalog.unnest(array[
+      'graph_outbox_capture_ambiguity','cold_dispatch_capture_ambiguity',
+      'transactional_dispatch_capture_ambiguity'
+    ]) required(trigger_name)
+    where not exists (
+      select 1 from pg_catalog.pg_trigger t
+      where t.tgname=required.trigger_name and not t.tgisinternal and t.tgenabled<>'D'
+    )
+  ) then
+    raise exception using errcode='55000',
+      message='fundae_release_postcheck_alert_delivery_trigger_missing';
   end if;
 
   select pg_catalog.string_agg(required_index, ', ' order by required_index)
@@ -243,7 +283,9 @@ begin
     'cold_campaign_dispatch_queue_idx',
     'inbound_event_ledger_review_idx',
     'events_journey_retention_idx',
-    'operational_alerts_open_signal_idx'
+    'operational_alerts_open_signal_idx',
+    'operational_alert_receipts_delivery_pending_idx',
+    'operational_alert_receipts_delivery_claimed_idx'
   ]) required(required_index)
   where not exists (
     select 1 from pg_catalog.pg_class idx

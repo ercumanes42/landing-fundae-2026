@@ -19,7 +19,7 @@ beforeEach(() => {
     SUPABASE_URL: 'https://supabase.invalid',
     SUPABASE_ANON_KEY: 'anon-test',
     SUPABASE_SERVICE_ROLE_KEY: 'service-test',
-    LEAD_HASH_SECRET: 'lead-test-secret',
+    LEAD_HASH_SECRET: 'lead-test-secret'.padEnd(32, 'q'),
     DATA_BRAIN_ADMIN_USER: 'admin',
     DATA_BRAIN_ADMIN_PASSWORD: 'password',
     CAMPAIGN_DEFAULT_EXTERNAL_ID: 'FUNDAE_2026',
@@ -130,7 +130,7 @@ test('capture and campaign import share the same normalized HMAC buildLeadId con
   assert.match(campaignSource, /email_hash: buildLeadId\(contact\.email\)/);
 
   const normalizedEmail = 'person@example.invalid';
-  const expected = createHmac('sha256', 'lead-test-secret').update(normalizedEmail).digest('hex');
+  const expected = createHmac('sha256', 'lead-test-secret'.padEnd(32, 'q')).update(normalizedEmail).digest('hex');
   assert.equal(buildLeadId(' Person@Example.Invalid '), expected);
 });
 

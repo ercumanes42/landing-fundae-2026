@@ -8,19 +8,22 @@ import {
   validateTransactionalIntakePayload,
 } from './transactional-intake';
 
+const leadHashSecretFixture = 'transactional-intake-hash-test'.padEnd(32, 'q');
+const canonicalLeadId = createHmac('sha256', leadHashSecretFixture)
+  .update('internal@example.test')
+  .digest('hex');
+
 const requiredEnv = {
   SUPABASE_URL: 'https://supabase.test',
   SUPABASE_ANON_KEY: 'anon-test',
   SUPABASE_SERVICE_ROLE_KEY: 'service-test',
-  LEAD_HASH_SECRET: 'hash-test',
+  LEAD_HASH_SECRET: leadHashSecretFixture,
   UNSUBSCRIBE_TOKEN_SECRET: 'unsubscribe-test',
   DATA_BRAIN_ADMIN_USER: 'admin-test',
   DATA_BRAIN_ADMIN_PASSWORD: 'password-test',
   MAKE_WEBHOOK_SECRET: 'M4k3-HMAC-Only-9xQ2vR7sN5cP8dL1Z',
   TRANSACTIONAL_PILOT_MODE: 'true',
-  TRANSACTIONAL_PILOT_ALLOWLIST_LEAD_IDS: createHmac('sha256', 'hash-test')
-    .update('internal@example.test')
-    .digest('hex'),
+  TRANSACTIONAL_PILOT_ALLOWLIST_LEAD_IDS: canonicalLeadId,
   TRANSACTIONAL_LANDING_ORIGIN: 'https://landing.example.test',
 };
 
@@ -31,7 +34,7 @@ const lead = {
   lead_magnet: 'calculator',
   created_at: '2026-08-13T08:00:00.000Z',
   source_url: 'https://landing.example.test/#calculadora',
-  lead_id: createHmac('sha256', 'hash-test').update('internal@example.test').digest('hex'),
+  lead_id: canonicalLeadId,
   lead_score: 50,
   lead_status: 'templado',
   lead_classification: 'warm',

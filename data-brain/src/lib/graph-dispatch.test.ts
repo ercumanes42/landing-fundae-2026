@@ -89,6 +89,7 @@ test('durable dispatch uses exact claim-reserve-finalize shapes and package-by-s
 });
 
 test('dispatch wrapper alerts fail-closed when terminal finalization is rejected', async () => {
+  let haltCalls = 0;
   const repository = new GraphOutboxRepository((async <T>(name: string) => {
     if (name === 'claim_transactional_graph_dispatch') return {
       accepted: true, reason_code: 'claimed', lease_expires_at: '2099-01-01T00:00:00Z',
@@ -108,6 +109,10 @@ test('dispatch wrapper alerts fail-closed when terminal finalization is rejected
     if (name === 'finalize_transactional_graph_dispatch') return {
       accepted: false, duplicate: false, reason_code: 'finalize_rejected',
     } as T;
+    if (name === 'halt_transactional_graph_dispatch') {
+      haltCalls += 1;
+      return { accepted: true, duplicate: false, reason_code: 'ambiguous_halted' } as T;
+    }
     throw new Error(name);
   }) as GraphRpc);
   let alertCode = '';
@@ -126,6 +131,7 @@ test('dispatch wrapper alerts fail-closed when terminal finalization is rejected
   assert.equal(result.alertAttempted, true);
   assert.equal(result.alertDelivered, false);
   assert.equal(alertCode, 'AMBIGUOUS_DISPATCH_FINALIZE_REJECTED');
+  assert.equal(haltCalls, 1);
 });
 
 function workerRepository(authorizeReason: 'send_cadence' | 'draft_neutralization_required') {

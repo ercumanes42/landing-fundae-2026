@@ -235,17 +235,22 @@ test('cold recovery wrapper alerts for missing evidence and rejected terminal fi
 
 test('cold wrapper alerts when finalization after Graph evidence is rejected', async () => {
   let alerts = 0;
+  let haltReason = '';
   const result = await executeColdCampaignTick({
     enabled: () => true, workerId, workerToken, mailboxKeyHash: hash,
     capabilitySecret: 'secret-'.padEnd(40, 's'),
     alert: async () => { alerts += 1; },
-    rpc: async <T>(name: string) => {
+    rpc: async <T>(name: string, args: Record<string, unknown>) => {
       if (name === 'claim_cold_campaign_dispatch') return claim() as T;
       if (name === 'get_claimed_cold_campaign_package') return storedPackage as T;
       if (name === 'bind_cold_campaign_reservation') return {
         authorized: true, reservation_id: reservationId, reason_code: 'reserved',
       } as T;
       if (name === 'finalize_cold_campaign_dispatch') return { accepted: false } as T;
+      if (name === 'halt_cold_campaign_dispatch') {
+        haltReason = String(args.p_reason_code);
+        return { accepted: true, reason_code: 'ambiguous_halted' } as T;
+      }
       throw new Error(name);
     },
     executeGraph: async () => ({
@@ -258,6 +263,7 @@ test('cold wrapper alerts when finalization after Graph evidence is rejected', a
   assert.equal(result.alertAttempted, true);
   assert.equal(result.alertDelivered, true);
   assert.equal(alerts, 1);
+  assert.equal(haltReason, 'FINALIZE_REJECTED');
 });
 test('SQL contract serializes two workers, bounds retries and enforces Madrid day/spacing gates', () => {
   const sql = readFileSync(new URL('../../supabase/migrations/20260819170000_cold_campaign_scheduler.sql', import.meta.url), 'utf8').toLowerCase();

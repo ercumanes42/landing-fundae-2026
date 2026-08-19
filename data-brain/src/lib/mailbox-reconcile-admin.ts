@@ -1,6 +1,6 @@
 import { createHmac } from 'node:crypto';
 
-import { env } from './env';
+import { leadHashSecret } from './env';
 import { providerMessageHash } from './mailbox-throttle';
 
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
@@ -84,7 +84,7 @@ function safeOpaqueText(value: unknown, maximum: number): value is string {
 }
 
 export function reconciliationEvidenceHash(evidence: string): string {
-  return createHmac('sha256', env('LEAD_HASH_SECRET'))
+  return createHmac('sha256', leadHashSecret())
     .update(`transactional-reconciliation-evidence-v1\0${evidence}`, 'utf8')
     .digest('hex');
 }

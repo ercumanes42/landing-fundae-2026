@@ -18,12 +18,45 @@ declare
   v_smoke_email text := 'HMAC.Smoke@Example.invalid ';
   v_plain_sha256 text;
   v_hmac_sha256 text;
+  v_delivery_eval text;
+  v_delivery_dedupe text;
+  v_delivery_token uuid;
+  v_transactional_dispatch_id uuid := extensions.gen_random_uuid();
 begin
   if not exists (
     select 1 from public.outbound_delivery_control
     where singleton and not master_enabled and not transactional_enabled and not cold_enabled
   ) then
     raise exception using errcode = '55000', message = 'smoke_requires_outbound_off';
+  end if;
+
+  if exists (
+    select 1 from public.transactional_dispatch_outbox
+    where status='ambiguous_halted' and last_reason_code is null
+  ) then
+    raise exception using errcode='23514',
+      message='transactional_alert_backfill_reason_smoke_failed';
+  end if;
+  if exists (
+    select 1
+    from public.transactional_dispatch_outbox d
+    where d.status='ambiguous_halted'
+      and d.last_reason_code='AMBIGUOUS_TRANSACTIONAL_DISPATCH_HALTED'
+      and not exists (
+        select 1
+        from public.operational_alerts a
+        join public.operational_alert_receipts r on r.dedupe_key=a.dedupe_key
+        where a.summary_code='AMBIGUOUS_TRANSACTIONAL_DISPATCH_HALTED'
+          and r.reservation_hash=pg_catalog.encode(extensions.digest(
+            pg_catalog.convert_to(coalesce(d.reservation_id::text,d.id::text),'UTF8'),
+            'sha256'
+          ),'hex')
+          and r.evidence_hash=d.outcome_evidence_hash
+          and r.delivery_status<>'not_requested'
+      )
+  ) then
+    raise exception using errcode='23514',
+      message='transactional_alert_backfill_receipt_smoke_failed';
   end if;
 
   v_plain_sha256 := pg_catalog.encode(extensions.digest(
@@ -61,6 +94,81 @@ begin
   );
   if not coalesce((v_result->>'accepted')::boolean, false) then
     raise exception using errcode = '23514', message = 'heartbeat_smoke_failed';
+  end if;
+
+  v_result := public.enqueue_operational_alert_delivery(
+    'AMBIGUOUS_STAGING_SMOKE',pg_catalog.repeat('e',64),pg_catalog.repeat('f',64),v_actor
+  );
+  v_delivery_eval:=v_result->>'evaluation_key';
+  v_delivery_dedupe:=v_result->>'dedupe_key';
+  if not coalesce((v_result->>'accepted')::boolean,false)
+     or v_result->>'delivery_status'<>'pending' then
+    raise exception using errcode='23514',message='alert_delivery_enqueue_smoke_failed';
+  end if;
+  v_result := public.enqueue_operational_alert_delivery(
+    'AMBIGUOUS_STAGING_SMOKE',pg_catalog.repeat('e',64),pg_catalog.repeat('f',64),v_actor
+  );
+  if not coalesce((v_result->>'duplicate')::boolean,false)
+     or v_result->>'evaluation_key'<>v_delivery_eval then
+    raise exception using errcode='23514',message='alert_delivery_enqueue_replay_smoke_failed';
+  end if;
+  v_result:=public.claim_operational_alert_delivery(v_actor,30,v_delivery_eval);
+  v_delivery_token:=(v_result->'items'->0->>'claim_token')::uuid;
+  if v_result->>'reason_code'<>'claimed' then
+    raise exception using errcode='23514',message='alert_delivery_claim_smoke_failed';
+  end if;
+  v_result:=public.finalize_operational_alert_delivery(
+    v_delivery_eval,v_delivery_dedupe,v_actor,v_delivery_token,'retry',
+    pg_catalog.repeat('1',64),'WEBHOOK_HTTP_5XX'
+  );
+  if v_result->>'delivery_status'<>'pending' then
+    raise exception using errcode='23514',message='alert_delivery_retry_smoke_failed';
+  end if;
+  update public.operational_alert_receipts set next_attempt_at=pg_catalog.clock_timestamp()
+  where evaluation_key=v_delivery_eval and dedupe_key=v_delivery_dedupe;
+  v_result:=public.claim_operational_alert_delivery(v_actor,30,v_delivery_eval);
+  v_delivery_token:=(v_result->'items'->0->>'claim_token')::uuid;
+  v_result:=public.finalize_operational_alert_delivery(
+    v_delivery_eval,v_delivery_dedupe,v_actor,v_delivery_token,'delivered',
+    pg_catalog.repeat('2',64),null
+  );
+  if v_result->>'delivery_status'<>'delivered' then
+    raise exception using errcode='23514',message='alert_delivery_delivered_smoke_failed';
+  end if;
+  v_result:=public.claim_operational_alert_delivery(v_actor,30,v_delivery_eval);
+  if v_result->>'reason_code'<>'already_delivered'
+     or pg_catalog.jsonb_array_length(v_result->'items')<>0 then
+    raise exception using errcode='23514',message='alert_delivery_no_redelivery_smoke_failed';
+  end if;
+
+  insert into public.transactional_dispatch_outbox(
+    id,submission_id,resource,payload_sha256,status,claimed_by,claim_expires_at
+  ) values (
+    v_transactional_dispatch_id,
+    'staging-smoke-alert-'||v_transactional_dispatch_id::text,
+    'calculator',pg_catalog.repeat('3',64),'reserved',
+    extensions.gen_random_uuid(),pg_catalog.clock_timestamp()+interval '2 minutes'
+  );
+  update public.transactional_dispatch_outbox
+  set status='ambiguous_halted',
+    last_reason_code='AMBIGUOUS_TRANSACTIONAL_TRIGGER_SMOKE',
+    outcome_evidence_hash=pg_catalog.repeat('4',64),
+    terminal_at=pg_catalog.clock_timestamp(),
+    updated_at=pg_catalog.clock_timestamp()
+  where id=v_transactional_dispatch_id;
+  if not exists (
+    select 1
+    from public.operational_alerts a
+    join public.operational_alert_receipts r on r.dedupe_key=a.dedupe_key
+    where a.summary_code='AMBIGUOUS_TRANSACTIONAL_TRIGGER_SMOKE'
+      and r.reservation_hash=pg_catalog.encode(extensions.digest(
+        pg_catalog.convert_to(v_transactional_dispatch_id::text,'UTF8'),'sha256'
+      ),'hex')
+      and r.evidence_hash=pg_catalog.repeat('4',64)
+      and r.delivery_status='pending'
+  ) then
+    raise exception using errcode='23514',
+      message='transactional_alert_trigger_smoke_failed';
   end if;
 
   v_result := public.reconcile_operational_alerts(

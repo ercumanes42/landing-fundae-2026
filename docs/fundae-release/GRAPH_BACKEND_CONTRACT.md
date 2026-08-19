@@ -86,8 +86,17 @@ neutralization evidence, lease-expired post-reserve recovery with zero reserve/c
 pending suppressed-draft recovery, terminal auto-recovery with zero Graph work, legacy
 terminal protection, create/send timeouts, zero/multiple markers and eventual Sent Items.
 
-Remaining release blockers: OAuth/application-RBAC mailbox evidence, durable alert delivery,
-runtime fault receipts and direct authorization for four fresh automatic E2E deliveries. Runtime
-remains OFF until those gates pass.
+Durable alert intent is now implemented locally: every DB transition to `ambiguous_halted`
+atomically disables its lane and creates an idempotent, claimable receipt before the webhook.
+Webhook failure schedules bounded exponential retry; expired claims recover with `SKIP LOCKED`,
+eight failed claims end in `dead_letter`, and delivered replay never posts twice.
+
+The durable-alert migration was applied to the independent authorized staging project; postcheck
+and rollback-only behavior smoke passed, outbound controls remained OFF, and the project was
+returned to `PAUSED`. Production remains unchanged.
+
+Remaining release blockers: approved receiver fault receipts, OAuth/application-RBAC mailbox
+evidence and direct authorization for four fresh automatic E2E deliveries. Runtime and alert
+delivery remain OFF until those gates pass.
 
 Gate verdict: local implementation/mock fault tests PASS; G3 release/activation BLOCKED.
