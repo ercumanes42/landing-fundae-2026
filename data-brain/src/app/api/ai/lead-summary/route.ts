@@ -10,7 +10,7 @@ export async function POST(request: Request) {
   try {
     assertEnv();
 
-    if (!isBasicAuthValid(request)) {
+    if (!(await isBasicAuthValid(request))) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401, headers: basicAuthHeaders() },

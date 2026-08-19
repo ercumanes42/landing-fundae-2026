@@ -53,8 +53,9 @@ export function EntryDoors() {
                   {door.description}
                 </p>
                 <Button 
+                  data-track-cta={"entry_" + door.href.substring(1)}
                   variant="primary" 
-                  className="bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-900/50 border-none w-full"
+                  className="w-full border-none bg-[#FF206E] text-[#050A18] shadow-lg shadow-black/20 hover:bg-[#FF206E] hover:shadow-xl focus-visible:ring-white"
                   onClick={() => scrollTo(door.href.substring(1))}
                 >
                   {door.cta}

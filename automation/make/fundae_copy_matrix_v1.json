@@ -1,0 +1,169 @@
+{
+  "schema_version": "1.0.0",
+  "campaign_locale": "es-ES",
+  "campaign_market": "B2B España",
+  "sender_name": "Joaquín G. del Pino",
+  "sender_company": "GFS Consulting Group",
+  "campaign_policy_version": "FUNDAE_CUSTOMER_SIMILAR_SERVICES_2026_V1",
+  "materialization_contract": {
+    "personalization_mode": "strict_allowlist",
+    "only_runtime_placeholder": "{{unsubscribe_url}}",
+    "unsubscribe_occurrences_per_body": 1,
+    "subjects_allow_line_breaks": false
+  },
+  "required_placeholders": [
+    "{{first_name}}",
+    "{{company_name}}",
+    "{{resource_url}}",
+    "{{calendly_url}}",
+    "{{webinar_date}}",
+    "{{webinar_time}}",
+    "{{unsubscribe_url}}"
+  ],
+  "variants": [
+    {
+      "code": "A",
+      "name": "Checklist",
+      "emails": [
+        {
+          "step": 1,
+          "message_type": "valor",
+          "subject": "Checklist FUNDAE para revisar el plan de {{company_name}}",
+          "body": "Hola {{first_name}},\n\nTener crédito formativo no basta: el valor aparece cuando formación, fechas, participantes, costes y documentación encajan.\n\nHe preparado una checklist para que puedas revisar esos puntos en orden y detectar qué conviene resolver primero en {{company_name}}. Sin empezar de cero ni convertirlo en otro proyecto interno.\n\nPrimer paso: abre la lista y comprueba únicamente el primer bloque. Si está cubierto, avanzas; si no, ya tienes una prioridad clara.\n\nRevisar la checklist: {{resource_url}}\n\nUn saludo,\nJoaquín G. del Pino\n\nSi prefieres no recibir más mensajes sobre FUNDAE, puedes darte de baja aquí: {{unsubscribe_url}}"
+        },
+        {
+          "step": 2,
+          "message_type": "friccion_perdida",
+          "subject": "El bloqueo suele aparecer entre el plan y la ejecución",
+          "body": "Hola {{first_name}},\n\nEn FUNDAE, muchas incidencias no empiezan por falta de crédito, sino por una pequeña desconexión: una fecha sin cerrar, un coste mal encajado o una evidencia que se deja para después.\n\nLa checklist permite localizar esas fricciones antes de que reduzcan el margen de decisión de {{company_name}}.\n\nNo necesitas revisarla completa ahora. Mira los controles relacionados con vuestra próxima acción formativa y confirma si hay algún punto pendiente.\n\nAbrir la checklist: {{resource_url}}\n\nUn saludo,\nJoaquín G. del Pino\n\nSi prefieres no recibir más mensajes sobre FUNDAE, puedes darte de baja aquí: {{unsubscribe_url}}"
+        },
+        {
+          "step": 3,
+          "message_type": "escenario_hipotetico",
+          "subject": "Escenario hipotético: el plan está aprobado, pero falta una pieza",
+          "body": "Hola {{first_name}},\n\nImagina este escenario hipotético: la formación está aprobada, los participantes están identificados y el proveedor preparado. Al acercarse la ejecución aparece una duda documental y obliga a revisar el proceso con menos margen.\n\nNo afirmo que sea el caso de {{company_name}}. Precisamente por eso existe la checklist: para comprobarlo antes y convertir una incertidumbre difusa en una lista concreta de sí, no o pendiente.\n\nVer el escenario punto por punto: {{resource_url}}\n\nUn saludo,\nJoaquín G. del Pino\n\nSi prefieres no recibir más mensajes sobre FUNDAE, puedes darte de baja aquí: {{unsubscribe_url}}"
+        },
+        {
+          "step": 4,
+          "message_type": "objecion",
+          "subject": "“Esto ya lo revisa nuestra gestoría o proveedor”",
+          "body": "Hola {{first_name}},\n\nEs razonable. La checklist no pretende sustituir a quien gestiona FUNDAE.\n\nSu función es otra: dar al decisor de {{company_name}} una vista breve para validar prioridades, hacer mejores preguntas y saber qué debe quedar confirmado antes de ejecutar.\n\nPuedes usarla como segunda comprobación interna y compartir solo los puntos que generen duda.\n\nRevisar los controles: {{resource_url}}\n\nUn saludo,\nJoaquín G. del Pino\n\nSi prefieres no recibir más mensajes sobre FUNDAE, puedes darte de baja aquí: {{unsubscribe_url}}"
+        },
+        {
+          "step": 5,
+          "message_type": "cierre",
+          "subject": "Cierro el seguimiento de la checklist FUNDAE",
+          "body": "Hola {{first_name}},\n\nCierro el seguimiento para no ocupar más tu bandeja.\n\nSi la checklist ha dejado algún punto en duda, podemos revisar únicamente ese bloqueo y valorar si merece una acción adicional. Sin presentación comercial larga ni compromiso posterior.\n\nReservar una conversación: {{calendly_url}}\n\nSi ahora no es prioritario para {{company_name}}, no necesitas responder.\n\nUn saludo,\nJoaquín G. del Pino\n\nSi prefieres no recibir más mensajes sobre FUNDAE, puedes darte de baja aquí: {{unsubscribe_url}}"
+        }
+      ]
+    },
+    {
+      "code": "B",
+      "name": "Calculadora",
+      "emails": [
+        {
+          "step": 1,
+          "message_type": "valor",
+          "subject": "Una estimación orientativa FUNDAE para {{company_name}}",
+          "body": "Hola {{first_name}},\n\nAntes de decidir nuevas acciones formativas, ayuda ver en una misma pantalla el crédito estimado, lo ya previsto y el margen pendiente de planificación.\n\nLa calculadora convierte los datos introducidos en una referencia orientativa para que puedas decidir qué merece revisión en {{company_name}}.\n\nNo busca sustituir una validación formal. Busca darte una primera cifra y una siguiente pregunta útil.\n\nRealizar la estimación: {{resource_url}}\n\nUn saludo,\nJoaquín G. del Pino\n\nSi prefieres no recibir más mensajes sobre FUNDAE, puedes darte de baja aquí: {{unsubscribe_url}}"
+        },
+        {
+          "step": 2,
+          "message_type": "friccion_perdida",
+          "subject": "Cuando los datos FUNDAE están separados, la decisión se retrasa",
+          "body": "Hola {{first_name}},\n\nEl crédito puede estar en un documento, las necesidades formativas en otro y las fechas todavía por confirmar.\n\nCada dato aislado parece manejable. El problema aparece cuando hay que decidir con rapidez y nadie tiene la visión conjunta.\n\nLa calculadora te permite reunir una primera estimación y detectar qué dato falta antes de avanzar en {{company_name}}.\n\nComprobar la situación: {{resource_url}}\n\nUn saludo,\nJoaquín G. del Pino\n\nSi prefieres no recibir más mensajes sobre FUNDAE, puedes darte de baja aquí: {{unsubscribe_url}}"
+        },
+        {
+          "step": 3,
+          "message_type": "escenario_hipotetico",
+          "subject": "Escenario hipotético: hay crédito, pero no una decisión clara",
+          "body": "Hola {{first_name}},\n\nEscenario hipotético: una empresa conoce su crédito aproximado y tiene varias formaciones posibles, pero aún no ha cruzado prioridades, calendario y capacidad de ejecución.\n\nLa calculadora no decide por esa empresa. Le muestra qué variables están alineadas y cuáles necesitan confirmación.\n\nNo sé si ocurre en {{company_name}}. Puedes comprobarlo con vuestros datos y decidir después, sin asumir nada de antemano.\n\nAbrir la calculadora: {{resource_url}}\n\nUn saludo,\nJoaquín G. del Pino\n\nSi prefieres no recibir más mensajes sobre FUNDAE, puedes darte de baja aquí: {{unsubscribe_url}}"
+        },
+        {
+          "step": 4,
+          "message_type": "objecion",
+          "subject": "“Todavía no tenemos todas las cifras cerradas”",
+          "body": "Hola {{first_name}},\n\nNo hace falta confundir una estimación inicial con una liquidación definitiva.\n\nSi en {{company_name}} todavía faltan datos, la calculadora puede servir para identificar exactamente cuáles condicionan la decisión. El resultado debe interpretarse como orientación, no como confirmación administrativa.\n\nIntroduce solo información que podáis sostener y utiliza el resultado para ordenar la siguiente comprobación.\n\nRealizar una estimación: {{resource_url}}\n\nUn saludo,\nJoaquín G. del Pino\n\nSi prefieres no recibir más mensajes sobre FUNDAE, puedes darte de baja aquí: {{unsubscribe_url}}"
+        },
+        {
+          "step": 5,
+          "message_type": "cierre",
+          "subject": "¿Tiene sentido contrastar la estimación FUNDAE?",
+          "body": "Hola {{first_name}},\n\nCierro aquí el seguimiento.\n\nSi la estimación ha mostrado una diferencia entre el crédito previsto y el plan formativo de {{company_name}}, podemos contrastar las variables y decidir si existe una acción razonable.\n\nSi el resultado ya está claro, no necesitas hacer nada más.\n\nReservar una conversación: {{calendly_url}}\n\nUn saludo,\nJoaquín G. del Pino\n\nSi prefieres no recibir más mensajes sobre FUNDAE, puedes darte de baja aquí: {{unsubscribe_url}}"
+        }
+      ]
+    },
+    {
+      "code": "C",
+      "name": "Webinar",
+      "emails": [
+        {
+          "step": 1,
+          "message_type": "valor",
+          "subject": "Webinar práctico FUNDAE · {{webinar_date}}",
+          "body": "Hola {{first_name}},\n\nEl objetivo de este webinar es convertir varias preguntas dispersas sobre FUNDAE en una secuencia clara: qué revisar, qué decidir y qué dejar documentado antes de ejecutar formación.\n\nVerás el proceso aplicado a un escenario empresarial, con foco en planificación y control, no en teoría general.\n\nSi encaja con las prioridades de {{company_name}}, puedes reservar plaza para el {{webinar_date}} a las {{webinar_time}}.\n\nReservar plaza: {{resource_url}}\n\nUn saludo,\nJoaquín G. del Pino\n\nSi prefieres no recibir más mensajes sobre FUNDAE, puedes darte de baja aquí: {{unsubscribe_url}}"
+        },
+        {
+          "step": 2,
+          "message_type": "friccion_perdida",
+          "subject": "Tres decisiones que conviene conectar antes de ejecutar formación",
+          "body": "Hola {{first_name}},\n\nCrédito, necesidades formativas y calendario suelen revisarse por separado. Cuando llega el momento de ejecutar, esa separación puede traducirse en más validaciones, más correos y menos margen.\n\nEn el webinar ordenaremos esas decisiones en una secuencia práctica para que puedas contrastarla con el proceso de {{company_name}}.\n\nMicrocompromiso: revisa la agenda y confirma si aborda una duda que tengáis ahora.\n\nVer la agenda y reservar: {{resource_url}}\n\nUn saludo,\nJoaquín G. del Pino\n\nSi prefieres no recibir más mensajes sobre FUNDAE, puedes darte de baja aquí: {{unsubscribe_url}}"
+        },
+        {
+          "step": 3,
+          "message_type": "escenario_hipotetico",
+          "subject": "Escenario hipotético: formación prevista, ejecución pendiente",
+          "body": "Hola {{first_name}},\n\nEn el webinar utilizaremos un escenario hipotético: una empresa ha identificado la formación que necesita, pero todavía debe coordinar fechas, participantes, costes y documentación.\n\nNo es un caso atribuido a {{company_name}} ni un resultado prometido. Es una forma transparente de ver el proceso completo y detectar dónde harías una pregunta distinta.\n\nReservar plaza: {{resource_url}}\n\nUn saludo,\nJoaquín G. del Pino\n\nSi prefieres no recibir más mensajes sobre FUNDAE, puedes darte de baja aquí: {{unsubscribe_url}}"
+        },
+        {
+          "step": 4,
+          "message_type": "objecion",
+          "subject": "“FUNDAE ya lo conocemos”",
+          "body": "Hola {{first_name}},\n\nEntonces la sesión puede ser útil precisamente por contraste.\n\nNo está planteada como una introducción a FUNDAE, sino como una revisión del paso entre conocer el sistema y convertirlo en un plan ejecutable: responsables, fechas, costes, evidencias y próxima decisión.\n\nPuedes comparar el método con el de {{company_name}} y quedarte solo con aquello que mejore vuestro control.\n\nConsultar el contenido: {{resource_url}}\n\nUn saludo,\nJoaquín G. del Pino\n\nSi prefieres no recibir más mensajes sobre FUNDAE, puedes darte de baja aquí: {{unsubscribe_url}}"
+        },
+        {
+          "step": 5,
+          "message_type": "cierre",
+          "subject": "Cierro la invitación al webinar FUNDAE",
+          "body": "Hola {{first_name}},\n\nCierro la invitación para no insistir.\n\nSi el webinar no encaja en vuestra agenda, pero hay una pregunta concreta sobre la planificación de {{company_name}}, podemos revisarla directamente en una conversación breve.\n\nReservar una conversación: {{calendly_url}}\n\nSi no es el momento, no necesitas responder.\n\nUn saludo,\nJoaquín G. del Pino\n\nSi prefieres no recibir más mensajes sobre FUNDAE, puedes darte de baja aquí: {{unsubscribe_url}}"
+        }
+      ]
+    },
+    {
+      "code": "D",
+      "name": "Revisión rápida",
+      "emails": [
+        {
+          "step": 1,
+          "message_type": "valor",
+          "subject": "Qué revisar primero en el plan FUNDAE de {{company_name}}",
+          "body": "Hola {{first_name}},\n\nCuando varias acciones formativas compiten por tiempo y presupuesto, el primer resultado útil no es otro informe: es saber qué revisar primero.\n\nLa revisión rápida ordena las respuestas en un diagnóstico orientativo para distinguir entre puntos alineados, dudas y bloqueos potenciales.\n\nEmpieza por una primera pregunta. Si no aporta claridad, puedes dejarlo ahí.\n\nIniciar la revisión: {{resource_url}}\n\nUn saludo,\nJoaquín G. del Pino\n\nSi prefieres no recibir más mensajes sobre FUNDAE, puedes darte de baja aquí: {{unsubscribe_url}}"
+        },
+        {
+          "step": 2,
+          "message_type": "friccion_perdida",
+          "subject": "Sin una prioridad, todas las dudas FUNDAE parecen urgentes",
+          "body": "Hola {{first_name}},\n\nRevisar todo a la vez suele generar más trabajo, no más certeza.\n\nLa revisión rápida ayuda a separar lo que ya está resuelto en {{company_name}} de aquello que realmente puede condicionar la ejecución. Así el equipo concentra la siguiente conversación en una sola prioridad.\n\nPuedes completarla con la información disponible y dejar como pendiente lo que aún no esté confirmado.\n\nComenzar la revisión: {{resource_url}}\n\nUn saludo,\nJoaquín G. del Pino\n\nSi prefieres no recibir más mensajes sobre FUNDAE, puedes darte de baja aquí: {{unsubscribe_url}}"
+        },
+        {
+          "step": 3,
+          "message_type": "escenario_hipotetico",
+          "subject": "Escenario hipotético: cinco tareas y ningún orden claro",
+          "body": "Hola {{first_name}},\n\nImagina un escenario hipotético: el equipo tiene que confirmar participantes, calendario, costes, documentación y responsables, pero no sabe qué decisión desbloquea las demás.\n\nLa revisión rápida no promete resolverlo automáticamente. Su función es mostrar una prioridad orientativa y hacer visible qué respuesta falta.\n\nNo presupone que suceda en {{company_name}}. Puedes comprobarlo con vuestro contexto.\n\nRealizar la revisión: {{resource_url}}\n\nUn saludo,\nJoaquín G. del Pino\n\nSi prefieres no recibir más mensajes sobre FUNDAE, puedes darte de baja aquí: {{unsubscribe_url}}"
+        },
+        {
+          "step": 4,
+          "message_type": "objecion",
+          "subject": "“No tenemos preparada toda la documentación”",
+          "body": "Hola {{first_name}},\n\nLa revisión inicial no debería obligarte a reconstruir el expediente completo.\n\nPuedes responder con lo que {{company_name}} conoce hoy y marcar como pendiente aquello que requiera confirmación. Esa ausencia también es información: indica dónde conviene concentrar el siguiente esfuerzo.\n\nEl resultado es orientativo y debe validarse antes de tomar una decisión administrativa.\n\nIniciar la revisión: {{resource_url}}\n\nUn saludo,\nJoaquín G. del Pino\n\nSi prefieres no recibir más mensajes sobre FUNDAE, puedes darte de baja aquí: {{unsubscribe_url}}"
+        },
+        {
+          "step": 5,
+          "message_type": "cierre",
+          "subject": "Cierro la revisión FUNDAE por aquí",
+          "body": "Hola {{first_name}},\n\nCierro el seguimiento para no añadir más mensajes.\n\nSi la revisión ha identificado un bloqueo concreto, podemos dedicar una conversación a ese único punto y decidir si requiere alguna actuación.\n\nReservar una conversación: {{calendly_url}}\n\nSi {{company_name}} ya lo tiene resuelto o no es prioritario, no necesitas responder.\n\nUn saludo,\nJoaquín G. del Pino\n\nSi prefieres no recibir más mensajes sobre FUNDAE, puedes darte de baja aquí: {{unsubscribe_url}}"
+        }
+      ]
+    }
+  ]
+}

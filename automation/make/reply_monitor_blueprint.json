@@ -1,11 +1,44 @@
 {
-  "name": "FUNDAE 2026 Reply Monitor",
+  "name": "FUNDAE 2026 Inbound Mailbox Tick",
+  "kind": "configuration-spec",
   "importable": false,
-  "modules": [
-    "Microsoft 365 Email Watch Emails",
-    "Google Sheets Search Row by conversation_id",
-    "Response classifier",
-    "Google Sheets Update Row STOPPED",
-    "HTTP signed Data Brain operation"
-  ]
+  "production_ready": false,
+  "enabled": false,
+  "make_mcp_gate": {
+    "status": "blocked",
+    "reason": "Make MCP module discovery and validation are unavailable in this workspace.",
+    "required_before_import": [
+      "Verify the exact HTTP app version and module slug with apps_recommend, app_modules_list and app_module_get.",
+      "Validate the module configuration and complete interactive connection selection.",
+      "Validate the blueprint schema, keep the scenario inactive and run an authorized canary."
+    ]
+  },
+  "scenario_plan": {
+    "use_case": "Every five minutes Make invokes one private Data Brain mailbox tick. Data Brain owns Graph delta, cursor, correlation, classification, idempotency and stop effects.",
+    "trigger_type": "schedule",
+    "schedule_minutes": 5,
+    "flow": "Scenario schedule -> verified HTTP request module -> POST /api/internal/inbound/mailbox",
+    "module_count": 1,
+    "module_identifiers_verified": false,
+    "request": {
+      "method": "POST",
+      "body": "empty",
+      "authentication": "Bearer secret entered through an interactive Make connection; never committed",
+      "success": "HTTP 200 with state caught_up or more",
+      "retry": "Retry transport/503 only; Data Brain event ledger and cursor CAS make page replay safe"
+    }
+  },
+  "backend_contract": {
+    "endpoint": "/api/internal/inbound/mailbox",
+    "feature_flag": "INBOUND_MAILBOX_ENABLED=false",
+    "bootstrap_gate": "INBOUND_MAILBOX_BOOTSTRAP_FROM must be an explicit ISO timestamp before first activation",
+    "outbound_master_independent": true,
+    "email_only_match_forbidden": true,
+    "manual_review_on_unmatched_or_ambiguous": true,
+    "manual_review_creates_durable_alert": true,
+    "hard_bounce_requires_permanent_dsn": true,
+    "soft_or_unknown_is_not_hard_bounce": true,
+    "explicit_baja_emits_global_unsubscribe": true,
+    "positive_reply_uses_existing_idempotent_task_contract": true
+  }
 }

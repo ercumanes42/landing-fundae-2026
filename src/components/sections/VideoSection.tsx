@@ -7,7 +7,7 @@ import { trackEvent } from "../../lib/tracking";
 
 // Helper to generate a unique play session UUID
 function generateUUID(): string {
-  return "vplay_" + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+  return "vplay_" + crypto.randomUUID().replaceAll("-", "");
 }
 
 export function VideoSection() {
@@ -17,6 +17,7 @@ export function VideoSection() {
   const playSessionIdRef = useRef<string>("");
   const progressMarksRef = useRef<Set<number>>(new Set());
   const isVideoActiveRef = useRef<boolean>(false);
+  const abandonSentRef = useRef<boolean>(false);
 
   const scrollTo = (id: string) => {
     const el = document.getElementById(id);
@@ -33,7 +34,12 @@ export function VideoSection() {
   };
 
   // Unified event sender helper
-  const trackVideoEvent = (eventName: string, video: HTMLVideoElement, extraPercent?: number) => {
+  const trackVideoEvent = (
+    eventName: "video_start" | "video_quartile" | "video_complete" | "video_abandon",
+    video: HTMLVideoElement,
+    extraPercent?: number,
+    reason?: "pagehide" | "visibility_hidden",
+  ) => {
     const currentTime = video.currentTime;
     const duration = video.duration || 180;
     const percent = extraPercent ?? Math.round((currentTime / duration) * 100);
@@ -41,20 +47,21 @@ export function VideoSection() {
     trackEvent(eventName as any, {
       section: "video",
       video_id: "hero_explicativo_3min",
-      video_url: video.currentSrc || "/hero_video.mp4",
-      video_duration_seconds: Math.round(duration),
+      duration_seconds: Math.round(duration),
       current_time_seconds: parseFloat(currentTime.toFixed(2)),
-      play_percent: percent,
+      quartile: percent,
       play_session_id: playSessionIdRef.current,
       is_muted: video.muted,
       playback_rate: video.playbackRate || 1.0,
-      scroll_depth_at_trigger: getScrollDepth()
+      scroll_depth_percent: getScrollDepth(),
+      reason,
     });
   };
 
   const handlePlay = () => {
     setIsPlaying(true);
     isVideoActiveRef.current = true;
+    abandonSentRef.current = false;
     
     // Create new play session session ID and reset marks
     playSessionIdRef.current = generateUUID();
@@ -63,7 +70,7 @@ export function VideoSection() {
     requestAnimationFrame(() => {
       if (videoRef.current) {
         videoRef.current.play();
-        trackVideoEvent("video_play", videoRef.current, 0);
+        trackVideoEvent("video_start", videoRef.current, 0);
       }
     });
   };
@@ -78,19 +85,9 @@ export function VideoSection() {
     for (const mark of [25, 50, 75]) {
       if (percent >= mark && !progressMarksRef.current.has(mark)) {
         progressMarksRef.current.add(mark);
-        trackVideoEvent("video_progress", video, mark);
+        trackVideoEvent("video_quartile", video, mark);
       }
     }
-  };
-
-  const handlePause = () => {
-    const video = videoRef.current;
-    if (!video) return;
-
-    // Prevent double pause/ended triggers when video finishes
-    if (video.currentTime >= video.duration - 0.5) return;
-
-    trackVideoEvent("video_pause", video);
   };
 
   const handleEnded = () => {
@@ -101,7 +98,7 @@ export function VideoSection() {
     
     if (!progressMarksRef.current.has(100)) {
       progressMarksRef.current.add(100);
-      trackVideoEvent("video_progress", video, 100);
+      trackVideoEvent("video_quartile", video, 100);
     }
     
     trackVideoEvent("video_complete", video, 100);
@@ -109,24 +106,28 @@ export function VideoSection() {
 
   // Safe tracking for tab close/window exit (avoid missing events on mobile/fast exit)
   useEffect(() => {
-    const handleAbandonment = () => {
+    const handleAbandonment = (reason: "pagehide" | "visibility_hidden") => {
       const video = videoRef.current;
-      if (video && isVideoActiveRef.current && !video.paused && !video.ended) {
-        trackVideoEvent("video_abandon", video);
+      if (video && isVideoActiveRef.current && !video.ended && video.currentTime > 0 &&
+          !abandonSentRef.current) {
+        abandonSentRef.current = true;
+        trackVideoEvent("video_abandon", video, undefined, reason);
       }
     };
 
-    document.addEventListener("visibilitychange", () => {
+    const handleVisibility = () => {
       if (document.visibilityState === "hidden") {
-        handleAbandonment();
+        handleAbandonment("visibility_hidden");
       }
-    });
+    };
+    const handlePageHide = () => handleAbandonment("pagehide");
 
-    window.addEventListener("pagehide", handleAbandonment);
+    document.addEventListener("visibilitychange", handleVisibility);
+    window.addEventListener("pagehide", handlePageHide);
 
     return () => {
-      document.removeEventListener("visibilitychange", handleAbandonment);
-      window.removeEventListener("pagehide", handleAbandonment);
+      document.removeEventListener("visibilitychange", handleVisibility);
+      window.removeEventListener("pagehide", handlePageHide);
     };
   }, []);
 
@@ -174,10 +175,12 @@ export function VideoSection() {
                   playsInline
                 />
                 <button
+                  data-track-cta="video_play"
                   onClick={handlePlay}
-                  className="relative z-20 flex h-20 w-20 items-center justify-center rounded-full bg-emerald-500 text-[#050505] shadow-[0_0_50px_rgba(16,185,129,0.5)] transition-all duration-300 hover:scale-110 hover:bg-emerald-400 group-hover:shadow-[0_0_80px_rgba(16,185,129,0.7)]"
+                  className="relative z-20 flex h-20 w-20 items-center justify-center rounded-full bg-[#FF206E] text-[#050A18] shadow-[0_0_50px_rgba(255,32,110,0.4)] transition-all duration-300 hover:scale-110 group-hover:shadow-[0_0_80px_rgba(255,32,110,0.55)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-4 focus-visible:ring-offset-[#07152E]"
+                  aria-label="Reproducir vídeo"
                 >
-                  <span className="absolute inset-0 rounded-full bg-emerald-400 animate-ping opacity-20" />
+                  <span className="absolute inset-0 rounded-full bg-[#FF206E] animate-ping opacity-20" aria-hidden="true" />
                   <Play className="h-8 w-8 ml-1" fill="currentColor" />
                 </button>
               </>
@@ -190,7 +193,6 @@ export function VideoSection() {
                 autoPlay
                 playsInline
                 onTimeUpdate={handleTimeUpdate}
-                onPause={handlePause}
                 onEnded={handleEnded}
               />
             )}
@@ -204,7 +206,7 @@ export function VideoSection() {
           transition={{ duration: 0.6, delay: 0.4 }}
           className="mt-14"
         >
-          <Button size="lg" onClick={() => scrollTo("calculadora")} className="shadow-lg hover:shadow-xl transition-shadow">
+          <Button size="lg" data-track-cta="video_calculator" onClick={() => scrollTo("calculadora")} className="shadow-lg hover:shadow-xl transition-shadow">
             {copy.entryDoors.doors[0].cta}
           </Button>
         </motion.div>

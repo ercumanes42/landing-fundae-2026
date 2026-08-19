@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { recordCampaignOperation, type CampaignOperationInput } from '@/lib/campaign';
 import { assertEnv, env } from '@/lib/env';
-import { corsHeaders, limitRequest, verifyHmacSignature } from '@/lib/security';
+import { corsHeaders, limitRequest, verifyMakeSignature } from '@/lib/security';
 
 export const runtime = 'nodejs';
 
@@ -11,16 +11,21 @@ export function OPTIONS(request: Request) {
 
 export async function POST(request: Request) {
   const headers = corsHeaders(request);
-  const rate = limitRequest(request, 'campaign-operations', 300, 60_000);
+  const rate = await limitRequest(request, 'campaign-operations', 300, 60_000, 'fail-closed');
   if (!rate.allowed) {
     return NextResponse.json(
       { error: 'Too many requests' },
-      { status: 429, headers: { ...headers, 'Retry-After': String(rate.retryAfterSeconds) } },
+      { status: rate.reason === 'unavailable' ? 503 : 429, headers: { ...headers, 'Retry-After': String(rate.retryAfterSeconds) } },
     );
   }
 
   const rawBody = await request.text();
-  if (!verifyHmacSignature(rawBody, request.headers.get('x-make-signature'), env('MAKE_WEBHOOK_SECRET'))) {
+  if (!verifyMakeSignature(
+    rawBody,
+    request.headers.get('x-make-signature'),
+    request.headers.get('x-make-timestamp'),
+    env('MAKE_WEBHOOK_SECRET'),
+  )) {
     return NextResponse.json({ error: 'Invalid Make signature' }, { status: 401, headers });
   }
 

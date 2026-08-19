@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import type { FormState, FormType, SubmitResult, UseFormSubmitReturn } from '../types';
 import { submitLead } from '../lib/webhooks';
 
@@ -18,6 +18,7 @@ import { submitLead } from '../lib/webhooks';
 export function useFormSubmit(): UseFormSubmitReturn {
   const [state, setState] = useState<FormState>('idle');
   const [error, setError] = useState<string | null>(null);
+  const submissionIds = useRef<Partial<Record<FormType, string>>>({});
 
   const submit = useCallback(
     async (formType: FormType, data: Record<string, unknown>): Promise<SubmitResult> => {
@@ -25,7 +26,18 @@ export function useFormSubmit(): UseFormSubmitReturn {
       setError(null);
 
       try {
-        const result = await submitLead(formType, data);
+        const existingSubmissionId = submissionIds.current[formType];
+        const submissionId = existingSubmissionId ?? `${formType}_${
+          typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+            ? crypto.randomUUID()
+            : `${Date.now().toString(36)}${Math.random().toString(16).slice(2)}`
+        }`;
+        submissionIds.current[formType] = submissionId;
+
+        const result = await submitLead(formType, {
+          ...data,
+          submission_id: submissionId,
+        });
 
         if (result.success) {
           setState('success');
@@ -53,6 +65,7 @@ export function useFormSubmit(): UseFormSubmitReturn {
   const reset = useCallback(() => {
     setState('idle');
     setError(null);
+    submissionIds.current = {};
   }, []);
 
   return { state, error, submit, reset } as const;

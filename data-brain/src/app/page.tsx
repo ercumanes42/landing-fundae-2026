@@ -1,115 +1,101 @@
-import React from 'react';
-import { selectRows } from '@/lib/supabase';
-import { env, validateEnv, optionalIntegrationStatus } from '@/lib/env';
-import { DashboardPanel } from './components/DashboardPanel';
-import type { CampaignDashboardData } from './components/CampaignDashboard';
+import { randomUUID } from 'node:crypto';
+import { headers } from 'next/headers';
+
+import { OperationalDashboard } from './components/OperationalDashboard';
+import {
+  dashboardDatasetsForRole,
+  normalizeDashboardWindow,
+  parseDashboardSample,
+  parseDashboardSummary,
+  type DashboardSampleResponse,
+} from '@/lib/dashboard-data';
+import { authenticateDashboardAuthorization } from '@/lib/dashboard-auth';
+import { env, optionalIntegrationStatus, validateEnv } from '@/lib/env';
+import { callRpc } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
 
-export default async function DataBrainHome() {
+type SearchParams = Record<string, string | string[] | undefined>;
+const SAMPLE_SIZE = 25;
+
+function first(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function campaignId(value: string | undefined): string | null {
+  return value && /^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value)
+    ? value
+    : null;
+}
+
+function requestId(kind: string): string {
+  return `dashboard:${kind}:${randomUUID()}`;
+}
+
+export default async function DataBrainHome({
+  searchParams,
+}: {
+  searchParams?: Promise<SearchParams>;
+}) {
+  const params = searchParams ? await searchParams : {};
+  const window = normalizeDashboardWindow(params);
   const validation = validateEnv();
-  const integrations = optionalIntegrationStatus();
-
-  let leads: any[] = [];
-  let events: any[] = [];
-  let queue: any[] = [];
-  let dbError = false;
-  let campaignData: CampaignDashboardData = { campaigns: [], contacts: [], events: [], error: null };
-
-  if (validation.ok) {
-    try {
-      [leads, events, queue] = await Promise.all([
-        selectRows('leads', 'select=id,lead_classification,lead_magnet,lead_score,created_at,payload,delivery_status&order=created_at.desc'),
-        selectRows('events', 'select=*&order=created_at.desc&limit=5000'),
-        selectRows('delivery_queue', 'select=status')
-      ]);
-    } catch (err) {
-      console.error('[Dashboard] Supabase query failed:', err);
-      dbError = true;
-    }
-
-    try {
-      const [campaigns, contacts, campaignEvents] = await Promise.all([
-        selectRows<CampaignDashboardData['campaigns'][number]>('campaigns', 'select=id,external_id,name,status&order=started_at.desc'),
-        selectRows<CampaignDashboardData['contacts'][number]>('campaign_contacts', 'select=id,campaign_id,external_contact_id,variant,magnet,lot,company_size,sequence_status,next_delivery_status,last_delivery_status,reply_type,deal_value,conditional_delivery,locked_at,lock_expires_at,last_error_code&limit=1000'),
-        selectRows<CampaignDashboardData['events'][number]>('campaign_events', 'select=id,campaign_id,campaign_contact_id,event_name,occurred_at&order=occurred_at.desc&limit=10000'),
-      ]);
-      campaignData = { campaigns, contacts, events: campaignEvents, error: null };
-    } catch (error) {
-      campaignData = {
-        campaigns: [],
-        contacts: [],
-        events: [],
-        error: error instanceof Error ? error.message : 'Campaign tables are not available',
-      };
-    }
+  if (!validation.ok) {
+    return <OperationalDashboard state="configuration_error" missing={validation.missing} />;
   }
 
-  // Aggregate metrics
-  const leadsCount = leads.length;
-  const eventsCount = events.length;
-
-  const leadsByClassification = { cold: 0, warm: 0, hot: 0, priority: 0 };
-  const leadsByMagnet = { calculator: 0, checklist: 0, interactive_checklist: 0, webinar: 0, diagnostic: 0, unknown: 0 };
-
-  leads.forEach((l: any) => {
-    const cls = (l.lead_classification || 'cold') as keyof typeof leadsByClassification;
-    if (leadsByClassification[cls] !== undefined) leadsByClassification[cls]++;
-
-    const mag = (l.lead_magnet || 'unknown') as keyof typeof leadsByMagnet;
-    if (leadsByMagnet[mag] !== undefined) leadsByMagnet[mag]++;
+  const requestHeaders = await headers();
+  const actor = await authenticateDashboardAuthorization({
+    authorization: requestHeaders.get('authorization'),
+    credentialStore: env('DATA_BRAIN_AUTH_CREDENTIALS'),
+    pepper: env('DATA_BRAIN_AUTH_PEPPER'),
+    legacyEnabled: env('DATA_BRAIN_LEGACY_BASIC_ENABLED'),
   });
+  if (!actor.ok) return <OperationalDashboard state="access_denied" />;
 
-  const queueCounts = { queued: 0, delivered: 0, retrying: 0, dead_letter: 0 };
-  queue.forEach((q: any) => {
-    const status = (q.status || 'queued') as keyof typeof queueCounts;
-    if (queueCounts[status] !== undefined) queueCounts[status]++;
-  });
+  try {
+    const summary = parseDashboardSummary(await callRpc('dashboard_get_summary', {
+      p_actor_hash: actor.actorHash,
+      p_request_id: requestId('summary'),
+      p_from: window.from,
+      p_to: window.to,
+      p_campaign_id: campaignId(first(params.campaign)),
+    }));
 
-  let totalScroll = 0;
-  let scrollCount = 0;
-  let totalTime = 0;
-  let timeCount = 0;
-
-  leads.forEach((l: any) => {
-    const journey = l.payload?.journey || {};
-    if (typeof journey.scroll_depth === 'number') {
-      totalScroll += journey.scroll_depth;
-      scrollCount++;
+    let sample: DashboardSampleResponse | null = null;
+    let partialError: string | null = null;
+    const allowedDatasets = dashboardDatasetsForRole(summary.meta.role);
+    const selectedDataset = allowedDatasets.includes(window.dataset)
+      ? window.dataset
+      : allowedDatasets[0] ?? window.dataset;
+    const effectiveWindow = { ...window, dataset: selectedDataset };
+    if (summary.meta.role !== 'read_only') {
+      try {
+        sample = parseDashboardSample(await callRpc('dashboard_get_sample', {
+          p_actor_hash: actor.actorHash,
+          p_request_id: requestId(`sample-${selectedDataset}`),
+          p_dataset: selectedDataset,
+          p_from: window.from,
+          p_to: window.to,
+          p_offset: (window.page - 1) * SAMPLE_SIZE,
+          p_limit: SAMPLE_SIZE,
+        }));
+      } catch (error) {
+        console.warn('[Dashboard] bounded sample unavailable', error instanceof Error ? error.message : 'unknown');
+        partialError = 'La muestra paginada no está disponible; los agregados siguen siendo válidos.';
+      }
     }
-    if (typeof journey.time_on_page_seconds === 'number') {
-      totalTime += journey.time_on_page_seconds;
-      timeCount++;
-    }
-  });
 
-  const avgScroll = scrollCount > 0 ? Math.round(totalScroll / scrollCount) : 0;
-  const avgTime = timeCount > 0 ? Math.round(totalTime / timeCount) : 0;
-  const videoPlayCount = events.filter(e => e.event_name === 'video_play').length;
-
-  // Calculate unique visitors from events (fallback to leads count if no events are tracked yet)
-  const uniqueVisitors = new Set(events.map(e => e.anonymous_id).filter(Boolean)).size;
-
-  const dashboardData = {
-    leadsCount,
-    eventsCount,
-    leadsByClassification,
-    leadsByMagnet,
-    queueCounts,
-    integrations,
-    validationOk: validation.ok && !dbError,
-    missingEnvs: !validation.ok ? validation.missing : dbError ? ['SUPABASE_URL (Error de Conexión)'] : [],
-    avgScroll,
-    avgTime,
-    videoPlayCount,
-    uniqueVisitors,
-    leadsList: leads.slice(0, 50),
-    rawLeads: leads,
-    rawEvents: events,
-    campaign: campaignData,
-  };
-
-  return (
-    <DashboardPanel initialData={dashboardData} />
-  );
+    return <OperationalDashboard
+      state="ready"
+      summary={summary}
+      sample={sample}
+      window={effectiveWindow}
+      integrations={optionalIntegrationStatus()}
+      partialError={partialError}
+    />;
+  } catch (error) {
+    console.warn('[Dashboard] aggregate RPC unavailable', error instanceof Error ? error.message : 'unknown');
+    return <OperationalDashboard state="access_or_data_error" />;
+  }
 }

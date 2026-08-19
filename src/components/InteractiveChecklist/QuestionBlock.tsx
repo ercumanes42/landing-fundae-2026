@@ -32,6 +32,7 @@ export function QuestionBlock({
       <div className="mb-8">
         <div className="flex items-center justify-between mb-4">
           <button
+            type="button"
             onClick={onBack}
             className={`text-slate-500 hover:text-slate-900 flex items-center transition-colors font-medium ${
               currentBlock === 1 ? "invisible" : ""
@@ -44,7 +45,7 @@ export function QuestionBlock({
             Paso {currentBlock} de {totalBlocks}
           </span>
         </div>
-        <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+        <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden" role="progressbar" aria-label="Progreso de la autoevaluación" aria-valuemin={0} aria-valuemax={totalBlocks} aria-valuenow={currentBlock}>
           <motion.div
             className="h-full bg-blue-600 rounded-full"
             initial={{ width: `${((currentBlock - 1) / (totalBlocks + 1)) * 100}%` }}
@@ -86,7 +87,9 @@ export function QuestionBlock({
                   const isSelected = answers[q.id] === option.text;
                   return (
                     <button
+                      type="button"
                       key={idx}
+                      aria-pressed={isSelected}
                       onClick={() => onAnswer(q.id, option.text)}
                       className={`w-full text-left p-4 rounded-xl border-2 transition-all duration-200 flex items-center group ${
                         isSelected
@@ -121,11 +124,12 @@ export function QuestionBlock({
 
           <div className="pt-4 flex justify-end">
             <button
+              type="button"
               onClick={onNext}
               disabled={!isComplete}
-              className="px-8 py-4 bg-blue-600 text-white rounded-xl font-bold text-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-blue-200"
+              className="min-h-11 rounded-xl bg-[#302B7B] px-8 py-4 text-lg font-bold text-white shadow-lg shadow-[#302B7B]/20 transition-colors hover:bg-[#241F65] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF206E] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {currentBlock === totalBlocks ? "Ver Resultados" : "Siguiente"}
+              {currentBlock === totalBlocks ? "Ver resultados" : "Siguiente"}
             </button>
           </div>
         </motion.div>

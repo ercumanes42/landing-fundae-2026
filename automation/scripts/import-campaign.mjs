@@ -1,3 +1,5 @@
+console.error('BLOCKED: import-campaign.mjs is deprecated for the FUNDAE cold campaign. It uses legacy Basic auth, requires network even in dry-run, and does not materialize the 4,695 cold payloads. Use the gated Data Brain provisioner contract; no apply is authorized.');
+process.exit(2);
 import { campaignFilePath, readCampaignWorkbook, text, toDate, validateCampaignRows, value } from './campaign-workbook.mjs';
 
 const dataBrainUrl = (process.env.DATA_BRAIN_URL || '').replace(/\/+$/, '');

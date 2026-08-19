@@ -1,0 +1,16 @@
+/.gitattributes text eol=lf
+/.node-version text eol=lf
+/.github/workflows/*.yml text eol=lf
+/scripts/release/*.mjs text eol=lf
+/docs/fundae-release/*.md text eol=lf
+/docs/fundae-release/adrs/*.md text eol=lf
+/data-brain/supabase/migrations/20260819072840_cold_campaign_scheduler.sql text eol=lf
+
+*.gif binary
+*.jpg binary
+*.jpeg binary
+*.mp4 binary
+*.pdf binary
+*.png binary
+*.webp binary
+*.xlsx binary

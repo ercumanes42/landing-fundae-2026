@@ -1,0 +1,45 @@
+{
+  "report_version": "1.0.0",
+  "campaign_policy_version": "FUNDAE_CUSTOMER_SIMILAR_SERVICES_2026_V1",
+  "source_dataset_sha256": "19b21943469f4baa6026e9a9bc81bf668e395544e8ef3a48e3244562656d1bba",
+  "logical_dataset_sha256": "5d6cbb61f058349c529b9d03cf1bdf5f84a87dda393e40a59a70cf85944d938d",
+  "contacts": 939,
+  "unique_contact_ids": 939,
+  "unique_emails": 939,
+  "lots": { "A": 235, "B": 235, "C": 235, "D": 234 },
+  "bodies": 4695,
+  "identified_bodies": 4695,
+  "unsubscribe_placeholders": 4695,
+  "unresolved_personalization_bodies": 0,
+  "readiness": { "PENDIENTE": 939 },
+  "technical_gates": {
+    "unsubscribe": { "PENDING_RECHECK": 939 },
+    "opposition": { "PENDING_RECHECK": 939 },
+    "hard_bounce": { "PENDING_RECHECK": 939 },
+    "suppression": { "PENDING_RECHECK": 939 },
+    "duplicate": { "CLEAR": 939 },
+    "campaign_authorization": { "PENDING": 939 }
+  },
+  "schedule": {
+    "timezone": "Europe/Madrid",
+    "A": ["2026-09-01", "2026-09-15", "2026-10-01", "2026-10-15", "2026-11-03"],
+    "B": ["2026-09-02", "2026-09-16", "2026-10-01", "2026-10-15", "2026-11-03"],
+    "C": ["2026-09-03", "2026-09-17", "2026-10-02", "2026-10-16", "2026-11-04"],
+    "D": ["2026-09-04", "2026-09-18", "2026-10-02", "2026-10-16", "2026-11-04"]
+  },
+  "stop_coverage": {
+    "reply_human": true,
+    "unsubscribe": true,
+    "opposition": true,
+    "hard_bounce": true,
+    "marketing_or_global_suppression": true,
+    "duplicate_contact": true,
+    "calendly_meeting": true
+  },
+  "switches": {
+    "outbound_master_enabled": false,
+    "campaign_outbound_enabled": false,
+    "make_sender_enabled": false
+  },
+  "controlled_copy_sha256": "26841db6c5ab30c13e8d8ad73414c742d76ff55115c0ef799efaa5f58eb0c247"
+}

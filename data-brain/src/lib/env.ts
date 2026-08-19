@@ -8,40 +8,130 @@ type EnvKey =
   | 'OPENAI_MODEL_ANALYST'
   | 'DATA_BRAIN_ADMIN_USER'
   | 'DATA_BRAIN_ADMIN_PASSWORD'
+  | 'DATA_BRAIN_AUTH_CREDENTIALS'
+  | 'DATA_BRAIN_AUTH_PEPPER'
+  | 'DATA_BRAIN_LEGACY_BASIC_ENABLED'
+  | 'DATA_BRAIN_AUTH_MAX_ATTEMPTS'
+  | 'DATA_BRAIN_AUTH_WINDOW_SECONDS'
+  | 'DATA_BRAIN_AUTH_EDGE_RATE_LIMITED'
   | 'DATA_BRAIN_ALLOWED_IPS'
   | 'LANDING_ALLOWED_ORIGINS'
   | 'CAMPAIGN_IMPORT_SECRET'
   | 'MAKE_WEBHOOK_SECRET'
+  | 'UNSUBSCRIBE_TOKEN_SECRET'
+  | 'UNSUBSCRIBE_PUBLIC_BASE_URL'
   | 'HUBSPOT_WEBHOOK_SECRET'
   | 'CAMPAIGN_DEFAULT_EXTERNAL_ID'
   | 'HUBSPOT_ACCESS_TOKEN'
   | 'HUBSPOT_PORTAL_ID'
   | 'HUBSPOT_API_VERSION'
+  | 'HUBSPOT_SYNC_ENABLED'
+  | 'OPERATIONAL_OBSERVABILITY_ENABLED'
+  | 'OBSERVABILITY_WORKER_SECRET'
   | 'MAKE_WEBHOOK_URL'
+  | 'OUTBOUND_MASTER_ENABLED'
+  | 'LEGACY_MAKE_DELIVERY_ENABLED'
+  | 'LEGACY_DELIVERY_RETRY_ENABLED'
+  | 'MAILBOX_IDENTITY_HASH'
+  | 'TRANSACTIONAL_OUTLOOK_ENABLED'
+  | 'COLD_CAMPAIGN_ENABLED'
+  | 'COLD_CAMPAIGN_WORKER_ID'
+  | 'GRAPH_TENANT_ID'
+  | 'GRAPH_CLIENT_ID'
+  | 'GRAPH_CLIENT_SECRET'
+  | 'GRAPH_MAILBOX_USER_ID'
+  | 'GRAPH_WORKER_SECRET'
+  | 'GRAPH_DISPATCH_WORKER_ID'
+  | 'GRAPH_OUTBOX_CAPABILITY_SECRET'
+  | 'GRAPH_REQUEST_TIMEOUT_MS'
+  | 'GRAPH_READ_MAX_ATTEMPTS'
+  | 'GRAPH_MAX_RETRY_DELAY_MS'
+  | 'GRAPH_MARKER_POLL_ATTEMPTS'
+  | 'GRAPH_SENT_POLL_ATTEMPTS'
+  | 'GRAPH_POLL_INTERVAL_MS'
+  | 'INBOUND_MAILBOX_ENABLED'
+  | 'INBOUND_MAILBOX_BOOTSTRAP_FROM'
+  | 'CALENDLY_WEBHOOK_ENABLED'
+  | 'CALENDLY_WEBHOOK_SIGNING_KEY'
+  | 'TRANSACTIONAL_PILOT_MODE'
+  | 'TRANSACTIONAL_PILOT_ALLOWLIST_LEAD_IDS'
+  | 'TRANSACTIONAL_LANDING_ORIGIN'
+  | 'TRANSACTIONAL_WEBINAR_TITLE'
+  | 'TRANSACTIONAL_WEBINAR_START_AT'
+  | 'TRANSACTIONAL_WEBINAR_DURATION_MINUTES'
+  | 'TRANSACTIONAL_WEBINAR_TIMEZONE'
+  | 'TRANSACTIONAL_WEBINAR_ACCESS_NOTE'
   | 'AIRTABLE_API_KEY'
   | 'AIRTABLE_BASE_ID'
   | 'POSTHOG_PROJECT_API_KEY'
-  | 'NOTIFICATION_WEBHOOK_URL';
+  | 'NOTIFICATION_WEBHOOK_URL'
+  | 'RATE_LIMIT_TRUSTED_IP_HEADER';
 
 const REQUIRED_ENV: EnvKey[] = [
   'SUPABASE_URL',
   'SUPABASE_ANON_KEY',
   'SUPABASE_SERVICE_ROLE_KEY',
   'LEAD_HASH_SECRET',
-  'DATA_BRAIN_ADMIN_USER',
-  'DATA_BRAIN_ADMIN_PASSWORD',
 ];
 
 const DEFAULTS: Partial<Record<EnvKey, string>> = {
   OPENAI_MODEL_SUMMARY: 'gpt-4o-mini',
   OPENAI_MODEL_ANALYST: 'gpt-4o',
   HUBSPOT_API_VERSION: '2026-03',
+  HUBSPOT_SYNC_ENABLED: 'false',
+  OPERATIONAL_OBSERVABILITY_ENABLED: 'false',
   CAMPAIGN_DEFAULT_EXTERNAL_ID: 'FUNDAE_2026_EMAIL_V1',
   LANDING_ALLOWED_ORIGINS: 'http://localhost:3001',
+  OUTBOUND_MASTER_ENABLED: 'false',
+  LEGACY_MAKE_DELIVERY_ENABLED: 'false',
+  LEGACY_DELIVERY_RETRY_ENABLED: 'false',
+  TRANSACTIONAL_OUTLOOK_ENABLED: 'false',
+  COLD_CAMPAIGN_ENABLED: 'false',
+  GRAPH_REQUEST_TIMEOUT_MS: '10000',
+  GRAPH_READ_MAX_ATTEMPTS: '4',
+  GRAPH_MAX_RETRY_DELAY_MS: '30000',
+  GRAPH_MARKER_POLL_ATTEMPTS: '4',
+  GRAPH_SENT_POLL_ATTEMPTS: '10',
+  GRAPH_POLL_INTERVAL_MS: '2000',
+  INBOUND_MAILBOX_ENABLED: 'false',
+  CALENDLY_WEBHOOK_ENABLED: 'false',
+  TRANSACTIONAL_PILOT_MODE: 'true',
+  TRANSACTIONAL_WEBINAR_TIMEZONE: 'Europe/Madrid',
+  DATA_BRAIN_LEGACY_BASIC_ENABLED: 'false',
+  DATA_BRAIN_AUTH_MAX_ATTEMPTS: '5',
+  DATA_BRAIN_AUTH_WINDOW_SECONDS: '300',
+  DATA_BRAIN_AUTH_EDGE_RATE_LIMITED: 'false',
 };
 
 export function env(key: EnvKey): string {
   return process.env[key] || DEFAULTS[key] || '';
+}
+
+export type OutboundCapabilityFlag =
+  | 'LEGACY_MAKE_DELIVERY_ENABLED'
+  | 'LEGACY_DELIVERY_RETRY_ENABLED'
+  | 'TRANSACTIONAL_OUTLOOK_ENABLED'
+  | 'COLD_CAMPAIGN_ENABLED'
+  | 'COLD_CAMPAIGN_WORKER_ID'
+  | 'HUBSPOT_SYNC_ENABLED';
+
+function strictBooleanEnv(key: EnvKey): boolean {
+  return env(key).trim().toLowerCase() === 'true';
+}
+
+/**
+ * All outbound lanes fail closed. A lane-specific switch can never override
+ * the master kill switch, and values other than the literal `true` remain off.
+ */
+export function isOutboundCapabilityEnabled(capability: OutboundCapabilityFlag): boolean {
+  return strictBooleanEnv('OUTBOUND_MASTER_ENABLED') && strictBooleanEnv(capability);
+}
+
+export type InboundCapabilityFlag = 'INBOUND_MAILBOX_ENABLED' | 'CALENDLY_WEBHOOK_ENABLED';
+
+/** Inbound facts are independent from outbound delivery, but remain explicitly OFF by default. */
+export function isInboundCapabilityEnabled(capability: InboundCapabilityFlag): boolean {
+  return strictBooleanEnv(capability);
 }
 
 export function validateEnv(): { ok: true } | { ok: false; missing: EnvKey[] } {
@@ -62,14 +152,23 @@ export function assertEnv(): void {
 
 export function optionalIntegrationStatus(): {
   make: boolean;
+  legacyRetry: boolean;
+  outboundMaster: boolean;
   airtable: boolean;
   posthog: boolean;
   hubspot: boolean;
 } {
   return {
-    make: Boolean(env('MAKE_WEBHOOK_URL')),
+    make: Boolean(
+      env('MAKE_WEBHOOK_URL') &&
+      isOutboundCapabilityEnabled('LEGACY_MAKE_DELIVERY_ENABLED'),
+    ),
+    legacyRetry:
+      isOutboundCapabilityEnabled('LEGACY_MAKE_DELIVERY_ENABLED') &&
+      isOutboundCapabilityEnabled('LEGACY_DELIVERY_RETRY_ENABLED'),
+    outboundMaster: strictBooleanEnv('OUTBOUND_MASTER_ENABLED'),
     airtable: Boolean(env('AIRTABLE_API_KEY') && env('AIRTABLE_BASE_ID')),
     posthog: Boolean(env('POSTHOG_PROJECT_API_KEY')),
-    hubspot: Boolean(env('HUBSPOT_ACCESS_TOKEN')),
+    hubspot: Boolean(env('HUBSPOT_ACCESS_TOKEN') && isOutboundCapabilityEnabled('HUBSPOT_SYNC_ENABLED')),
   };
 }

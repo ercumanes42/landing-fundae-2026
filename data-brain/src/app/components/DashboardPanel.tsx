@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
 import { 
   Chart as ChartJS, 
   ArcElement, 
@@ -18,6 +19,7 @@ import { Doughnut, Line, Bar } from 'react-chartjs-2';
 import { AnalystChat } from './AnalystChat';
 import { CampaignDashboard, type CampaignDashboardData } from './CampaignDashboard';
 import ResetDataModal from './ResetDataModal';
+import type { DashboardCoverage } from '../../lib/types';
 
 ChartJS.register(ArcElement, Tooltip, Legend, CategoryScale, LinearScale, PointElement, LineElement, Title, Filler, BarElement);
 
@@ -28,7 +30,14 @@ interface DashboardPanelProps {
     leadsByClassification: { cold: number; warm: number; hot: number; priority: number };
     leadsByMagnet: { calculator: number; checklist: number; interactive_checklist: number; webinar: number; diagnostic: number; unknown: number };
     queueCounts: { queued: number; delivered: number; retrying: number; dead_letter: number };
-    integrations: { make: boolean; airtable: boolean; posthog: boolean; hubspot: boolean };
+    integrations: {
+      make: boolean;
+      legacyRetry: boolean;
+      outboundMaster: boolean;
+      airtable: boolean;
+      posthog: boolean;
+      hubspot: boolean;
+    };
     validationOk: boolean;
     missingEnvs: string[];
     avgScroll: number;
@@ -39,10 +48,21 @@ interface DashboardPanelProps {
     rawLeads: any[];
     rawEvents: any[];
     campaign: CampaignDashboardData;
+    loadedAt: string;
+    coverage: DashboardCoverage;
   };
 }
 
+function firstDisplayString(fallback: string, ...values: unknown[]): string {
+  const value = values.find(
+    (candidate): candidate is string => typeof candidate === 'string' && candidate.trim().length > 0,
+  );
+  return value?.trim() || fallback;
+}
+
 export function DashboardPanel({ initialData }: DashboardPanelProps) {
+  const router = useRouter();
+  const [isRefreshing, startRefresh] = useTransition();
   const [activeView, setActiveView] = useState<'panel' | 'campaign' | 'fuentes' | 'ajustes'>('panel');
   const [activeTab, setActiveTab] = useState<'summary' | 'channels' | 'friction' | 'behavior' | 'godmode' | 'chat'>('summary');
   const [retryResult, setRetryResult] = useState<{ ok: boolean; processed?: number; delivered?: number; dead_letter?: number; error?: string } | null>(null);
@@ -75,6 +95,24 @@ export function DashboardPanel({ initialData }: DashboardPanelProps) {
   const [provinceFilter, setProvinceFilter] = useState<string>('all');
   const [sectorFilter, setSectorFilter] = useState<string>('all');
 
+  const refreshDashboard = () => startRefresh(() => router.refresh());
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') refreshDashboard();
+    }, 60_000);
+    return () => window.clearInterval(interval);
+  }, [router]);
+
+  const coverageWarning = !initialData.coverage.allAggregatesComplete;
+  const unavailableDatasetNames = Object.entries(initialData.coverage.datasets)
+    .filter(([, dataset]) => Boolean(dataset.error))
+    .map(([name]) => name);
+  const hasUnavailableData = unavailableDatasetNames.length > 0;
+  const leadsAvailable = initialData.coverage.datasets.leads.error === null;
+  const eventsAvailable = initialData.coverage.datasets.events.error === null;
+  const decisionDataAvailable = leadsAvailable && eventsAvailable && (initialData.leadsCount > 0 || initialData.eventsCount > 0);
+  const queueAvailable = initialData.coverage.datasets.deliveryQueue.error === null;
   const rawLeads = initialData.rawLeads || [];
   const rawEvents = initialData.rawEvents || [];
 
@@ -372,7 +410,9 @@ export function DashboardPanel({ initialData }: DashboardPanelProps) {
         title: 'Error de Sincronización en CRM (HubSpot/Make)',
         fail: `${deadLetters} registros atascados en la cola de errores (Dead Letters).`,
         cause: 'Credenciales inválidas, webhook inactivo o límites de la API del CRM superados.',
-        solution: 'Haz clic en "Reintentar Fallidos" en la sección de Cola de Sincronización. Verifica el estado del webhook de Make en Ajustes.',
+        solution: initialData.integrations.legacyRetry
+          ? 'Diagnostica la causa y usa el reintento legacy solo con autorización explícita.'
+          : 'La cola legacy está inerte. Diagnostica la causa antes de solicitar una activación controlada.',
       });
     }
 
@@ -414,7 +454,12 @@ export function DashboardPanel({ initialData }: DashboardPanelProps) {
     }
 
     return list;
-  }, [filteredLeads, filteredEvents, initialData.queueCounts.dead_letter]);
+  }, [
+    filteredLeads,
+    filteredEvents,
+    initialData.queueCounts.dead_letter,
+    initialData.integrations.legacyRetry,
+  ]);
 
   const campaignPerformance = useMemo(() => {
     const translateUtmCampaign = (camp: string): string => {
@@ -689,15 +734,14 @@ export function DashboardPanel({ initialData }: DashboardPanelProps) {
       { code: 'A', name: 'Checklist PDF (A)', slug: 'checklist' },
       { code: 'B', name: 'Calculadora (B)', slug: 'calculator' },
       { code: 'C', name: 'Webinar (C)', slug: 'webinar' },
-      { code: 'D', name: 'Revisión Rápida (D)', slug: 'diagnostic' },
-      { code: 'E', name: 'Diagnóstico (E)', slug: 'interactive_checklist' }
+      { code: 'D', name: 'Autoevaluaci\u00f3n (D)', slug: 'interactive_checklist' }
     ];
 
     const sectionNameMap: Record<string, string> = {
       'checklist': 'checklist',
       'calculator': 'calculator',
       'webinar': 'webinar',
-      'solutions': 'diagnostic',
+      'solutions': 'solutions',
       'diagnostic': 'diagnostic',
       'interactive-checklist': 'interactive_checklist'
     };
@@ -808,13 +852,28 @@ export function DashboardPanel({ initialData }: DashboardPanelProps) {
   };
 
   const handleRetry = async (retryDead = false) => {
+    if (!initialData.integrations.legacyRetry) {
+      setRetryResult({ ok: false, error: 'El reintento legacy está desactivado por configuración.' });
+      return;
+    }
+    const confirmed = window.confirm(
+      retryDead
+        ? 'Esta acción reactivará registros legacy fallidos. ¿Confirmas el reintento controlado?'
+        : 'Esta acción procesará la cola legacy pendiente. ¿Confirmas el reintento controlado?',
+    );
+    if (!confirmed) return;
+
     setLoadingRetry(true);
     setRetryResult(null);
     try {
       const res = await fetch('/api/deliveries/retry', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ retryDead }),
+        body: JSON.stringify({
+          retryDead,
+          confirmation: 'RETRY_LEGACY_DELIVERIES',
+          deadLetterConfirmation: retryDead ? 'REQUEUE_LEGACY_DEAD_LETTERS' : undefined,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Fallo');
@@ -868,7 +927,7 @@ export function DashboardPanel({ initialData }: DashboardPanelProps) {
           </button>
           <button className={`db-nav-btn ${activeView === 'campaign' ? 'active' : ''}`} onClick={() => setActiveView('campaign')}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 19V5M4 19h16M8 16v-4M12 16V8M16 16v-7"/></svg>
-            CampaÃ±a FUNDAE
+            Campaña FUNDAE
           </button>
           <button className={`db-nav-btn ${activeView === 'fuentes' ? 'active' : ''}`} onClick={() => setActiveView('fuentes')}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
@@ -882,7 +941,7 @@ export function DashboardPanel({ initialData }: DashboardPanelProps) {
 
         <div className="db-godmode-card">
           <span className="db-godmode-dot" />
-          God Mode Activo · Telemetría en Vivo
+          God Mode · actualización cada 60 s
         </div>
       </aside>
 
@@ -892,22 +951,39 @@ export function DashboardPanel({ initialData }: DashboardPanelProps) {
         <div className="db-topbar">
           <h1>
             {activeView === 'panel' && 'Inteligencia Comercial Data Brain'}
-            {activeView === 'campaign' && 'CampaÃ±a FUNDAE 2026'}
+            {activeView === 'campaign' && 'Campaña FUNDAE 2026'}
             {activeView === 'fuentes' && 'Orquestación de Fuentes de Datos'}
             {activeView === 'ajustes' && 'Ajustes de Parámetros Generales'}
           </h1>
           <div className="db-topbar-pills">
+            <button type="button" className="db-status-pill" onClick={refreshDashboard} disabled={isRefreshing}>
+              {isRefreshing ? 'Actualizando...' : 'Actualizar'}
+            </button>
             <span className="db-status-pill">
-              <span className="db-status-dot ok" />
-              API: OK
+              <span className={`db-status-dot ${initialData.validationOk ? 'ok' : 'err'}`} />
+              API: {initialData.validationOk ? 'OK' : 'No disponible'}
             </span>
             <span className="db-status-pill">
-              <span className="db-status-dot ok" />
-              Supabase: Conectado
+              <span className={`db-status-dot ${initialData.validationOk ? 'ok' : 'err'}`} />
+              Supabase: {initialData.validationOk ? 'Conectado' : 'No disponible'}
             </span>
             <div className="db-avatar">JM</div>
           </div>
         </div>
+
+        {coverageWarning && (
+          <div className="db-alert" role="status">
+            <span className="db-alert-icon">i</span>
+            <span className="db-alert-text">
+              {hasUnavailableData ? (
+                <><strong>Datos no disponibles:</strong> {unavailableDatasetNames.join(', ')}. Los KPI afectados se muestran como —.</>
+              ) : (
+                <><strong>Cobertura parcial:</strong> existen más registros que los cargados en la muestra. Los KPI agregados usan el universo completo.</>
+              )}
+            </span>
+          </div>
+        )}
+        <div className="db-status-pill" style={{ margin: '0 0 12px 0', display: 'inline-flex' }}>Actualizado: {new Date(initialData.loadedAt).toLocaleString('es-ES')}</div>
 
         {/* ══════════════════════════════════════════════════════════
              PANEL DE CONTROL VIEW
@@ -932,7 +1008,9 @@ export function DashboardPanel({ initialData }: DashboardPanelProps) {
                     <span>🔬</span> Panel de Control y Segmentación Avanzada
                   </div>
                   <span className="db-status-pill">
-                    Mostrando <strong>{totalLeads}</strong> de <strong>{rawLeads.length}</strong> leads ({rawLeads.length > 0 ? ((totalLeads / rawLeads.length) * 100).toFixed(0) : 0}%)
+                    {leadsAvailable
+                      ? <>Mostrando <strong>{totalLeads}</strong> de <strong>{rawLeads.length}</strong> leads en la muestra ({rawLeads.length > 0 ? ((totalLeads / rawLeads.length) * 100).toFixed(0) : 0}%)</>
+                      : 'Datos de leads no disponibles'}
                   </span>
                 </div>
 
@@ -1032,10 +1110,10 @@ export function DashboardPanel({ initialData }: DashboardPanelProps) {
                     <label className="db-filter-label">⚡ Calificación de Lead</label>
                     <select className="db-filter-select" value={classificationFilter} onChange={(e) => setClassificationFilter(e.target.value)}>
                       <option value="all">Todas las Clasificaciones</option>
-                      <option value="priority">⚡ Prioritario (Score 75+)</option>
-                      <option value="hot">Caliente (Score 50-75)</option>
-                      <option value="warm">Templado (Score 20-50)</option>
-                      <option value="cold">Frío (Score 0-20)</option>
+                      <option value="priority">⚡ Prioritario (Score 80+)</option>
+                      <option value="hot">Caliente (Score 60-79)</option>
+                      <option value="warm">Templado (Score 40-59)</option>
+                      <option value="cold">Frío (Score 0-39)</option>
                     </select>
                   </div>
 
@@ -1078,7 +1156,7 @@ export function DashboardPanel({ initialData }: DashboardPanelProps) {
                     <div className="db-alert critical">
                       <span className="db-alert-icon">⚡</span>
                       <span className="db-alert-text">
-                        <strong>ALERTA EN TIEMPO REAL</strong> — Entró lead prioritario: <strong>{recentPriorityLeads[0].payload?.contact?.name || 'Contacto'}</strong> ({recentPriorityLeads[0].payload?.contact?.role || 'Cargo'} en {recentPriorityLeads[0].payload?.contact?.company || 'Empresa'}) con score <strong>{recentPriorityLeads[0].lead_score}/100</strong>.
+                        <strong>ÚLTIMO LEAD PRIORITARIO CARGADO</strong> — Entró lead prioritario: <strong>{recentPriorityLeads[0].payload?.contact?.name || 'Contacto'}</strong> ({recentPriorityLeads[0].payload?.contact?.role || 'Cargo'} en {recentPriorityLeads[0].payload?.contact?.company || 'Empresa'}) con score <strong>{recentPriorityLeads[0].lead_score}/100</strong>.
                       </span>
                     </div>
                   )}
@@ -1086,24 +1164,24 @@ export function DashboardPanel({ initialData }: DashboardPanelProps) {
                   {/* KPI Cards */}
                   <div className="db-kpis">
                     <div className="db-kpi accent-cyan">
-                      <div className="db-kpi-label">Total Leads</div>
-                      <div className="db-kpi-value">{totalLeads}</div>
-                      <div className="db-kpi-sub">{rawLeads.length} en base de datos</div>
+                      <div className="db-kpi-label">Leads cargados</div>
+                      <div className="db-kpi-value">{leadsAvailable ? (hasActiveFilters ? totalLeads : initialData.leadsCount) : '—'}</div>
+                      <div className="db-kpi-sub">{leadsAvailable ? `${rawLeads.length} en muestra sanitizada` : 'Datos no disponibles'}</div>
                     </div>
                     <div className="db-kpi accent-red">
                       <div className="db-kpi-label">Leads Prioritarios</div>
-                      <div className="db-kpi-value">{filteredLeads.filter((l: any) => l.lead_classification === 'priority').length}</div>
-                      <div className="db-kpi-sub">Score ≥ 75 puntos</div>
+                      <div className="db-kpi-value">{leadsAvailable ? (hasActiveFilters ? filteredLeads.filter((l: any) => l.lead_classification === 'priority').length : initialData.leadsByClassification.priority) : '—'}</div>
+                      <div className="db-kpi-sub">Score ≥ 80 puntos</div>
                     </div>
                     <div className="db-kpi accent-amber">
                       <div className="db-kpi-label">Leads Calientes</div>
-                      <div className="db-kpi-value">{filteredLeads.filter((l: any) => l.lead_classification === 'hot').length}</div>
-                      <div className="db-kpi-sub">Score 50-75 puntos</div>
+                      <div className="db-kpi-value">{leadsAvailable ? (hasActiveFilters ? filteredLeads.filter((l: any) => l.lead_classification === 'hot').length : initialData.leadsByClassification.hot) : '—'}</div>
+                      <div className="db-kpi-sub">Score 60-79 puntos</div>
                     </div>
                     <div className="db-kpi accent-green">
                       <div className="db-kpi-label">Conversión</div>
-                      <div className="db-kpi-value">{overallConversion}%</div>
-                      <div className="db-kpi-sub">{uniqueVisitors} visitantes únicos</div>
+                      <div className="db-kpi-value">{leadsAvailable && eventsAvailable ? `${overallConversion}%` : '—'}</div>
+                      <div className="db-kpi-sub">{leadsAvailable && eventsAvailable ? `${uniqueVisitors} visitantes únicos` : 'Datos no disponibles'}</div>
                     </div>
                   </div>
 
@@ -1127,13 +1205,13 @@ export function DashboardPanel({ initialData }: DashboardPanelProps) {
                           <div className="db-funnel-stage">
                             <span className="db-funnel-label">{step.lbl}</span>
                             <div className="db-funnel-bar-bg">
-                              <div className={`db-funnel-bar-fill ${idx === 3 ? 'amber' : idx === 4 ? 'green' : idx === 2 ? 'green' : idx === 1 ? 'violet' : ''}`} style={{ width: `${Math.min(100, Math.max(5, step.pct))}%` }}>
-                                <span className="db-funnel-value">{step.val}</span>
+                              <div className={`db-funnel-bar-fill ${idx === 3 ? 'amber' : idx === 4 ? 'green' : idx === 2 ? 'green' : idx === 1 ? 'violet' : ''}`} style={{ width: leadsAvailable && eventsAvailable ? `${Math.min(100, Math.max(5, step.pct))}%` : '0%' }}>
+                                <span className="db-funnel-value">{leadsAvailable && eventsAvailable ? step.val : '—'}</span>
                               </div>
                             </div>
-                            <span className="db-funnel-pct">{step.pct}%</span>
+                            <span className="db-funnel-pct">{leadsAvailable && eventsAvailable ? `${step.pct}%` : '—'}</span>
                           </div>
-                          {idx < arr.length - 1 && idx > 0 && step.pct > 0 && (
+                          {leadsAvailable && eventsAvailable && idx < arr.length - 1 && idx > 0 && step.pct > 0 && (
                             <div className="db-funnel-drop">
                               ↓ {Math.round(((arr[idx - 1]?.pct || 100) - step.pct) / (arr[idx - 1]?.pct || 100) * 100)}% caída
                             </div>
@@ -1149,7 +1227,12 @@ export function DashboardPanel({ initialData }: DashboardPanelProps) {
                           <span>🤖</span> Recomendaciones CRO de IA
                         </div>
                       </div>
-                      {aiDiagnostics.length > 0 ? (
+                      {!decisionDataAvailable ? (
+                        <div className="db-empty">
+                          <div className="db-empty-icon">i</div>
+                          <div className="db-empty-text">No hay datos suficientes para generar recomendaciones fiables.</div>
+                        </div>
+                      ) : aiDiagnostics.length > 0 ? (
                         aiDiagnostics.map((diag) => (
                           <div key={diag.id} className="db-ai-card">
                             <div className="db-ai-icon">
@@ -1186,26 +1269,31 @@ export function DashboardPanel({ initialData }: DashboardPanelProps) {
                       </div>
                       <div className="db-queue-grid">
                         <div className="db-queue-item">
-                          <div className="db-queue-count">{initialData.queueCounts.queued}</div>
+                          <div className="db-queue-count">{queueAvailable ? initialData.queueCounts.queued : '—'}</div>
                           <div className="db-queue-label">En Cola</div>
                         </div>
                         <div className="db-queue-item">
-                          <div className="db-queue-count">{initialData.queueCounts.retrying}</div>
+                          <div className="db-queue-count">{queueAvailable ? initialData.queueCounts.retrying : '—'}</div>
                           <div className="db-queue-label">Reintentos</div>
                         </div>
                         <div className="db-queue-item">
-                          <div className="db-queue-count" style={{ color: 'var(--green)' }}>{initialData.queueCounts.delivered}</div>
-                          <div className="db-queue-label">Entregados</div>
+                          <div className="db-queue-count" style={{ color: 'var(--green)' }}>{queueAvailable ? initialData.queueCounts.delivered : '—'}</div>
+                          <div className="db-queue-label">Aceptados por Make</div>
                         </div>
                         <div className="db-queue-item">
-                          <div className="db-queue-count" style={{ color: 'var(--red)' }}>{initialData.queueCounts.dead_letter}</div>
+                          <div className="db-queue-count" style={{ color: 'var(--red)' }}>{queueAvailable ? initialData.queueCounts.dead_letter : '—'}</div>
                           <div className="db-queue-label">Fallidos</div>
                         </div>
                       </div>
                       <div className="db-grid-22" style={{ marginTop: 'var(--space-md)' }}>
-                        <button className="db-btn" onClick={() => handleRetry(false)} disabled={loadingRetry}>Reintentar En Cola</button>
-                        <button className="db-btn db-btn-danger" onClick={() => handleRetry(true)} disabled={loadingRetry}>Reintentar Fallidos</button>
+                        <button className="db-btn" onClick={() => handleRetry(false)} disabled={loadingRetry || !queueAvailable || !initialData.integrations.legacyRetry}>Reintentar En Cola</button>
+                        <button className="db-btn db-btn-danger" onClick={() => handleRetry(true)} disabled={loadingRetry || !queueAvailable || !initialData.integrations.legacyRetry}>Reintentar Fallidos</button>
                       </div>
+                      {!initialData.integrations.legacyRetry && (
+                        <p className="db-muted" style={{ marginTop: 'var(--space-sm)' }}>
+                          Cola legacy inerte: el master kill switch o el permiso específico está desactivado.
+                        </p>
+                      )}
                     </div>
 
                     <div className="db-card">
@@ -1215,7 +1303,7 @@ export function DashboardPanel({ initialData }: DashboardPanelProps) {
                       <div className="db-integrations" style={{ flexDirection: 'column' }}>
                         <div className="db-integration">
                           <span className={`db-integration-dot ${initialData.integrations.make ? 'on' : 'off'}`} />
-                          <span>Make Webhook Sync</span>
+                          <span>Make Webhook Sync (legacy)</span>
                         </div>
                         <div className="db-integration">
                           <span className={`db-integration-dot ${initialData.integrations.airtable ? 'on' : 'off'}`} />
@@ -1233,7 +1321,7 @@ export function DashboardPanel({ initialData }: DashboardPanelProps) {
                   <div className="db-card db-full">
                     <div className="db-card-header">
                       <div className="db-card-title">Leads Registrados — Vista Individual</div>
-                      <span className="db-status-pill">{filteredLeads.length} leads · Haz clic en una fila para ver la ficha completa</span>
+                      <span className="db-status-pill">{leadsAvailable ? `${filteredLeads.length} leads · Haz clic en una fila para ver la ficha completa` : 'Datos no disponibles'}</span>
                     </div>
                     <div className="db-table-wrap">
                       <table className="db-table">
@@ -1300,7 +1388,10 @@ export function DashboardPanel({ initialData }: DashboardPanelProps) {
                                   <td>
                                     <div>
                                       <strong>{l.payload?.contact?.name || l.payload?.name || 'Anónimo'}</strong>
-                                      <div className="db-kpi-sub">{l.payload?.contact?.email || l.payload?.email || '—'} · {l.payload?.contact?.company || l.payload?.company || 'Empresa'}</div>
+                                      <div className="db-kpi-sub">
+                                        {l.payload?.contact?.email || l.payload?.email || '—'} ·{' '}
+                                        {firstDisplayString('Empresa', l.payload?.contact?.company, l.payload?.company)}
+                                      </div>
                                     </div>
                                   </td>
                                   <td>{magnetNames[l.lead_magnet] || l.lead_magnet}</td>
@@ -1336,7 +1427,7 @@ export function DashboardPanel({ initialData }: DashboardPanelProps) {
                                             ['Email', l.payload?.contact?.email || l.payload?.email || '—'],
                                             ['Teléfono', l.payload?.contact?.phone || l.payload?.phone || '—'],
                                             ['Cargo', l.payload?.contact?.role || '—'],
-                                            ['Empresa', l.payload?.contact?.company || l.payload?.company || '—'],
+                                            ['Empresa', firstDisplayString('—', l.payload?.contact?.company, l.payload?.company)],
                                             ['Sector', l.payload?.company?.sector || l.payload?.sector || '—'],
                                             ['Empleados', l.payload?.company?.employee_range || l.payload?.employee_range || '—'],
                                             ['Provincia', l.payload?.company?.province || l.payload?.province || '—'],

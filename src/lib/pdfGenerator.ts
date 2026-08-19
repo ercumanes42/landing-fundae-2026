@@ -6,9 +6,6 @@ import { jsPDF } from 'jspdf';
 import type { ChecklistResultLevel } from './checklistScoringV2';
 
 interface PDFReportData {
-  userName: string;
-  userEmail: string;
-  userCompany: string;
   score: number;
   maxScore: number;
   resultLevel: ChecklistResultLevel;
@@ -17,7 +14,51 @@ interface PDFReportData {
   questions: { id: string; question: string }[];
 }
 
-export function generateDiagnosticPDF(data: PDFReportData): void {
+const BRAND = {
+  name: 'GFS Consulting Group',
+  email: 'administracion@gfs.es',
+  phone: '+34 902 120 567',
+  address: 'Paseo de la Castellana, 141, 28046 Madrid',
+} as const;
+
+export const DIAGNOSTIC_PDF_FILENAME = 'Resumen_Orientativo_FUNDAE.pdf';
+
+export function getBrandLogoUrl(baseUrl = import.meta.env?.BASE_URL ?? '/'): string {
+  const normalizedBaseUrl = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
+  return `${normalizedBaseUrl}gfs-consulting-logo.png`;
+}
+
+function arrayBufferToDataUrl(buffer: ArrayBuffer, mimeType: string): string {
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
+  let binary = '';
+
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+  }
+
+  return `data:${mimeType};base64,${btoa(binary)}`;
+}
+
+export async function loadBrandLogoDataUrl(
+  fetchLogo: typeof fetch = fetch,
+  logoUrl = getBrandLogoUrl(),
+): Promise<string | null> {
+  try {
+    const response = await fetchLogo(logoUrl, { credentials: 'same-origin' });
+    if (!response.ok) return null;
+
+    const mimeType = response.headers.get('content-type') || 'image/png';
+    return arrayBufferToDataUrl(await response.arrayBuffer(), mimeType);
+  } catch {
+    return null;
+  }
+}
+
+export async function generateDiagnosticPDF(data: PDFReportData): Promise<void> {
+  // This same-origin request never contains report data. If it fails, the PDF
+  // remains downloadable and uses the textual GFS brand fallback below.
+  const brandLogoDataUrl = await loadBrandLogoDataUrl();
   const pdf = new jsPDF('p', 'mm', 'a4');
   const pageWidth = pdf.internal.pageSize.getWidth();
   const pageHeight = pdf.internal.pageSize.getHeight();
@@ -27,8 +68,8 @@ export function generateDiagnosticPDF(data: PDFReportData): void {
 
   // ── Color palette ───────────────────────────────────────────────
   const colors = {
-    primary: [30, 43, 88] as [number, number, number],       // #1E2B58
-    accent: [59, 130, 246] as [number, number, number],      // blue-500
+    primary: [48, 43, 123] as [number, number, number],      // #302B7B
+    accent: [255, 32, 110] as [number, number, number],      // #FF206E
     dark: [15, 23, 42] as [number, number, number],          // slate-900
     medium: [100, 116, 139] as [number, number, number],     // slate-500
     light: [241, 245, 249] as [number, number, number],      // slate-100
@@ -48,6 +89,13 @@ export function generateDiagnosticPDF(data: PDFReportData): void {
   };
 
   const levelColors = getLevelColors();
+  const priorityRecommendations = data.recommendations.length > 0
+    ? data.recommendations
+    : [
+        'Confirma el crédito y el saldo oficiales antes de comprometer una acción formativa.',
+        'Revisa fechas, participantes, costes y evidencias antes de comunicar el inicio.',
+        'Conserva comunicaciones y justificantes en un expediente único por acción.',
+      ];
 
   // Helper: wrap text and return lines
   const splitText = (text: string, maxWidth: number, fontSize: number): string[] => {
@@ -57,7 +105,7 @@ export function generateDiagnosticPDF(data: PDFReportData): void {
 
   // Helper: check page break
   const checkPageBreak = (neededHeight: number) => {
-    if (y + neededHeight > pageHeight - 25) {
+    if (y + neededHeight > pageHeight - 30) {
       pdf.addPage();
       y = 20;
     }
@@ -73,15 +121,36 @@ export function generateDiagnosticPDF(data: PDFReportData): void {
   pdf.setFillColor(...colors.accent);
   pdf.rect(0, 42, pageWidth, 3, 'F');
 
+  // The logo sits on a white plate so its original colors remain legible.
+  // addImage is also guarded because a malformed response must not block save().
+  pdf.setFillColor(...colors.white);
+  pdf.roundedRect(pageWidth - margin - 48, 6, 48, 15, 2, 2, 'F');
+  let logoRendered = false;
+  if (brandLogoDataUrl) {
+    try {
+      pdf.addImage(brandLogoDataUrl, 'PNG', pageWidth - margin - 45, 8.5, 42, 10);
+      logoRendered = true;
+    } catch {
+      logoRendered = false;
+    }
+  }
+
+  if (!logoRendered) {
+    pdf.setTextColor(...colors.primary);
+    pdf.setFontSize(11);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text(BRAND.name, pageWidth - margin - 24, 15, { align: 'center' });
+  }
+
   // Header text
   pdf.setTextColor(...colors.white);
-  pdf.setFontSize(22);
+  pdf.setFontSize(18);
   pdf.setFont('helvetica', 'bold');
-  pdf.text('RESUMEN ORIENTATIVO FUNDAE', margin, 18);
+  pdf.text('RESUMEN FUNDAE', margin, 18);
 
   pdf.setFontSize(11);
   pdf.setFont('helvetica', 'normal');
-  pdf.text('Autoevaluación de preparación · Resumen personalizado', margin, 27);
+  pdf.text('Autoevaluación de preparación · Documento orientativo', margin, 27);
 
   // Date
   const dateStr = new Date().toLocaleDateString('es-ES', { day: '2-digit', month: 'long', year: 'numeric' });
@@ -89,40 +158,6 @@ export function generateDiagnosticPDF(data: PDFReportData): void {
   pdf.text(dateStr, pageWidth - margin, 35, { align: 'right' });
 
   y = 55;
-
-  // ══════════════════════════════════════════════════════════════════
-  // USER INFO BOX
-  // ══════════════════════════════════════════════════════════════════
-  pdf.setFillColor(...colors.light);
-  pdf.roundedRect(margin, y, contentWidth, 28, 3, 3, 'F');
-
-  pdf.setTextColor(...colors.dark);
-  pdf.setFontSize(9);
-  pdf.setFont('helvetica', 'bold');
-  pdf.text('DATOS DEL SOLICITANTE', margin + 6, y + 7);
-
-  pdf.setFont('helvetica', 'normal');
-  pdf.setFontSize(10);
-  pdf.setTextColor(...colors.medium);
-
-  const col1 = margin + 6;
-  const col2 = margin + 70;
-  const col3 = margin + 130;
-
-  pdf.text('Nombre:', col1, y + 16);
-  pdf.text('Email:', col2, y + 16);
-  pdf.text('Empresa:', col3, y + 16);
-
-  pdf.setTextColor(...colors.dark);
-  pdf.setFont('helvetica', 'bold');
-  pdf.text(data.userName || '—', col1, y + 22);
-
-  const emailLines = splitText(data.userEmail || '—', 55, 10);
-  pdf.text(emailLines[0] || '—', col2, y + 22);
-
-  pdf.text(data.userCompany || '—', col3, y + 22);
-
-  y += 38;
 
   // ══════════════════════════════════════════════════════════════════
   // RESULT BANNER
@@ -163,7 +198,7 @@ export function generateDiagnosticPDF(data: PDFReportData): void {
   // ══════════════════════════════════════════════════════════════════
   // RECOMMENDATIONS
   // ══════════════════════════════════════════════════════════════════
-  if (data.recommendations.length > 0) {
+  if (priorityRecommendations.length > 0) {
     checkPageBreak(50);
 
     pdf.setFillColor(...colors.primary);
@@ -174,7 +209,7 @@ export function generateDiagnosticPDF(data: PDFReportData): void {
     pdf.text('RECOMENDACIONES PRIORITARIAS', margin + 6, y + 5.5);
     y += 14;
 
-    data.recommendations.forEach((rec, idx) => {
+    priorityRecommendations.forEach((rec, idx) => {
       checkPageBreak(20);
 
       pdf.setFillColor(...colors.light);
@@ -260,24 +295,40 @@ export function generateDiagnosticPDF(data: PDFReportData): void {
   checkPageBreak(30);
 
   pdf.setFillColor(...colors.accent);
-  pdf.roundedRect(margin, y, contentWidth, 22, 3, 3, 'F');
+  pdf.roundedRect(margin, y, contentWidth, 26, 3, 3, 'F');
 
   pdf.setTextColor(...colors.white);
-  pdf.setFontSize(12);
+  pdf.setFontSize(11);
   pdf.setFont('helvetica', 'bold');
-  pdf.text('Agenda tu diagnóstico de 15 minutos para que podamos ayudarte.', pageWidth / 2, y + 13, { align: 'center' });
+  pdf.text('Siguiente paso: revisa estas prioridades con el responsable de FUNDAE.', pageWidth / 2, y + 10, { align: 'center' });
+  pdf.setFontSize(9);
+  pdf.setFont('helvetica', 'normal');
+  pdf.text('Si necesitas contraste, reserva una revisión de 15 minutos con GFS.', pageWidth / 2, y + 18, { align: 'center' });
 
-  // ── Confidentiality footer ──────────────────────────────────────
-  pdf.setTextColor(...colors.medium);
-  pdf.setFontSize(7);
-  pdf.setFont('helvetica', 'italic');
-  pdf.text(
-    'Este resumen es orientativo y no valida crédito ni cumplimiento. Consulta con un especialista para revisar tu situación real.',
-    pageWidth / 2,
-    pageHeight - 10,
-    { align: 'center' }
-  );
+  // Every page carries the GFS identity and public contact details. The report
+  // answers remain local to jsPDF and are never included in the logo request.
+  const pageCount = pdf.getNumberOfPages();
+  for (let pageNumber = 1; pageNumber <= pageCount; pageNumber += 1) {
+    pdf.setPage(pageNumber);
+    pdf.setDrawColor(...colors.accent);
+    pdf.setLineWidth(0.6);
+    pdf.line(margin, pageHeight - 24, pageWidth - margin, pageHeight - 24);
+
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(7);
+    pdf.setTextColor(...colors.primary);
+    pdf.text(BRAND.name, margin, pageHeight - 18);
+
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(...colors.medium);
+    pdf.text(BRAND.address, pageWidth / 2, pageHeight - 18, { align: 'center' });
+    pdf.text(`${BRAND.email} · ${BRAND.phone}`, pageWidth - margin, pageHeight - 18, { align: 'right' });
+    pdf.setFont('helvetica', 'italic');
+    pdf.text('Resumen orientativo: no valida crédito ni cumplimiento.', pageWidth / 2, pageHeight - 10, { align: 'center' });
+    pdf.setFont('helvetica', 'normal');
+    pdf.text(`${pageNumber}/${pageCount}`, pageWidth - margin, pageHeight - 6, { align: 'right' });
+  }
 
   // ── Save ────────────────────────────────────────────────────────
-  pdf.save(`Resumen_Orientativo_FUNDAE_${data.userCompany.replace(/\s+/g, '_') || 'empresa'}.pdf`);
+  pdf.save(DIAGNOSTIC_PDF_FILENAME);
 }

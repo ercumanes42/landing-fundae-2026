@@ -14,7 +14,7 @@ const faqs = [
   },
   {
     question: "¿Puedo saber el crédito exacto con la calculadora?",
-    answer: "No. La calculadora ofrece una orientación inicial. El importe exacto debe validarse con la información oficial correspondiente."
+    answer: "No. Estima el crédito anual con los datos que facilites, pero no accede a la aplicación de FUNDAE ni conoce el crédito utilizado o reservado. El crédito y el saldo oficiales deben validarse con la información de TGSS y del expediente."
   },
   {
     question: "¿Qué tipo de formación puedo activar?",
@@ -22,7 +22,7 @@ const faqs = [
   },
   {
     question: "¿Qué pasa si no uso el crédito?",
-    answer: "En muchos casos puede perderse si no se planifica y gestiona dentro de los plazos correspondientes durante el ejercicio anual."
+    answer: "El crédito se gestiona por ejercicio. Las empresas de menos de 50 personas pueden reservar crédito no dispuesto para los dos ejercicios siguientes si comunican su voluntad mediante el procedimiento aplicable; en los demás casos conviene revisar el expediente y los plazos oficiales."
   },
   {
     question: "¿El diagnóstico tiene coste?",
@@ -56,9 +56,12 @@ export function FAQSection() {
 
         <div className="space-y-4">
           {faqs.map((faq, i) => (
-            <div key={i} className="rounded-xl bg-white border border-gray-200 overflow-hidden shadow-sm">
+            <div key={faq.question} className="rounded-xl bg-white border border-gray-200 overflow-hidden shadow-sm">
               <button
-                className="w-full text-left px-6 py-4 flex justify-between items-center bg-white hover:bg-slate-50 transition-colors focus-visible:outline-none focus-visible:bg-slate-50"
+                id={"faq-trigger-" + i}
+                aria-controls={"faq-panel-" + i}
+                aria-expanded={openIndex === i}
+                className="flex min-h-11 w-full items-center justify-between bg-white px-6 py-4 text-left transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#302B7B]"
                 onClick={() => toggleFaq(i)}
               >
                 <span className="font-semibold text-gray-900">{faq.question}</span>
@@ -69,6 +72,9 @@ export function FAQSection() {
               <AnimatePresence>
                 {openIndex === i && (
                   <motion.div
+                    id={"faq-panel-" + i}
+                    role="region"
+                    aria-labelledby={"faq-trigger-" + i}
                     initial={{ height: 0, opacity: 0 }}
                     animate={{ height: "auto", opacity: 1 }}
                     exit={{ height: 0, opacity: 0 }}

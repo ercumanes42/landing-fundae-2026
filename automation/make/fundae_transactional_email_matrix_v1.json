@@ -1,0 +1,148 @@
+{
+  "schema_version": "1.0.0",
+  "matrix_id": "fundae_transactional_email_v1",
+  "name": "FUNDAE transactional resource delivery",
+  "kind": "configuration-spec",
+  "locale": "es-ES",
+  "market": "B2B Spain",
+  "importable": false,
+  "production_ready": false,
+  "sender": {
+    "name": "Joaquín G. del Pino",
+    "mailbox_source": "approved Microsoft 365 connection"
+  },
+  "legal_and_delivery_policy": {
+    "lane": "transactional",
+    "purpose": "Deliver the result or resource explicitly requested by the recipient.",
+    "privacy_acceptance_required": true,
+    "marketing_consent_required": false,
+    "marketing_content_allowed": false,
+    "unsubscribe": {
+      "include": false,
+      "reason": "Immediate fulfilment only; no commercial follow-up."
+    },
+    "commercial_follow_up": {
+      "included_in_this_matrix": false,
+      "require_separate_template": true,
+      "require_valid_legal_basis": true,
+      "require_opposition_mechanism_when_applicable": true
+    },
+    "recipient_source": "payload.contact.email",
+    "idempotency_key": "payload.submission_id",
+    "html_escape_all_placeholders": true,
+    "never_log": ["payload.contact.email", "payload.contact.name", "rendered_body", "attachment_binary"]
+  },
+  "templates": [
+    {
+      "id": "calculator_result_v1",
+      "form_type": "calculator",
+      "trigger": "accepted calculator submission",
+      "transactional_purpose": "Return the result calculated from the recipient's submitted data.",
+      "subject": "Tu referencia FUNDAE y cómo validarla",
+      "preheader": "Resultado orientativo, fórmula aplicada y siguientes comprobaciones.",
+      "body_text": "Hola {{first_name}},\n\nGracias por completar la calculadora. Esta es la referencia obtenida con los datos que has facilitado:\n\nREFERENCIA FUNDAE\n{{credit_reference}}\n\nCÓMO SE HA OBTENIDO\n{{calculation_formula}}\n\nNIVEL DE VALIDACIÓN\n{{validation_label}}\n{{validation_text}}\n\nSIGUIENTES COMPROBACIONES\n{{next_steps_text}}\n\nEsta estimación es orientativa. Antes de comprometer o bonificar una formación, contrasta en la aplicación de FUNDAE el crédito asignado, el saldo disponible y la información validada por la TGSS.\n\nVolver a la calculadora: {{resource_url}}\n\nUn saludo,\nJoaquín G. del Pino",
+      "required_placeholders": ["{{first_name}}", "{{credit_reference}}", "{{calculation_formula}}", "{{validation_label}}", "{{validation_text}}", "{{next_steps_text}}", "{{resource_url}}"],
+      "placeholder_sources": {
+        "{{first_name}}": "first token from payload.contact.name",
+        "{{credit_reference}}": "server-derived localized value or range from payload.credit_estimate",
+        "{{calculation_formula}}": "server-derived formula from submitted calculation inputs",
+        "{{validation_label}}": "server-derived validation state",
+        "{{validation_text}}": "server-derived explanation for the validation state",
+        "{{next_steps_text}}": "server-derived verification steps",
+        "{{resource_url}}": "approved canonical calculator URL"
+      },
+      "attachments": [],
+      "content_requirements": {
+        "result_specific": true,
+        "must_handle_null_amount": true,
+        "must_state_orientation_not_confirmation": true,
+        "sales_cta_allowed": false
+      }
+    },
+    {
+      "id": "interactive_checklist_result_v1",
+      "form_type": "interactive_checklist",
+      "trigger": "accepted interactive checklist submission",
+      "transactional_purpose": "Return the autoevaluation result and its general PDF.",
+      "subject": "Resultado de tu autoevaluación FUNDAE",
+      "preheader": "Tu nivel orientativo y las prioridades que conviene revisar primero.",
+      "body_text": "Hola {{first_name}},\n\nHas completado la autoevaluación rápida. Este es el resultado generado a partir de tus respuestas:\n\nRESULTADO\n{{score_label}}\n{{result_title}}\n\nPRIORIDADES DE REVISIÓN\n{{priority_list_text}}\n\nAdjuntamos el resumen general para que puedas revisarlo o compartirlo internamente. El PDF no contiene tu nombre ni tu correo.\n\nEl resultado es orientativo: no acredita el cumplimiento de requisitos ni sustituye la validación antes de aplicar una bonificación.\n\nVolver a la autoevaluación: {{resource_url}}\n\nUn saludo,\nJoaquín G. del Pino",
+      "required_placeholders": ["{{first_name}}", "{{score_label}}", "{{result_title}}", "{{priority_list_text}}", "{{resource_url}}"],
+      "placeholder_sources": {
+        "{{first_name}}": "first token from payload.contact.name",
+        "{{score_label}}": "server-derived score from payload.interactive_checklist.score",
+        "{{result_title}}": "canonical title for payload.interactive_checklist.risk_level",
+        "{{priority_list_text}}": "server-derived recommendations from submitted answers",
+        "{{resource_url}}": "approved canonical interactive checklist URL"
+      },
+      "attachments": [{
+        "required": true,
+        "kind": "generated_pdf",
+        "source": "signed Data Brain interactive checklist PDF endpoint",
+        "filename": "Resumen_Orientativo_FUNDAE.pdf",
+        "contains_contact_pii": false,
+        "allowed_mime_types": ["application/pdf"]
+      }],
+      "content_requirements": {
+        "result_specific": true,
+        "must_use_canonical_score_and_risk_level": true,
+        "pdf_must_remain_general": true,
+        "sales_cta_allowed": false
+      }
+    },
+    {
+      "id": "checklist_delivery_v1",
+      "form_type": "checklist",
+      "trigger": "accepted checklist request",
+      "transactional_purpose": "Deliver the requested checklist of ten operational controls.",
+      "subject": "Tu checklist FUNDAE: 10 controles antes de bonificar",
+      "preheader": "Una revisión práctica de documentación, plazos, costes y evidencias.",
+      "body_text": "Hola {{first_name}},\n\nAquí tienes la checklist FUNDAE que has solicitado. Reúne 10 controles para revisar antes de aplicar una bonificación: desde la consulta del crédito y la planificación hasta los costes, las evidencias y la conservación documental.\n\nPara obtener valor desde la primera revisión, empieza por el control que hoy no puedas responder con un sí respaldado por un dato o documento. Ese punto será la primera comprobación pendiente de tu empresa.\n\nLa encontrarás adjunta a este correo. También puedes abrirla desde este enlace: {{resource_url}}\n\nLa checklist es una guía de control y no sustituye la validación de los requisitos aplicables a cada acción formativa.\n\nUn saludo,\nJoaquín G. del Pino",
+      "required_placeholders": ["{{first_name}}", "{{resource_url}}"],
+      "placeholder_sources": {
+        "{{first_name}}": "first token from payload.contact.name",
+        "{{resource_url}}": "validated payload.checklist_pdf_url on the approved landing origin"
+      },
+      "attachments": [{
+        "required": true,
+        "kind": "remote_pdf",
+        "source": "validated payload.checklist_pdf_url on the approved landing origin",
+        "filename": "Checklist_10_Controles_FUNDAE.pdf",
+        "contains_contact_pii": false,
+        "allowed_mime_types": ["application/pdf"]
+      }],
+      "content_requirements": {
+        "resource_specific": true,
+        "attachment_and_fallback_link_required": true,
+        "sales_cta_allowed": false
+      }
+    },
+    {
+      "id": "webinar_confirmation_v1",
+      "form_type": "webinar",
+      "trigger": "accepted webinar registration",
+      "transactional_purpose": "Confirm registration and provide operational attendance details.",
+      "subject": "Plaza confirmada: {{webinar_title}}",
+      "preheader": "Fecha, hora y acceso de tu reserva.",
+      "body_text": "Hola {{first_name}},\n\nTu plaza para el webinar queda confirmada. Guarda estos datos:\n\nSESIÓN\n{{webinar_title}}\n\nFECHA Y HORA\n{{webinar_date}} · {{webinar_time}} · {{webinar_timezone}}\n\nDURACIÓN\n{{webinar_duration}}\n\nACCESO\n{{access_delivery_note}}\n\nAñadir al calendario: {{calendar_url}}\n\nEste correo confirma únicamente la reserva realizada.\n\nUn saludo,\nJoaquín G. del Pino",
+      "required_placeholders": ["{{first_name}}", "{{webinar_title}}", "{{webinar_date}}", "{{webinar_time}}", "{{webinar_timezone}}", "{{webinar_duration}}", "{{access_delivery_note}}", "{{calendar_url}}"],
+      "placeholder_sources": {
+        "{{first_name}}": "first token from payload.contact.name",
+        "{{webinar_title}}": "approved webinar configuration",
+        "{{webinar_date}}": "approved webinar configuration formatted for es-ES",
+        "{{webinar_time}}": "approved webinar configuration formatted for Europe/Madrid",
+        "{{webinar_timezone}}": "approved webinar timezone label",
+        "{{webinar_duration}}": "approved webinar configuration",
+        "{{access_delivery_note}}": "approved instruction matching the real access workflow",
+        "{{calendar_url}}": "generated calendar URL for this webinar occurrence"
+      },
+      "attachments": [],
+      "content_requirements": {
+        "booking_specific": true,
+        "date_time_and_timezone_required": true,
+        "access_instruction_must_match_real_workflow": true,
+        "sales_cta_allowed": false
+      }
+    }
+  ]
+}

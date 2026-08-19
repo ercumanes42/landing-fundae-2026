@@ -101,6 +101,7 @@ export function SolutionsSection() {
               </div>
               
               <Button 
+                data-track-cta={"solution_diagnostic_" + i}
                 variant={solution.highlight ? 'primary' : 'outline'} 
                 className={`w-full justify-center gap-2 ${!solution.highlight && 'border-slate-300'}`}
                 onClick={() => scrollTo("diagnostico", solution.title)}

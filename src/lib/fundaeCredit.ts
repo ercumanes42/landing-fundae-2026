@@ -25,6 +25,16 @@ export interface FundaeCreditResult extends FundaeCreditEstimate {
   inputLabel: string;
 }
 
+export interface FundaeCreditInsight {
+  reference: string;
+  formula: string;
+  missingData: string | null;
+  validationLevel: 'with_data' | 'range_only' | 'manual_review';
+  validationLabel: string;
+  validationText: string;
+  nextSteps: readonly string[];
+}
+
 function validAmount(value?: number): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) && value > 0
     ? value
@@ -137,5 +147,65 @@ export function calculateFundaeCredit(input: FundaeCreditInput): FundaeCreditRes
     requires_manual_review: requiresManualReview,
     rateLabel: getFundaeRateLabel(input.employeeRange),
     inputLabel: 'Falta la cuota de Formación Profesional o la base de otras cotizaciones',
+  };
+}
+
+export function buildFundaeCreditInsight(
+  input: FundaeCreditInput,
+  result: FundaeCreditResult,
+): FundaeCreditInsight {
+  const percentage = Math.round(getFundaeCreditPercentage(input.employeeRange) * 100);
+  const quota = validAmount(input.priorYearFpQuota);
+  const base = validAmount(input.priorYearOtherContributionsBase);
+
+  let formula: string;
+  let missingData: string | null = null;
+
+  if (result.calculation_source === 'minimum_credit') {
+    formula = 'Referencia mínima del tramo de 1 a 5 personas: 420 €.';
+  } else if (result.calculation_source === 'fp_quota' && quota && result.amount !== null) {
+    formula = `${formatEuro(quota)} de cuota de FP × ${percentage}% = ${formatEuro(result.amount)}.`;
+  } else if (result.calculation_source === 'other_contributions_base' && base && result.amount !== null) {
+    formula = `${formatEuro(base)} de Base otras cotizaciones × 0,7% × ${percentage}% = ${formatEuro(result.amount)}.`;
+  } else {
+    formula = `Crédito estimado = cuota de FP del año anterior × ${percentage}%. También puede obtenerse desde la Base otras cotizaciones × 0,7% × ${percentage}%.`;
+    missingData = 'Necesitas la cuota de Formación Profesional o la suma anual de Base otras cotizaciones del año anterior.';
+  }
+
+  const validationLevel = result.requires_manual_review
+    ? 'manual_review'
+    : result.amount === null
+      ? 'range_only'
+      : 'with_data';
+
+  const validationCopy = {
+    with_data: {
+      label: 'Estimación con dato de cotización',
+      text: 'La fórmula usa el dato facilitado. Aún debes contrastar crédito y saldo en la aplicación de FUNDAE con la información validada por TGSS.',
+    },
+    range_only: {
+      label: 'Referencia de tramo',
+      text: 'La plantilla permite identificar el porcentaje, pero no calcular un importe responsable sin el dato de cotización.',
+    },
+    manual_review: {
+      label: 'Revisión específica necesaria',
+      text: 'Has indicado una situación que puede alterar la referencia. No la simulamos: debe revisarse en FUNDAE antes de tomar decisiones.',
+    },
+  } as const;
+
+  return {
+    reference: result.amount === null ? result.rateLabel : formatEuro(result.amount),
+    formula,
+    missingData,
+    validationLevel,
+    validationLabel: validationCopy[validationLevel].label,
+    validationText: validationCopy[validationLevel].text,
+    nextSteps: [
+      missingData
+        ? 'Localiza en los recibos de liquidación el dato de cotización del año anterior.'
+        : 'Contrasta la cuota y la plantilla con los datos que FUNDAE reciba de TGSS.',
+      'Comprueba en la aplicación de FUNDAE el crédito asignado, el saldo y cualquier reserva o circunstancia especial.',
+      'Antes de bonificar una acción, valida participantes, costes y requisitos aplicables a esa formación.',
+    ],
   };
 }

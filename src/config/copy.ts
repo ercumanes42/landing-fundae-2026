@@ -10,7 +10,7 @@ export const copy = {
   meta: {
     title: 'FUNDAE para empresas — Activa tu crédito de formación',
     description:
-      'Descubre cuánto crédito FUNDAE tiene tu empresa y cómo aprovecharlo al 100%. Calculadora, checklist, webinar y diagnóstico gratuitos.',
+      'Estima el crédito formativo de tu empresa y revisa los puntos necesarios para gestionarlo con criterio. Calculadora, checklist, autoevaluación y webinar.',
   },
 
   // ── Header ──────────────────────────────────────────────────────────
@@ -19,46 +19,46 @@ export const copy = {
     nav: [
       { label: 'Inicio', href: '#inicio' },
       { label: 'Calculadora', href: '#calculadora' },
-      { label: 'Checklist', href: '#interactive-checklist' },
+      { label: 'Checklist', href: '#checklist' },
       { label: 'Webinar', href: '#webinar' },
       { label: 'FAQ', href: '#faq' },
     ],
-    cta: 'Diagnóstico gratuito',
+    cta: 'Ver herramientas',
   },
 
   // ── Hero ─────────────────────────────────────────────────────────────
   hero: {
     badge: 'Formación bonificada FUNDAE',
-    headline: 'El 79,5% de las empresas deja perder su crédito de formación cada año',
+    headline: 'Aclara qué crédito formativo podría corresponder a tu empresa',
     subheadline:
-      'Capacita a tu equipo utilizando sus cotizaciones de formación. Gestión profesional con 100% de garantía de cumplimiento normativo (Compliance) y tranquilidad jurídica.',
-    primaryCta: 'Hacer revisión rápida',
-    secondaryCta: 'Diagnóstico gratuito',
+      'Calcula una referencia, detecta puntos pendientes y decide el siguiente paso con información comprensible y fuentes oficiales.',
+    primaryCta: 'Empezar la autoevaluación',
+    secondaryCta: 'Ver herramientas',
     stats: [
-      { value: '79,5%', label: 'No usa su crédito' },
-      { value: '420 €', label: 'Crédito mínimo/año' },
+      { value: '420 €', label: 'Crédito mínimo 1-5' },
+      { value: '5', label: 'Tramos de plantilla' },
       { value: '< 2 min', label: 'Para el test' },
     ],
   },
 
   // ── Stats section ───────────────────────────────────────────────────
   stats: {
-    sectionTitle: 'La realidad de la formación bonificada en España',
+    sectionTitle: 'Tres referencias para orientarte',
     items: [
       {
-        value: '79,5%',
-        label: 'No aprovecha el crédito',
-        description: 'De las empresas españolas pierden su inversión anual.',
+        value: '420 €',
+        label: 'Crédito mínimo 1-5',
+        description: 'Referencia publicada por FUNDAE para empresas de 1 a 5 personas.',
       },
       {
-        value: '20,5%',
-        label: 'Tasa de adopción actual',
-        description: 'Solo 1 de cada 5 empresas optimiza su cotización.',
+        value: '4',
+        label: 'Tramos superiores',
+        description: 'La estimación aplica 100%, 75%, 60% o 50% sobre la cuota de FP.',
       },
       {
-        value: '52%',
-        label: 'Crédito ejecutado',
-        description: 'La mitad del fondo nacional se queda sin asignar.',
+        value: '< 2 min',
+        label: 'Resultado rápido',
+        description: 'Puedes obtener una orientación inicial sin facilitar datos personales.',
       },
     ],
   },
@@ -72,16 +72,16 @@ export const copy = {
       {
         title: 'Calculadora de crédito',
         description:
-          'Obtén una estimación rápida del crédito FUNDAE que podría corresponder a tu empresa.',
+          'Obtén una referencia comprensible usando tu plantilla y, si la conoces, la cuota de Formación Profesional.',
         cta: 'Calcular ahora',
         href: '#calculadora',
       },
       {
         title: 'Checklist gratuito',
         description:
-          'Descarga los 10 errores más comunes que hacen perder el crédito a las empresas.',
+          'Descarga diez controles prácticos para revisar antes de comunicar o bonificar formación.',
         cta: 'Descargar checklist',
-        href: '#interactive-checklist',
+        href: '#checklist',
       },
       {
         title: 'Webinar informativo',
@@ -91,11 +91,11 @@ export const copy = {
         href: '#webinar',
       },
       {
-        title: 'Diagnóstico personalizado',
+        title: 'Autoevaluación FUNDAE',
         description:
-          'Agenda una sesión 1:1 con un especialista que analice tu caso concreto.',
-        cta: 'Solicitar diagnóstico',
-        href: '#diagnostico',
+          'Responde unas preguntas y recibe el nivel y las prioridades sin facilitar datos personales.',
+        cta: 'Empezar autoevaluación',
+        href: '#interactive-checklist',
       },
     ],
   },
@@ -105,14 +105,14 @@ export const copy = {
     badge: 'Herramienta gratuita',
     title: '¿Cuánto crédito FUNDAE podría tener tu empresa?',
     subtitle:
-      'Responde unas preguntas rápidas y recibe una estimación orientativa de tu crédito disponible.',
+      'Responde unas preguntas rápidas y recibe una estimación orientativa del crédito anual. No calcula el saldo disponible.',
     steps: [
       { number: 1, label: 'Tu empresa' },
       { number: 2, label: 'Formación' },
       { number: 3, label: 'Datos de contacto' },
     ],
     labels: {
-      employeeRange: '¿Cuántos trabajadores tiene tu empresa?',
+      employeeRange: '¿Cuál es el tamaño de la plantilla?',
       province: '¿En qué provincia está tu empresa?',
       sector: '¿Cuál es tu sector de actividad?',
       usedFundae: '¿Habéis utilizado FUNDAE antes?',
@@ -120,14 +120,14 @@ export const copy = {
       trainingArea: '¿En qué área te interesa formar a tu equipo?',
       name: 'Nombre completo',
       company: 'Nombre de la empresa',
-      email: 'Email profesional',
+      email: 'Correo profesional',
       phone: 'Teléfono (opcional)',
       privacy: 'Acepto la política de privacidad',
     },
     cta: 'Ver mi estimación',
-    resultTitle: 'Tu crédito estimado',
+    resultTitle: 'Estimación anual orientativa',
     resultDisclaimer:
-      'Esta es una estimación orientativa. El crédito final depende de las cotizaciones reales de tu empresa. Solicita un diagnóstico gratuito para conocer el dato exacto.',
+      'Esta es una estimación orientativa. Contrasta el crédito y el saldo disponibles en la aplicación oficial y con los datos de TGSS.',
   },
 
   // ── Checklist section ───────────────────────────────────────────────
@@ -135,23 +135,23 @@ export const copy = {
     badge: 'Recurso gratuito',
     title: 'Checklist gratuito: 10 errores que pueden hacerte perder tu crédito FUNDAE',
     subtitle:
-      'Descubre los fallos más comunes que cometen las empresas y cómo evitarlos.',
+      'Revisa diez puntos habituales de gestión y contrástalos con tu expediente.',
     bullets: [
       'Los 10 errores más frecuentes al gestionar FUNDAE',
-      'Cómo evitar sanciones y devoluciones',
+      'Qué evidencias y controles conviene revisar',
       'Plantilla de planificación descargable',
-      'Guía paso a paso actualizada',
+      'Fuentes oficiales y límites de la orientación',
     ],
     labels: {
       name: 'Nombre',
-      email: 'Email profesional',
+      email: 'Correo profesional',
       company: 'Empresa',
       privacy: 'Acepto la política de privacidad',
     },
     cta: 'Descargar checklist',
-    successTitle: '¡Checklist enviado!',
+    successTitle: 'Solicitud registrada',
     successMessage:
-      'Revisa tu bandeja de entrada. Recibirás el PDF en los próximos minutos.',
+      'El recurso está disponible para descarga. El correo solo se mostrará como enviado cuando esté confirmado.',
   },
 
   // ── Webinar section ─────────────────────────────────────────────────
@@ -163,40 +163,40 @@ export const copy = {
       'Cómo funciona el sistema de bonificaciones',
       'Requisitos y plazos clave',
       'Errores que debes evitar',
-      'Sesión de preguntas y respuestas en vivo',
+      'Sesión de preguntas y respuestas en directo',
     ],
     labels: {
       name: 'Nombre',
-      email: 'Email profesional',
+      email: 'Correo profesional',
       company: 'Empresa',
       phone: 'Teléfono (opcional)',
       privacy: 'Acepto la política de privacidad',
     },
     cta: 'Reservar mi plaza',
-    successTitle: '¡Plaza reservada!',
+    successTitle: 'Solicitud de plaza registrada',
     successMessage:
-      'Recibirás un email con el enlace de acceso y un recordatorio antes del evento.',
+      'La confirmación y el enlace solo se mostrarán como enviados cuando el sistema lo verifique.',
   },
 
   // ── Diagnostic section ──────────────────────────────────────────────
   diagnostic: {
     badge: 'Sin compromiso',
-    title: 'Diagnóstico personalizado gratuito',
+    title: 'Diagnóstico FUNDAE gratuito',
     subtitle:
-      'Un especialista analizará tu caso concreto y te dirá exactamente cuánto crédito tienes y cómo utilizarlo.',
+      'Un especialista revisará tu caso y te ayudará a validar el crédito con los datos oficiales disponibles antes de utilizarlo.',
     bullets: [
-      'Revisión completa de tu crédito disponible',
+      'Revisión inicial de los datos disponibles y puntos pendientes',
       'Plan de formación personalizado',
       'Asesoramiento sobre la gestión de la bonificación',
       'Sin compromiso ni coste',
     ],
     labels: {
       name: 'Nombre completo',
-      email: 'Email profesional',
+      email: 'Correo profesional',
       company: 'Empresa',
       phone: 'Teléfono',
       role: 'Cargo / Puesto',
-      employeeRange: 'Número de trabajadores',
+      employeeRange: 'Tamaño de la plantilla',
       sector: 'Sector',
       trainingArea: 'Área de formación de interés',
       urgency: '¿Para cuándo necesitas la formación?',
@@ -204,7 +204,7 @@ export const copy = {
       privacy: 'Acepto la política de privacidad',
       marketing: 'Acepto recibir comunicaciones comerciales',
     },
-    cta: 'Solicitar diagnóstico gratuito',
+    cta: 'Reservar diagnóstico',
     successTitle: '¡Solicitud enviada!',
     successMessage:
       'Un especialista se pondrá en contacto contigo en las próximas 24 horas laborables.',
@@ -228,15 +228,15 @@ export const copy = {
       },
       {
         number: 3,
-        title: 'Nosotros gestionamos todo',
+        title: 'Te ayudamos a ordenar la gestión',
         description:
-          'Nos encargamos del papeleo, la documentación y la bonificación ante FUNDAE.',
+          'Revisamos contigo documentación, plazos y próximos pasos. El alcance se acuerda antes de contratar.',
       },
       {
         number: 4,
-        title: 'Tu equipo se forma gratis',
+        title: 'Aplica la bonificación que proceda',
         description:
-          'La formación se bonifica íntegramente en los seguros sociales.',
+          'La bonificación efectiva depende del crédito, los costes y los requisitos aplicables a cada acción.',
       },
     ],
   },
@@ -246,14 +246,14 @@ export const copy = {
     sectionTitle: '¿Por qué actuar ahora?',
     items: [
       {
-        title: 'El crédito es anual y no se acumula',
+        title: 'El crédito se gestiona por ejercicio',
         description:
-          'Es una partida con fecha de caducidad. Si no se inicia la formación antes del 31 de diciembre, ese derecho formativo se pierde de forma definitiva.',
+          'Las empresas de menos de 50 personas pueden reservar crédito no dispuesto para los dos ejercicios siguientes si cumplen el procedimiento aplicable.',
       },
       {
-        title: '100% Garantía de Cumplimiento (Compliance)',
+        title: 'Control documental y trazabilidad',
         description:
-          'Nuestra prioridad es la seguridad jurídica de tu empresa. Gestionamos todo el proceso cumpliendo estrictamente la normativa para darte absoluta tranquilidad legal.',
+          'Ordenamos datos, comunicaciones, costes y evidencias para reducir incidencias, sin prometer un resultado que depende del expediente real.',
       },
       {
         title: 'Educación y claridad en la gestión',
@@ -271,7 +271,7 @@ export const copy = {
   // ── Solutions ───────────────────────────────────────────────────────
   solutions: {
     sectionTitle: 'Áreas de formación que podemos activar',
-    subtitle: 'Formación de alto impacto, bonificada al 100%.',
+    subtitle: 'Formación vinculada a necesidades reales y sujeta al crédito, costes y requisitos aplicables.',
   },
 
   // ── Video section ───────────────────────────────────────────────────
@@ -298,7 +298,7 @@ export const copy = {
       {
         question: '¿Puedo saber el crédito exacto con la calculadora?',
         answer:
-          'No. La calculadora ofrece una orientación inicial. El importe exacto debe validarse con la información oficial correspondiente.',
+          'No. Estima el crédito anual con los datos que facilites, pero no accede a la aplicación de FUNDAE ni conoce el crédito utilizado o reservado. El crédito y el saldo oficiales deben validarse con la información de TGSS y del expediente.',
       },
       {
         question: '¿Qué tipo de formación puedo activar?',
@@ -320,10 +320,10 @@ export const copy = {
 
   // ── Final CTA ───────────────────────────────────────────────────────
   finalCta: {
-    title: '¿Listo para dejar de perder tu crédito de formación?',
+    title: '¿Quieres revisar el crédito formativo de tu empresa?',
     subtitle:
-      'Solicita tu diagnóstico gratuito y descubre cuánto puedes recuperar este año.',
-    primaryCta: 'Solicitar diagnóstico gratuito',
+      'Reserva un diagnóstico gratuito para contrastar tu situación con los datos oficiales disponibles.',
+    primaryCta: 'Reservar diagnóstico',
     secondaryCta: 'Calcular mi crédito',
   },
 
@@ -340,7 +340,7 @@ export const copy = {
   // ── Shared form messages ────────────────────────────────────────────
   form: {
     required: 'Este campo es obligatorio',
-    invalidEmail: 'Introduce un email válido',
+    invalidEmail: 'Introduce un correo válido',
     invalidPhone: 'Introduce un teléfono válido',
     privacyRequired: 'Debes aceptar la política de privacidad',
     genericError:

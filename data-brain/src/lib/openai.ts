@@ -83,10 +83,51 @@ function normalizeSummary(raw: unknown): AISummary {
   };
 }
 
+export function projectLeadForSummary(lead: LeadPayload): Record<string, unknown> {
+  return {
+    form_type: lead.form_type,
+    lead_magnet: lead.lead_magnet,
+    lead_score: lead.lead_score,
+    lead_status: lead.lead_status,
+    lead_classification: lead.lead_classification,
+    scoring: lead.scoring,
+    contact_role: lead.contact.role,
+    company: lead.company
+      ? {
+          province: lead.company.province,
+          sector: lead.company.sector,
+          employee_range: lead.company.employee_range,
+          used_fundae_before: lead.company.used_fundae_before,
+          knows_credit: lead.company.knows_credit,
+          current_training_provider: lead.company.current_training_provider,
+          credit_calculation_mode: lead.company.credit_calculation_mode,
+          prior_year_fp_quota: lead.company.prior_year_fp_quota,
+          prior_year_other_contributions_base: lead.company.prior_year_other_contributions_base,
+          special_situation: lead.company.special_situation,
+        }
+      : undefined,
+    interest: lead.interest
+      ? {
+          training_area: lead.interest.training_area,
+          urgency: lead.interest.urgency,
+        }
+      : undefined,
+    interactive_checklist: lead.interactive_checklist
+      ? {
+          score: lead.interactive_checklist.score,
+          risk_level: lead.interactive_checklist.risk_level,
+        }
+      : undefined,
+    credit_estimate: lead.credit_estimate,
+    journey: lead.journey,
+  };
+}
+
 export async function summarizeLead(lead: LeadPayload): Promise<AISummary> {
+  const projectedLead = projectLeadForSummary(lead);
   const prompt = LEAD_SUMMARY_PROMPT.replace(
     '{{LEAD_JSON}}',
-    JSON.stringify(lead, null, 2),
+    JSON.stringify(projectedLead, null, 2),
   );
 
   const response = await fetch('https://api.openai.com/v1/chat/completions', {

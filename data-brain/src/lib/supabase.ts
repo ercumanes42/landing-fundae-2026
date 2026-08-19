@@ -1,6 +1,22 @@
 import { assertEnv, env } from './env';
 
 type JsonRecord = Record<string, unknown>;
+export interface SupabasePage<T> {
+  rows: T[];
+  offset: number;
+  limit: number;
+  total: number | null;
+  hasMore: boolean;
+}
+
+export interface SupabasePagedResult<T> {
+  rows: T[];
+  total: number | null;
+  pageSize: number;
+  pagesFetched: number;
+  complete: boolean;
+}
+
 
 function supabaseUrl(path: string): string {
   return `${env('SUPABASE_URL').replace(/\/+$/, '')}/rest/v1/${path}`;
@@ -46,6 +62,16 @@ async function parseSupabaseResponse<T>(response: Response): Promise<T> {
 
   return body as T;
 }
+function parseContentRange(value: string | null): number | null {
+  if (!value) return null;
+
+  const match = value.match(/\/(\d+|\*)$/);
+  if (!match || match[1] === '*') return null;
+
+  const total = Number(match[1]);
+  return Number.isSafeInteger(total) && total >= 0 ? total : null;
+}
+
 
 export async function insertRow<T = JsonRecord>(
   table: string,
@@ -76,6 +102,21 @@ export async function insertRows<T = JsonRecord>(
   });
 
   return parseSupabaseResponse<T[]>(response);
+}
+
+export async function insertRowsWithoutRepresentation(
+  table: string,
+  rows: JsonRecord[],
+): Promise<void> {
+  assertEnv();
+
+  const response = await fetch(supabaseUrl(table), {
+    method: 'POST',
+    headers: headers({ Prefer: 'return=minimal' }),
+    body: JSON.stringify(rows),
+  });
+
+  await parseSupabaseResponse<null>(response);
 }
 
 export async function upsertRows<T = JsonRecord>(
@@ -148,6 +189,79 @@ export async function selectRows<T = JsonRecord>(
 
   return parseSupabaseResponse<T[]>(response);
 }
+export async function selectPage<T = JsonRecord>(
+  table: string,
+  query: string,
+  options: { offset?: number; limit?: number; count?: boolean } = {},
+): Promise<SupabasePage<T>> {
+  assertEnv();
+
+  const offset = Math.max(0, Math.floor(options.offset ?? 0));
+  const limit = Math.min(1_000, Math.max(1, Math.floor(options.limit ?? 1_000)));
+  const response = await fetch(supabaseUrl(`${table}?${query}`), {
+    method: 'GET',
+    headers: headers({
+      Prefer: options.count === false ? 'return=representation' : 'count=exact',
+      Range: `${offset}-${offset + limit - 1}`,
+      'Range-Unit': 'items',
+    }),
+  });
+
+  const rows = await parseSupabaseResponse<T[]>(response);
+  const total = parseContentRange(response.headers.get('content-range'));
+
+  return {
+    rows,
+    offset,
+    limit,
+    total,
+    hasMore: total === null ? rows.length === limit : offset + rows.length < total,
+  };
+}
+
+export async function countRows(table: string, filters = ''): Promise<number> {
+  const query = `select=id${filters ? `&${filters.replace(/^&/, '')}` : ''}`;
+  const page = await selectPage(table, query, { limit: 1, count: true });
+
+  if (page.total === null) {
+    throw new Error(`Supabase did not return an exact count for ${table}`);
+  }
+
+  return page.total;
+}
+
+export async function selectAllRowsPaged<T = JsonRecord>(
+  table: string,
+  query: string,
+  options: { pageSize?: number } = {},
+): Promise<SupabasePagedResult<T>> {
+  const pageSize = Math.min(1_000, Math.max(1, Math.floor(options.pageSize ?? 1_000)));
+  const rows: T[] = [];
+  let offset = 0;
+  let total: number | null = null;
+  let pagesFetched = 0;
+
+  while (true) {
+    const page: SupabasePage<T> = await selectPage<T>(table, query, { offset, limit: pageSize, count: total === null });
+    pagesFetched += 1;
+    rows.push(...page.rows);
+    total = page.total ?? total;
+
+    const hasMore = total === null ? page.hasMore : rows.length < total;
+    if (!hasMore || page.rows.length === 0) break;
+
+    offset += page.rows.length;
+  }
+
+  return {
+    rows,
+    total,
+    pageSize,
+    pagesFetched,
+    complete: total !== null && rows.length === total,
+  };
+}
+
 
 export async function callRpc<T = JsonRecord>(
   functionName: string,
