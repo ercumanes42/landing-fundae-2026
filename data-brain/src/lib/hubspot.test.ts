@@ -7,6 +7,7 @@ import {
   hubSpotContactProperties,
   parseHubSpotWebhookEvent,
   syncHubSpotCampaignContacts,
+  testHubSpotConnection,
   updateHubSpotContact,
   upsertPositiveReplyTask,
   type HubSpotCampaignContact,
@@ -14,9 +15,12 @@ import {
 
 const originalFetch = globalThis.fetch;
 const originalEnv = { ...process.env };
+const LEAD_ID = 'a'.repeat(64);
+const SECOND_LEAD_ID = 'b'.repeat(64);
 
 const contact = (overrides: Partial<HubSpotCampaignContact> = {}): HubSpotCampaignContact => ({
-  externalContactId: 'lead_001',
+  leadId: LEAD_ID,
+  externalContactId: 'campaign_contact_001',
   externalAccountId: 'account_001',
   email: 'person@example.com',
   campaignExternalId: 'FUNDAE_2026',
@@ -48,7 +52,7 @@ test('contact upsert uses the custom unique lead id and omits unwritten optional
     const url = String(input);
     calls.push({ url, method: init?.method || 'GET', body: init?.body ? JSON.parse(String(init.body)) : null });
     if (url.includes('/contacts/batch/upsert')) {
-      return json({ results: [{ id: '101', objectWriteTraceId: 'lead_001' }] });
+      return json({ results: [{ id: '101', objectWriteTraceId: LEAD_ID }] });
     }
     if (url.includes('/companies/batch/upsert')) {
       return json({ results: [{ id: '201', objectWriteTraceId: 'account_001' }] });
@@ -58,14 +62,20 @@ test('contact upsert uses the custom unique lead id and omits unwritten optional
   };
 
   const result = await syncHubSpotCampaignContacts([contact()]);
-  assert.equal(result.contactIds.get('lead_001'), '101');
+  assert.equal(result.contactIds.get(LEAD_ID), '101');
   assert.deepEqual(result.failures, []);
   const upsert = calls.find((call) => call.url.includes('/contacts/batch/upsert'))!;
   const input = (upsert.body as { inputs: Array<Record<string, unknown>> }).inputs[0];
-  assert.equal(input.id, 'lead_001');
+  assert.equal(input.id, LEAD_ID);
   assert.equal(input.idProperty, HUBSPOT_CONTACT_ID_PROPERTY);
   assert.notEqual(input.idProperty, 'email');
-  assert.equal((input.properties as Record<string, string>).fundae_contact_id, 'lead_001');
+  assert.equal((input.properties as Record<string, string>).fundae_lead_id, LEAD_ID);
+  assert.equal((input.properties as Record<string, string>).fundae_contact_id, 'campaign_contact_001');
+  const association = calls.find((call) => call.url.endsWith('/contacts/companies/batch/associate/default'))!;
+  assert.equal(association.method, 'POST');
+  assert.deepEqual(association.body, {
+    inputs: [{ from: { id: '101' }, to: { id: '201' } }],
+  });
   assert.ok(!('firstname' in (input.properties as Record<string, string>)));
   assert.ok(!('lastname' in (input.properties as Record<string, string>)));
 });
@@ -75,7 +85,7 @@ test('replay is deterministic and conflicting duplicate lead identities fail bef
   globalThis.fetch = async (input, init) => {
     const url = String(input);
     if (init?.body) bodies.push(String(init.body));
-    if (url.includes('/contacts/')) return json({ results: [{ id: '101', objectWriteTraceId: 'lead_001' }] });
+    if (url.includes('/contacts/')) return json({ results: [{ id: '101', objectWriteTraceId: LEAD_ID }] });
     if (url.includes('/companies/')) return json({ results: [{ id: '201', objectWriteTraceId: 'account_001' }] });
     return new Response(null, { status: 204 });
   };
@@ -94,13 +104,94 @@ test('replay is deterministic and conflicting duplicate lead identities fail bef
   assert.equal(calls, 0);
 });
 
+test('two campaign external ids for the same lead upsert exactly one HubSpot contact', async () => {
+  let contactInputs: Array<Record<string, unknown>> = [];
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    if (url.includes('/contacts/batch/upsert')) {
+      const body = JSON.parse(String(init?.body)) as { inputs: Array<Record<string, unknown>> };
+      contactInputs = body.inputs;
+      return json({ results: [{ id: '101', objectWriteTraceId: LEAD_ID }] });
+    }
+    if (url.includes('/companies/batch/upsert')) {
+      return json({ results: [{ id: '201', objectWriteTraceId: 'account_001' }] });
+    }
+    if (url.includes('/associations/')) return json({ results: [], numErrors: 0 });
+    throw new Error(`Unexpected request ${url}`);
+  };
+
+  const result = await syncHubSpotCampaignContacts([
+    contact(),
+    contact({
+      externalContactId: 'campaign_contact_999',
+      campaignExternalId: 'FUNDAE_2027',
+      variant: 'Webinar',
+      magnet: 'webinar',
+      sequenceStatus: 'active',
+      companySize: 'large',
+    }),
+  ]);
+  assert.equal(contactInputs.length, 1);
+  assert.equal(contactInputs[0].id, LEAD_ID);
+  assert.equal(result.contactIds.size, 1);
+  assert.equal(result.contactIds.get(LEAD_ID), '101');
+});
+
+test('association 200 with embedded errors fails every correlated campaign record closed', async () => {
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.includes('/contacts/batch/upsert')) {
+      return json({ results: [{ id: '101', objectWriteTraceId: LEAD_ID }] });
+    }
+    if (url.includes('/companies/batch/upsert')) {
+      return json({ results: [{ id: '201', objectWriteTraceId: 'account_001' }] });
+    }
+    if (url.includes('/associations/')) {
+      return json({ numErrors: 1, errors: [{ category: 'VALIDATION_ERROR' }] });
+    }
+    throw new Error(`Unexpected request ${url}`);
+  };
+
+  const result = await syncHubSpotCampaignContacts([contact()]);
+  assert.ok(result.failures.some((failure) =>
+    failure.externalId === 'campaign_contact_001' &&
+    failure.stage === 'association' &&
+    failure.reason === 'association_failed'));
+});
+
+test('association PENDING or non-numeric numErrors never reports a successful correlation', async () => {
+  for (const associationResponse of [
+    { status: 'PENDING', numErrors: 0 },
+    { status: 'COMPLETE', numErrors: '0' },
+  ]) {
+    globalThis.fetch = async (input) => {
+      const url = String(input);
+      if (url.includes('/contacts/batch/upsert')) {
+        return json({ results: [{ id: '101', objectWriteTraceId: LEAD_ID }] });
+      }
+      if (url.includes('/companies/batch/upsert')) {
+        return json({ results: [{ id: '201', objectWriteTraceId: 'account_001' }] });
+      }
+      if (url.includes('/associations/')) return json(associationResponse);
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    const result = await syncHubSpotCampaignContacts([contact()]);
+    assert.deepEqual(result.failures, [{
+      externalId: 'campaign_contact_001',
+      stage: 'association',
+      reason: 'association_failed',
+    }]);
+  }
+});
+
 test('a 207 response preserves correlated successes and reports only the failed input', async () => {
   globalThis.fetch = async (input) => {
     const url = String(input);
     if (url.includes('/contacts/')) return json({
       status: 'COMPLETE',
-      results: [{ id: '101', objectWriteTraceId: 'lead_001' }],
-      errors: [{ category: 'VALIDATION_ERROR', context: { objectWriteTraceId: ['lead_002'] } }],
+      results: [{ id: '101', objectWriteTraceId: LEAD_ID }],
+      errors: [{ category: 'VALIDATION_ERROR', context: { objectWriteTraceId: [SECOND_LEAD_ID] } }],
     }, 207);
     if (url.includes('/companies/')) return json({
       results: [
@@ -112,11 +203,11 @@ test('a 207 response preserves correlated successes and reports only the failed 
   };
   const result = await syncHubSpotCampaignContacts([
     contact(),
-    contact({ externalContactId: 'lead_002', externalAccountId: 'account_002', email: 'two@example.com' }),
+    contact({ leadId: SECOND_LEAD_ID, externalContactId: 'campaign_contact_002', externalAccountId: 'account_002', email: 'two@example.com' }),
   ]);
-  assert.equal(result.contactIds.get('lead_001'), '101');
-  assert.equal(result.contactIds.has('lead_002'), false);
-  assert.ok(result.failures.some((failure) => failure.externalId === 'lead_002' && failure.stage === 'contact'));
+  assert.equal(result.contactIds.get(LEAD_ID), '101');
+  assert.equal(result.contactIds.has(SECOND_LEAD_ID), false);
+  assert.ok(result.failures.some((failure) => failure.externalId === SECOND_LEAD_ID && failure.stage === 'contact'));
 });
 
 test('uncorrelated or contradictory batch outcomes fail closed', async () => {
@@ -124,10 +215,19 @@ test('uncorrelated or contradictory batch outcomes fail closed', async () => {
   await assert.rejects(syncHubSpotCampaignContacts([contact()]), /correlation failed/);
 
   globalThis.fetch = async () => json({
-    results: [{ id: '101', objectWriteTraceId: 'lead_001' }],
-    errors: [{ context: { objectWriteTraceId: ['lead_001'] } }],
+    results: [{ id: '101', objectWriteTraceId: LEAD_ID }],
+    errors: [{ context: { objectWriteTraceId: [LEAD_ID] } }],
   }, 207);
   await assert.rejects(syncHubSpotCampaignContacts([contact()]), /outcome collision/);
+
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.includes('/contacts/')) {
+      return json({ numErrors: 1, results: [{ id: '101', objectWriteTraceId: LEAD_ID }] });
+    }
+    return json({});
+  };
+  await assert.rejects(syncHubSpotCampaignContacts([contact()]), /error correlation failed/);
 });
 
 test('partial contact updates use the custom unique id and omit undefined or null fields', async () => {
@@ -136,12 +236,12 @@ test('partial contact updates use the custom unique id and omit undefined or nul
     request = { url: String(input), body: JSON.parse(String(init?.body)) };
     return json({ id: '101' });
   };
-  await updateHubSpotContact('lead_001', {
+  await updateHubSpotContact(LEAD_ID, {
     fundae_sequence_status: 'stopped',
     fundae_reply_type: undefined,
     fundae_pipeline_value: null,
   });
-  assert.match(request!.url, /contacts\/lead_001\?idProperty=fundae_contact_id$/);
+  assert.match(request!.url, new RegExp(`contacts/${LEAD_ID}\\?idProperty=fundae_lead_id$`));
   assert.deepEqual(request!.body, { properties: { fundae_sequence_status: 'stopped' } });
 });
 
@@ -164,7 +264,7 @@ test('positive reply task replay upserts one deterministic key and reuses its as
   };
   const input = {
     campaignExternalId: 'FUNDAE_2026',
-    externalContactId: 'lead_001',
+    externalContactId: 'campaign_contact_001',
     hubspotContactId: '101',
     sourceEventId: 'reply:event:001',
     occurredAt: '2026-08-19T09:00:00.000Z',
@@ -192,6 +292,28 @@ test('HubSpot flag and outbound master independently dominate before any network
     await assert.rejects(syncHubSpotCampaignContacts([contact()]), /HUBSPOT_SYNC_ENABLED is false/);
     assert.equal(calls, 0);
   }
+});
+
+test('read-only preflight requires a token but not outbound or HubSpot write flags', async () => {
+  process.env.OUTBOUND_MASTER_ENABLED = 'false';
+  process.env.HUBSPOT_SYNC_ENABLED = 'false';
+  const requests: Array<{ url: string; method: string }> = [];
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    requests.push({ url, method: init?.method || 'GET' });
+    const propertyName = url.split('/').at(-1);
+    return json({ name: propertyName, hasUniqueValue: true });
+  };
+  assert.deepEqual(await testHubSpotConnection(), { ok: true });
+  assert.equal(requests.length, 3);
+  assert.ok(requests.every(({ method }) => method === 'GET'));
+  assert.ok(requests.some(({ url }) => url.endsWith('/contacts/fundae_lead_id')));
+
+  delete process.env.HUBSPOT_ACCESS_TOKEN;
+  assert.deepEqual(await testHubSpotConnection(), {
+    ok: false,
+    error: 'HUBSPOT_ACCESS_TOKEN is not configured',
+  });
 });
 
 test('webhook correlation does not trust eventId alone and fails closed on missing or mismatched identity', () => {
@@ -222,5 +344,6 @@ test('pure contact property builder never clears missing optional fields', () =>
   const properties = hubSpotContactProperties(contact({ firstName: undefined, companySize: undefined }));
   assert.ok(!('firstname' in properties));
   assert.ok(!('fundae_company_size' in properties));
-  assert.equal(properties.fundae_contact_id, 'lead_001');
+  assert.equal(properties.fundae_lead_id, LEAD_ID);
+  assert.equal(properties.fundae_contact_id, 'campaign_contact_001');
 });

@@ -25,6 +25,7 @@ test('durable dispatch master OFF performs zero RPC, package and worker calls', 
   const result = await executeGraphDispatchOnce({
     repository, enabled: () => false, workerId, mailboxKeyHash: 'b'.repeat(64),
     capabilitySecret: 's'.repeat(32),
+    alert: async () => undefined,
     buildPackageBySubmission: async () => { packageCalls += 1; return packageValue; },
     executeReserved: async () => { workerCalls += 1; throw new Error('must not run'); },
   });
@@ -61,6 +62,7 @@ test('durable dispatch uses exact claim-reserve-finalize shapes and package-by-s
   const result = await executeGraphDispatchOnce({
     repository, enabled: () => true, workerId, mailboxKeyHash: 'b'.repeat(64),
     capabilitySecret: 's'.repeat(32),
+    alert: async () => undefined,
     buildPackageBySubmission: async (input) => { packageInput = input; return packageValue; },
     executeReserved: async (job) => {
       assert.equal(job.capability_context, dispatchId);
@@ -84,6 +86,46 @@ test('durable dispatch uses exact claim-reserve-finalize shapes and package-by-s
   assert.equal(calls[0].args.p_limit, 1);
   assert.match(String(calls[1].args.p_opaque_marker), /^[a-f0-9]{64}$/);
   assert.equal(calls[2].args.p_evidence_hash, 'd'.repeat(64));
+});
+
+test('dispatch wrapper alerts fail-closed when terminal finalization is rejected', async () => {
+  const repository = new GraphOutboxRepository((async <T>(name: string) => {
+    if (name === 'claim_transactional_graph_dispatch') return {
+      accepted: true, reason_code: 'claimed', lease_expires_at: '2099-01-01T00:00:00Z',
+      reservation_id: null, outbox_state: null, recovery_required: false,
+      resume_existing_reservation: false,
+      items: [{
+        dispatch_id: dispatchId, submission_id: 'submission-1', resource: 'calculator',
+        payload_sha256: 'c'.repeat(64), attempt: 1, reservation_id: null,
+        outbox_state: null, recovery_required: false, resume_existing_reservation: false,
+        graph_draft_immutable_id: null, draft_neutralized: false, outcome_evidence_hash: null,
+      }],
+    } as T;
+    if (name === 'reserve_claimed_transactional_graph_dispatch') return {
+      authorized: true, duplicate: false, reason_code: 'reserved', reservation_id: reservationId,
+      lease_expires_at: '2099-01-01T00:00:00Z',
+    } as T;
+    if (name === 'finalize_transactional_graph_dispatch') return {
+      accepted: false, duplicate: false, reason_code: 'finalize_rejected',
+    } as T;
+    throw new Error(name);
+  }) as GraphRpc);
+  let alertCode = '';
+  const result = await executeGraphDispatchOnce({
+    repository, enabled: () => true, workerId, mailboxKeyHash: 'b'.repeat(64),
+    capabilitySecret: 's'.repeat(32),
+    alert: async (event) => { alertCode = event.code; throw new Error('alert unavailable'); },
+    buildPackageBySubmission: async () => packageValue,
+    executeReserved: async () => ({
+      state: 'confirmed_sent', reasonCode: 'confirmed_sent', reservationId,
+      duplicate: false, alertAttempted: false, evidenceHash: 'd'.repeat(64),
+    }),
+  });
+  assert.equal(result.state, 'ambiguous_halted');
+  assert.equal(result.reasonCode, 'dispatch_finalize_rejected');
+  assert.equal(result.alertAttempted, true);
+  assert.equal(result.alertDelivered, false);
+  assert.equal(alertCode, 'AMBIGUOUS_DISPATCH_FINALIZE_REJECTED');
 });
 
 function workerRepository(authorizeReason: 'send_cadence' | 'draft_neutralization_required') {
@@ -193,6 +235,7 @@ test('lease-expired post-reserve recovery never reserves or creates a draft and 
   const result = await executeGraphDispatchOnce({
     repository, enabled: () => true, workerId, mailboxKeyHash: 'b'.repeat(64),
     capabilitySecret: 's'.repeat(32),
+    alert: async () => undefined,
     buildPackageBySubmission: async () => packageValue,
     executeReserved: async (job, deliveryPackage) => executeTransactionalGraphJob(job, {
       repository,
@@ -253,6 +296,7 @@ test('dispatch finalizes a verified neutralization with literal suppressed_befor
   const result = await executeGraphDispatchOnce({
     repository, enabled: () => true, workerId, mailboxKeyHash: 'b'.repeat(64),
     capabilitySecret: 's'.repeat(32),
+    alert: async () => undefined,
     buildPackageBySubmission: async () => packageValue,
     executeReserved: async () => ({
       state: 'suppressed_before_send', reasonCode: 'draft_neutralized',
@@ -303,6 +347,7 @@ test('suppressed recovery neutralizes the existing draft and finalizes with orig
   const result = await executeGraphDispatchOnce({
     repository, enabled: () => true, workerId, mailboxKeyHash: 'b'.repeat(64),
     capabilitySecret: 's'.repeat(32),
+    alert: async () => undefined,
     buildPackageBySubmission: async () => packageValue,
     executeReserved: async (job, deliveryPackage) => executeTransactionalGraphJob(job, {
       repository,
@@ -354,6 +399,7 @@ test('terminal_recovered claim performs no package, reserve, worker, Graph or fi
   const result = await executeGraphDispatchOnce({
     repository, enabled: () => true, workerId, mailboxKeyHash: 'b'.repeat(64),
     capabilitySecret: 's'.repeat(32),
+    alert: async () => undefined,
     buildPackageBySubmission: async () => { packageCalls += 1; return packageValue; },
     executeReserved: async () => {
       workerCalls += 1;

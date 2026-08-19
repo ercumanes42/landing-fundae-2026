@@ -19,6 +19,7 @@ $migrationFiles = @(
   '20260819072840_cold_campaign_scheduler.sql',
   '20260819120000_dashboard_aggregates_rbac.sql',
   '20260819143000_inbound_reliability.sql',
+  '20260819155300_cold_campaign_hmac_identity.sql',
   '20260819170000_cold_campaign_scheduler.sql',
   '20260819183000_operational_observability.sql',
   '20260819190000_journey_retention_control.sql',

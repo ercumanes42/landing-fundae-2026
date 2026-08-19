@@ -20,6 +20,13 @@ function sha256(value) {
   return createHash('sha256').update(value).digest('hex');
 }
 
+function canonicalLeadId(email, secret) {
+  if (Buffer.byteLength(secret, 'utf8') < 32 || /replace|change.?me|placeholder|example|xxxxx/i.test(secret)) {
+    throw new Error('APPLY_LEAD_HASH_SECRET_INVALID');
+  }
+  return createHmac('sha256', secret).update(email.trim().toLowerCase()).digest('hex');
+}
+
 function fileHash(filePath) {
   return createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
 }
@@ -101,7 +108,7 @@ function canonicalRowHash(row) {
   return sha256(fields.join('\x1f'));
 }
 
-export function prepareProvisionRows(rows, { unsubscribeSecret, unsubscribeBaseUrl }) {
+export function prepareProvisionRows(rows, { unsubscribeSecret, unsubscribeBaseUrl, leadHashSecret }) {
   const base = new URL(unsubscribeBaseUrl);
   if (base.protocol !== 'https:' || base.username || base.password || base.pathname !== '/') throw new Error('APPLY_UNSUBSCRIBE_ORIGIN_INVALID');
   const provisionRows = [];
@@ -127,7 +134,7 @@ export function prepareProvisionRows(rows, { unsubscribeSecret, unsubscribeBaseU
         contact_id: contactId,
         account_id: text(source, 'account id'),
         email,
-        email_hash: sha256(email),
+        email_hash: canonicalLeadId(email, leadHashSecret),
         variant: text(source, 'variante nombre'),
         lot: text(source, 'lote envio').toUpperCase(),
         step,
@@ -216,6 +223,7 @@ export async function runProvisioner({ apply = false, fetchImpl = fetch } = {}) 
   const rows = prepareProvisionRows(analysis.rows, {
     unsubscribeSecret: process.env.UNSUBSCRIBE_TOKEN_SECRET || '',
     unsubscribeBaseUrl: process.env.UNSUBSCRIBE_PUBLIC_BASE_URL || '',
+    leadHashSecret: process.env.LEAD_HASH_SECRET || '',
   });
   const manifest = buildProvisionManifest(rows, analysis.report.logicalDatasetSha256);
   await applyProvisionManifest({

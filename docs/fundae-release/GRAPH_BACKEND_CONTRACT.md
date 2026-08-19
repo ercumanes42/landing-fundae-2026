@@ -1,6 +1,6 @@
 # Microsoft Graph backend contract
 
-Status: local static gate PASS; release G3 BLOCKED. Runtime OFF. No Graph/live/deploy evidence.
+Status: local static gate PASS; Supabase staging pack PASS; release G3 BLOCKED. Runtime OFF. No Graph/live/deploy evidence.
 
 ## Runtime flow
 
@@ -10,7 +10,7 @@ Writes are single-attempt. Only GET operations retry. `Retry-After` is honored; 
 
 Internal endpoint: `POST /api/internal/graph/transactional`. It requires fail-closed `Authorization: Bearer $GRAPH_WORKER_SECRET`; dashboard or legacy Basic credentials are not accepted. Master and transactional lane must both be literal `true`; defaults remain false.
 
-## SQL invariants implemented locally and still pending staging evidence
+## SQL invariants implemented and verified in staging
 
 1. Change `authorize_graph_draft_send` to
    `authorize_graph_draft_send(uuid,text,text,text)` by adding
@@ -55,8 +55,17 @@ Required RPCs (service role only, forced RLS tables, no PII in results):
   - Terminal evidence must already exist in Graph outbox; ambiguity remains blocked. Replay is idempotent.
 
 The package builder resolves server-side by `submission_id`; raw intake, finalize or send
-capabilities must never be stored in the dispatch table. Staging apply/concurrency evidence and
-the authorized fresh E2E gate are still required before the worker may be enabled.
+capabilities must never be stored in the dispatch table. The independent Supabase staging pack,
+postcheck, advisors and forward rollback are `STAGING_PASS`. The authorized fresh E2E gate is still
+required before the worker may be enabled.
+
+## Canonical runtime and superseded manual operation
+
+The Data Brain Graph worker and its private dispatch routes are the only canonical Outlook runtime.
+The untracked manual Make/Outlook reconciliation runbooks (`MAKE_TRANSACTIONAL_OUTLOOK_*` and
+`MAKE_TRANSACTIONAL_V3_*`) are `SUPERSEDED`, excluded from the release and must not be imported,
+executed or used as rollback. Make may schedule an authenticated empty worker call; it must not own
+draft creation, Outlook send, reconciliation or delivery truth.
 
 ## Rollback order
 
@@ -77,8 +86,8 @@ neutralization evidence, lease-expired post-reserve recovery with zero reserve/c
 pending suppressed-draft recovery, terminal auto-recovery with zero Graph work, legacy
 terminal protection, create/send timeouts, zero/multiple markers and eventual Sent Items.
 
-Remaining release blocker: migration still requires staging apply, PostgreSQL
-concurrency/advisor/rollback smoke and direct authorization for four fresh automatic E2E
-deliveries. Runtime remains OFF until those gates pass.
+Remaining release blockers: OAuth/application-RBAC mailbox evidence, durable alert delivery,
+runtime fault receipts and direct authorization for four fresh automatic E2E deliveries. Runtime
+remains OFF until those gates pass.
 
 Gate verdict: local implementation/mock fault tests PASS; G3 release/activation BLOCKED.

@@ -3,11 +3,11 @@
   "kind": "configuration-spec",
   "importable": false,
   "production_ready": false,
+  "enabled": false,
   "reason": "The exact Make HTTP module slug, scenario ID, connection and secret mapping were not verified in an authorized Make team. This file must not be imported or activated.",
   "authority": {
     "campaign_state": "Data Brain/PostgreSQL",
     "scheduler_only": "Make",
-    "forbidden_authorities": ["Google Sheets", "Make Data Store", "Make filters", "Make routers"],
     "one_tick_one_transition": true
   },
   "scenario": {

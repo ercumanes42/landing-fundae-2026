@@ -31,6 +31,9 @@ export interface GraphDraftIntegrity extends GraphMessageEvidence {
   recipients: string[];
   marker: string | null;
   attachments: GraphAttachment[];
+  from?: string | null;
+  sender?: string | null;
+  replyTo?: string[] | null;
 }
 
 export interface GraphInboundMessage {
@@ -52,6 +55,7 @@ export interface GraphInboundDeltaPage {
 
 interface GraphClientOptions {
   mailboxUserId: string;
+  mailboxAddress: string;
   accessToken: () => Promise<string>;
   fetchImpl?: typeof fetch;
   sleep?: (milliseconds: number) => Promise<void>;
@@ -104,15 +108,21 @@ export class SecureMicrosoftGraphClient {
   private readonly readMaxAttempts: number;
   private readonly maxRetryDelayMs: number;
   private readonly mailboxPath: string;
+  private readonly mailboxAddress: string;
 
   constructor(private readonly options: GraphClientOptions) {
     if (!validOpaque(options.mailboxUserId, 320)) throw new Error('Graph mailbox is invalid');
+    const mailboxAddress = options.mailboxAddress.trim().toLowerCase();
+    if (!validOpaque(mailboxAddress, 320) || !/^[^\s@]+@[^\s@]+$/.test(mailboxAddress)) {
+      throw new Error('Graph mailbox address is invalid');
+    }
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.sleep = options.sleep ?? ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
     this.timeoutMs = Math.max(250, options.requestTimeoutMs ?? 10_000);
     this.readMaxAttempts = Math.min(8, Math.max(1, options.readMaxAttempts ?? 4));
     this.maxRetryDelayMs = Math.max(0, options.maxRetryDelayMs ?? 30_000);
     this.mailboxPath = `/users/${encodeURIComponent(options.mailboxUserId)}`;
+    this.mailboxAddress = mailboxAddress;
   }
 
   private async requestOnce(
@@ -176,6 +186,9 @@ export class SecureMicrosoftGraphClient {
         subject: payload.subject,
         body: { contentType: 'HTML', content: payload.htmlBody },
         toRecipients: [{ emailAddress: { address: payload.recipient } }],
+        from: { emailAddress: { address: this.mailboxAddress } },
+        sender: { emailAddress: { address: this.mailboxAddress } },
+        replyTo: [{ emailAddress: { address: this.mailboxAddress } }],
         attachments: payload.attachments.map((attachment) => ({
           '@odata.type': '#microsoft.graph.fileAttachment',
           name: attachment.filename,
@@ -243,7 +256,7 @@ export class SecureMicrosoftGraphClient {
   async getDraftIntegrity(immutableId: string): Promise<GraphDraftIntegrity | null> {
     if (!validOpaque(immutableId)) throw new Error('Graph immutable ID is invalid');
     const query = new URLSearchParams({
-      '$select': 'id,changeKey,isDraft,parentFolderId,internetMessageId,sentDateTime,subject,body,toRecipients',
+      '$select': 'id,changeKey,isDraft,parentFolderId,internetMessageId,sentDateTime,subject,body,toRecipients,from,sender,replyTo',
       '$expand': `singleValueExtendedProperties($filter=id eq '${GRAPH_MARKER_PROPERTY_ID}'),attachments($select=name,contentType,contentBytes)`,
     });
     const response = await this.read(
@@ -265,6 +278,30 @@ export class SecureMicrosoftGraphClient {
         : null;
       return typeof address === 'string' ? address : '';
     }) : [];
+    const mailboxAddress = (value: unknown, field: string): string | null => {
+      if (value === undefined || value === null) return null;
+      const emailAddress = value && typeof value === 'object'
+        ? (value as Record<string, unknown>).emailAddress
+        : null;
+      const address = emailAddress && typeof emailAddress === 'object'
+        ? (emailAddress as Record<string, unknown>).address
+        : null;
+      if (!validOpaque(address, 320) || !/^[^\s@]+@[^\s@]+$/.test(address)) {
+        throw new GraphRequestError(`get_draft_integrity_${field}`, null, true);
+      }
+      return address;
+    };
+    let replyTo: string[] | null = null;
+    if (body.replyTo !== undefined && body.replyTo !== null) {
+      if (!Array.isArray(body.replyTo) || body.replyTo.length > 10) {
+        throw new GraphRequestError('get_draft_integrity_reply_to', null, true);
+      }
+      replyTo = body.replyTo.map((recipient) => {
+        const address = mailboxAddress(recipient, 'reply_to');
+        if (!address) throw new GraphRequestError('get_draft_integrity_reply_to', null, true);
+        return address;
+      });
+    }
     const properties = Array.isArray(body.singleValueExtendedProperties)
       ? body.singleValueExtendedProperties as Array<Record<string, unknown>>
       : [];
@@ -289,6 +326,9 @@ export class SecureMicrosoftGraphClient {
       recipients,
       marker: typeof markerProperty?.value === 'string' ? markerProperty.value : null,
       attachments,
+      from: mailboxAddress(body.from, 'from'),
+      sender: mailboxAddress(body.sender, 'sender'),
+      replyTo,
     };
   }
 

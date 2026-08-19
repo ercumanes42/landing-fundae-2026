@@ -3,7 +3,8 @@
 | Excel / Google Sheets | Data Brain | HubSpot |
 | --- | --- | --- |
 | `campaign_id` | `campaigns.external_id` | `fundae_campaign_id` |
-| `contact_id` / `cid` | `campaign_contacts.external_contact_id` | `fundae_contact_id` |
+| email normalizado | `campaign_contacts.email_hash` (`lead_id` HMAC canónico) | `fundae_lead_id` único |
+| `contact_id` / `cid` | `campaign_contacts.external_contact_id` | `fundae_contact_id` no único, solo correlación de campaña |
 | `account_id` | `campaign_contacts.external_account_id` | `fundae_account_id` on company/contact |
 | `variante_nombre` | `variant` | `fundae_variant` |
 | `recurso_asignado` | `magnet` | `fundae_magnet` |

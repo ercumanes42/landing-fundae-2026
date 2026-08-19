@@ -26,6 +26,8 @@ export async function POST(request: Request) {
       reason_code: result.reasonCode,
       dispatch_id: result.dispatchId,
       reservation_id: result.reservationId,
+      alert_attempted: result.alertAttempted ?? false,
+      alert_delivered: result.alertDelivered ?? null,
     }, { status, headers });
   } catch {
     return NextResponse.json(

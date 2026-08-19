@@ -20,6 +20,8 @@ export async function POST(request: Request) {
       accepted: result.state === 'confirmed_sent' || result.state === 'empty',
       state: result.state, reason_code: result.reasonCode,
       dispatch_id: result.dispatchId, reservation_id: result.reservationId,
+      alert_attempted: result.alertAttempted ?? false,
+      alert_delivered: result.alertDelivered ?? null,
     }, { status, headers });
   } catch {
     return NextResponse.json({ accepted: false, reason_code: 'campaign_dispatch_unavailable' }, { status: 503, headers });

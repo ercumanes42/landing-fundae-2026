@@ -52,6 +52,7 @@ export interface GraphWorkerResult {
   reservationId: string | null;
   duplicate: boolean;
   alertAttempted: boolean;
+  alertDelivered?: boolean | null;
   evidenceHash?: string | null;
   retryAfterSeconds?: number;
 }
@@ -69,6 +70,7 @@ interface GraphWorkerDependencies {
   markerPollAttempts?: number;
   sentPollAttempts?: number;
   pollIntervalMs?: number;
+  expectedMailboxAddress?: string;
   alert: (event: { code: string; reservationHash: string; evidenceHash: string }) => Promise<void>;
 }
 
@@ -169,13 +171,21 @@ function draftMatches(
   expected: GraphDraftPayload,
   immutableId: string,
   expectedChangeKeyHash: string,
+  expectedMailboxAddress?: string,
 ): boolean {
+  const normalizedMailbox = expectedMailboxAddress?.trim().toLowerCase();
+  const identityMatches = (value: string | null | undefined) =>
+    !normalizedMailbox || (typeof value === 'string' && value.trim().toLowerCase() === normalizedMailbox);
+  const replyToMatches = !normalizedMailbox ||
+    (Array.isArray(draft.replyTo) && draft.replyTo.length === 1 &&
+      draft.replyTo[0].trim().toLowerCase() === normalizedMailbox);
   return draft.id === immutableId && draft.isDraft === true && draft.marker === expected.marker &&
     draft.recipients.length === 1 &&
     draft.recipients[0].trim().toLowerCase() === expected.recipient.trim().toLowerCase() &&
     draft.subject === expected.subject && draft.htmlBody === expected.htmlBody &&
     draft.changeKey !== null && sha256(draft.changeKey) === expectedChangeKeyHash &&
-    sameAttachments(draft.attachments, expected.attachments);
+    sameAttachments(draft.attachments, expected.attachments) &&
+    identityMatches(draft.from) && identityMatches(draft.sender) && replyToMatches;
 }
 
 function isLeaseFresh(job: TransactionalGraphJob, now: () => number): boolean {
@@ -224,7 +234,7 @@ async function executeAlert(
       evidenceHash,
     });
   } catch {
-    return true;
+    return false;
   }
   return true;
 }
@@ -244,12 +254,14 @@ async function halt(
     failureCode: code,
     evidenceHash,
   });
+  const alertDelivered = await executeAlert(deps, job, code, evidenceHash);
   return {
     state: 'ambiguous_halted',
     reasonCode: result.reasonCode,
     reservationId: result.reservationId,
     duplicate: result.duplicate,
-    alertAttempted: await executeAlert(deps, job, code, evidenceHash),
+    alertAttempted: true,
+    alertDelivered,
     evidenceHash,
   };
 }
@@ -540,7 +552,13 @@ export async function executeTransactionalGraphJob(
   }
 
   const observed = await deps.client.getDraftIntegrity(immutableId);
-  if (!observed || !draftMatches(observed, expectedDraft, immutableId, changeKeyHash)) {
+  if (!observed || !draftMatches(
+    observed,
+    expectedDraft,
+    immutableId,
+    changeKeyHash,
+    deps.expectedMailboxAddress,
+  )) {
     return halt(deps, job, finalizeCapabilityHash, 'AMBIGUOUS_DRAFT_INTEGRITY', sha256(immutableId));
   }
   if (!deps.enabled() || !isLeaseFresh(job, now)) {
@@ -585,11 +603,16 @@ export async function executeTransactionalGraphJob(
       };
     }
     if (authorized.reasonCode === 'change_key_mismatch_ambiguous_halted') {
-      await executeAlert(deps, job, 'AMBIGUOUS_CHANGE_KEY_MISMATCH', stopSnapshotHash);
+      const alertDelivered = await executeAlert(
+        deps,
+        job,
+        'AMBIGUOUS_CHANGE_KEY_MISMATCH',
+        stopSnapshotHash,
+      );
       return {
         state: 'ambiguous_halted', reasonCode: authorized.reasonCode,
         reservationId: authorized.reservationId, duplicate: authorized.duplicate,
-        alertAttempted: true, evidenceHash: stopSnapshotHash,
+        alertAttempted: true, alertDelivered, evidenceHash: stopSnapshotHash,
       };
     }
     const neutralizationEvidenceHash = await neutralizeDraft(deps, immutableId);

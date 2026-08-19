@@ -2,11 +2,13 @@ import { createHash } from 'node:crypto';
 
 import { env, isOutboundCapabilityEnabled } from './env';
 
-export const HUBSPOT_CONTACT_ID_PROPERTY = 'fundae_contact_id';
+export const HUBSPOT_CONTACT_ID_PROPERTY = 'fundae_lead_id';
+export const HUBSPOT_CAMPAIGN_CONTACT_ID_PROPERTY = 'fundae_contact_id';
 export const HUBSPOT_COMPANY_ID_PROPERTY = 'fundae_account_id';
 export const HUBSPOT_TASK_ID_PROPERTY = 'fundae_task_idempotency_key';
 
 export interface HubSpotCampaignContact {
+  leadId: string;
   externalContactId: string;
   externalAccountId: string;
   email: string;
@@ -53,6 +55,7 @@ type HubSpotBatchError = {
 
 type HubSpotBatchResponse = {
   status?: string;
+  numErrors?: number;
   results?: HubSpotBatchResult[];
   errors?: HubSpotBatchError[];
 };
@@ -72,9 +75,13 @@ export function isHubSpotSyncEnabled(): boolean {
   return isOutboundCapabilityEnabled('HUBSPOT_SYNC_ENABLED');
 }
 
-function assertHubSpotEnabled(): void {
-  if (!isHubSpotSyncEnabled()) throw new Error('HUBSPOT_SYNC_ENABLED is false');
+function assertHubSpotConfigured(): void {
   if (!env('HUBSPOT_ACCESS_TOKEN')) throw new Error('HUBSPOT_ACCESS_TOKEN is not configured');
+}
+
+function assertHubSpotWriteEnabled(): void {
+  if (!isHubSpotSyncEnabled()) throw new Error('HUBSPOT_SYNC_ENABLED is false');
+  assertHubSpotConfigured();
 }
 
 function chunk<T>(items: T[], size: number): T[][] {
@@ -83,8 +90,13 @@ function chunk<T>(items: T[], size: number): T[][] {
   return groups;
 }
 
-async function requestHubSpot<T>(path: string, init: RequestInit): Promise<T> {
-  assertHubSpotEnabled();
+async function requestHubSpot<T>(
+  path: string,
+  init: RequestInit,
+  access: 'read' | 'write' = 'write',
+): Promise<T> {
+  if (access === 'read') assertHubSpotConfigured();
+  else assertHubSpotWriteEnabled();
   const response = await fetch(`https://api.hubapi.com${path}`, {
     ...init,
     headers: {
@@ -123,7 +135,8 @@ export function hubSpotContactProperties(record: HubSpotCampaignContact): Record
     company: record.companyName,
     jobtitle: record.jobTitle,
     fundae_campaign_id: record.campaignExternalId,
-    [HUBSPOT_CONTACT_ID_PROPERTY]: record.externalContactId,
+    [HUBSPOT_CONTACT_ID_PROPERTY]: record.leadId,
+    [HUBSPOT_CAMPAIGN_CONTACT_ID_PROPERTY]: record.externalContactId,
     [HUBSPOT_COMPANY_ID_PROPERTY]: record.externalAccountId,
     fundae_variant: record.variant,
     fundae_magnet: record.magnet,
@@ -132,21 +145,40 @@ export function hubSpotContactProperties(record: HubSpotCampaignContact): Record
   });
 }
 
-function deduplicateRecords(
-  records: HubSpotCampaignContact[],
-  idOf: (record: HubSpotCampaignContact) => string,
-  propertiesOf: (record: HubSpotCampaignContact) => Record<string, string>,
-  label: string,
-): HubSpotCampaignContact[] {
-  const unique = new Map<string, { record: HubSpotCampaignContact; fingerprint: string }>();
+function deduplicateContacts(records: HubSpotCampaignContact[]): HubSpotCampaignContact[] {
+  const unique = new Map<string, HubSpotCampaignContact>();
   for (const record of records) {
-    const id = idOf(record);
-    const fingerprint = JSON.stringify(propertiesOf(record));
-    const existing = unique.get(id);
-    if (existing && existing.fingerprint !== fingerprint) throw new Error(`Conflicting ${label} identity`);
-    if (!existing) unique.set(id, { record, fingerprint });
+    if (!/^[a-f0-9]{64}$/.test(record.leadId)) throw new Error('Invalid canonical lead identity');
+    const existing = unique.get(record.leadId);
+    if (existing && existing.email.trim().toLowerCase() !== record.email.trim().toLowerCase()) {
+      throw new Error('Conflicting contact identity');
+    }
+    if (!existing ||
+        `${record.campaignExternalId}\0${record.externalContactId}` <
+        `${existing.campaignExternalId}\0${existing.externalContactId}`) {
+      unique.set(record.leadId, record);
+    }
   }
-  return [...unique.values()].map(({ record }) => record);
+  return [...unique.values()].sort((left, right) => left.leadId.localeCompare(right.leadId));
+}
+
+function deduplicateCompanies(records: HubSpotCampaignContact[]): HubSpotCampaignContact[] {
+  const unique = new Map<string, HubSpotCampaignContact>();
+  for (const record of records) {
+    const existing = unique.get(record.externalAccountId);
+    const currentName = record.companyName?.trim().toLowerCase();
+    const existingName = existing?.companyName?.trim().toLowerCase();
+    if (existing && currentName && existingName && currentName !== existingName) {
+      throw new Error('Conflicting company identity');
+    }
+    if (!existing ||
+        `${record.campaignExternalId}\0${record.externalContactId}` <
+        `${existing.campaignExternalId}\0${existing.externalContactId}`) {
+      unique.set(record.externalAccountId, record);
+    }
+  }
+  return [...unique.values()].sort((left, right) =>
+    left.externalAccountId.localeCompare(right.externalAccountId));
 }
 
 function batchOutcome(
@@ -159,6 +191,13 @@ function batchOutcome(
   const expected = new Set(expectedTraceIds);
   const ids = new Map<string, string>();
   const rejected = new Set<string>();
+  const errors = response.errors ?? [];
+  if (response.numErrors !== undefined &&
+      (!Number.isSafeInteger(response.numErrors) || response.numErrors < 0 ||
+       (response.numErrors > 0 && errors.length === 0) ||
+       (response.numErrors === 0 && errors.length > 0))) {
+    throw new Error('HubSpot batch error correlation failed');
+  }
 
   for (const result of response.results ?? []) {
     const traceId = result.objectWriteTraceId;
@@ -170,7 +209,7 @@ function batchOutcome(
     ids.set(traceId, result.id);
   }
 
-  for (const error of response.errors ?? []) {
+  for (const error of errors) {
     const traceIds = error.context?.objectWriteTraceId;
     if (!Array.isArray(traceIds) || traceIds.length === 0) {
       throw new Error('HubSpot batch error correlation failed');
@@ -191,25 +230,20 @@ function batchOutcome(
 async function upsertContacts(
   records: HubSpotCampaignContact[],
 ): Promise<{ ids: Map<string, string>; failures: HubSpotSyncFailure[] }> {
-  const unique = deduplicateRecords(
-    records,
-    (record) => record.externalContactId,
-    hubSpotContactProperties,
-    'contact',
-  );
+  const unique = deduplicateContacts(records);
   const ids = new Map<string, string>();
   const failures: HubSpotSyncFailure[] = [];
   for (const group of chunk(unique, 100)) {
-    const traceIds = group.map((record) => record.externalContactId);
+    const traceIds = group.map((record) => record.leadId);
     const response = await requestHubSpot<HubSpotBatchResponse>(
       `/crm/objects/${apiVersion()}/contacts/batch/upsert`,
       {
         method: 'POST',
         body: JSON.stringify({
           inputs: group.map((record) => ({
-            id: record.externalContactId,
+            id: record.leadId,
             idProperty: HUBSPOT_CONTACT_ID_PROPERTY,
-            objectWriteTraceId: record.externalContactId,
+            objectWriteTraceId: record.leadId,
             properties: hubSpotContactProperties(record),
           })),
         }),
@@ -234,12 +268,7 @@ function companyProperties(record: HubSpotCampaignContact): Record<string, strin
 async function upsertCompanies(
   records: HubSpotCampaignContact[],
 ): Promise<{ ids: Map<string, string>; failures: HubSpotSyncFailure[] }> {
-  const unique = deduplicateRecords(
-    records,
-    (record) => record.externalAccountId,
-    companyProperties,
-    'company',
-  );
+  const unique = deduplicateCompanies(records);
   const ids = new Map<string, string>();
   const failures: HubSpotSyncFailure[] = [];
   for (const group of chunk(unique, 100)) {
@@ -272,7 +301,7 @@ async function associateContactsToCompanies(
 ): Promise<HubSpotSyncFailure[]> {
   const seen = new Set<string>();
   const inputs = records.flatMap((record) => {
-    const contactId = contactIds.get(record.externalContactId);
+    const contactId = contactIds.get(record.leadId);
     const companyId = companyIds.get(record.externalAccountId);
     if (!contactId || !companyId) return [];
     const key = `${contactId}:${companyId}`;
@@ -283,10 +312,21 @@ async function associateContactsToCompanies(
   const failures: HubSpotSyncFailure[] = [];
   for (const group of chunk(inputs, 2_000)) {
     try {
-      await requestHubSpot(`/crm/associations/${apiVersion()}/contacts/companies/batch/create`, {
-        method: 'POST',
-        body: JSON.stringify({ inputs: group.map(({ from, to }) => ({ from, to })) }),
-      });
+      const response = await requestHubSpot<HubSpotBatchResponse>(
+        `/crm/associations/${apiVersion()}/contacts/companies/batch/associate/default`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ inputs: group.map(({ from, to }) => ({ from, to })) }),
+        },
+      );
+      const errors = response.errors ?? [];
+      if ((response.status && response.status.toUpperCase() !== 'COMPLETE') ||
+          (response.numErrors !== undefined &&
+           (!Number.isSafeInteger(response.numErrors) || response.numErrors < 0)) ||
+          (response.numErrors ?? errors.length) > 0 ||
+          errors.length > 0) {
+        throw new Error('HubSpot association batch contained embedded errors');
+      }
     } catch {
       for (const { record } of group) {
         failures.push({ externalId: record.externalContactId, stage: 'association', reason: 'association_failed' });
@@ -299,12 +339,12 @@ async function associateContactsToCompanies(
 export async function syncHubSpotCampaignContacts(
   records: HubSpotCampaignContact[],
 ): Promise<HubSpotSyncResult> {
-  assertHubSpotEnabled();
+  assertHubSpotWriteEnabled();
   const contacts = await upsertContacts(records);
   const companies = await upsertCompanies(records);
   const companyFailures = new Set(companies.failures.map((failure) => failure.externalId));
   const missingCompanyAssociations = records
-    .filter((record) => companyFailures.has(record.externalAccountId) && contacts.ids.has(record.externalContactId))
+    .filter((record) => companyFailures.has(record.externalAccountId) && contacts.ids.has(record.leadId))
     .map((record) => ({
       externalId: record.externalContactId,
       stage: 'association' as const,
@@ -319,13 +359,13 @@ export async function syncHubSpotCampaignContacts(
 }
 
 export async function updateHubSpotContact(
-  externalContactId: string,
+  leadId: string,
   properties: Record<string, string | null | undefined>,
 ): Promise<void> {
   const patch = definedProperties(properties);
   if (Object.keys(patch).length === 0) return;
   await requestHubSpot(
-    `/crm/objects/${apiVersion()}/contacts/${encodeURIComponent(externalContactId)}?idProperty=${HUBSPOT_CONTACT_ID_PROPERTY}`,
+    `/crm/objects/${apiVersion()}/contacts/${encodeURIComponent(leadId)}?idProperty=${HUBSPOT_CONTACT_ID_PROPERTY}`,
     { method: 'PATCH', body: JSON.stringify({ properties: patch }) },
   );
 }
@@ -426,6 +466,7 @@ async function verifyUniqueProperty(objectType: string, propertyName: string): P
   const property = await requestHubSpot<{ name?: string; hasUniqueValue?: boolean }>(
     `/crm/properties/${apiVersion()}/${objectType}/${propertyName}`,
     { method: 'GET' },
+    'read',
   );
   if (property.name !== propertyName || property.hasUniqueValue !== true) {
     throw new Error(`HubSpot unique property missing for ${objectType}`);

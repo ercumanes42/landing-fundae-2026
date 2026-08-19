@@ -51,6 +51,11 @@ function client(options: {
   sendThrows?: boolean;
   markerMatches?: 0 | 1 | 2;
   sentSequence?: Array<'missing' | 'draft' | 'sent'>;
+  draftIdentity?: {
+    from?: string | null;
+    sender?: string | null;
+    replyTo?: string[] | null;
+  };
 } = {}) {
   let payload: GraphDraftPayload | null = null;
   let createCalls = 0;
@@ -83,6 +88,7 @@ function client(options: {
         id: 'DraftId', changeKey: 'Change1', isDraft: true, parentFolderId: 'Drafts',
         internetMessageId: null, sentDateTime: null, subject: payload.subject,
         htmlBody: payload.htmlBody, recipients: [payload.recipient], marker: payload.marker, attachments: [],
+        ...(options.draftIdentity ?? {}),
       }) : ({
         id: 'DraftId', changeKey: 'Change1', isDraft: true, parentFolderId: 'Drafts',
         internetMessageId: null, sentDateTime: null, subject: deliveryPackage.subject,
@@ -101,12 +107,21 @@ function client(options: {
   };
 }
 
-function deps(repository: GraphOutboxRepository, graphClient: ReturnType<typeof client>, enabled = () => true) {
+function deps(
+  repository: GraphOutboxRepository,
+  graphClient: ReturnType<typeof client>,
+  enabled = () => true,
+  options: {
+    expectedMailboxAddress?: string;
+    alert?: () => Promise<void>;
+  } = {},
+) {
   return {
     repository, client: graphClient.api, enabled, capabilitySecret: 's'.repeat(32),
     buildPackage: async () => deliveryPackage, sleep: async () => undefined,
     pollIntervalMs: 0, markerPollAttempts: 2, sentPollAttempts: 4,
-    alert: async () => undefined,
+    expectedMailboxAddress: options.expectedMailboxAddress,
+    alert: options.alert ?? (async () => undefined),
   };
 }
 
@@ -120,8 +135,15 @@ test('master OFF performs zero RPC and zero Graph calls', async () => {
 });
 
 test('fresh job sends the same draft once and confirms only after eventual Sent Items evidence', async () => {
-  const graph = client({ sentSequence: ['missing', 'draft', 'sent'] });
-  const result = await executeTransactionalGraphJob(job, deps(rpcRepository(), graph));
+  const graph = client({
+    sentSequence: ['missing', 'draft', 'sent'],
+    draftIdentity: {
+      from: 'mailbox@example.com', sender: 'mailbox@example.com', replyTo: ['mailbox@example.com'],
+    },
+  });
+  const result = await executeTransactionalGraphJob(job, deps(
+    rpcRepository(), graph, () => true, { expectedMailboxAddress: 'mailbox@example.com' },
+  ));
   assert.equal(result.state, 'confirmed_sent');
   assert.deepEqual(graph.stats(), { createCalls: 1, sendCalls: 1, deleteCalls: 0 });
 });
@@ -130,7 +152,44 @@ test('create timeout with zero marker matches halts and never sends', async () =
   const graph = client({ createThrows: true, markerMatches: 0 });
   const result = await executeTransactionalGraphJob(job, deps(rpcRepository(), graph));
   assert.equal(result.state, 'ambiguous_halted');
+  assert.equal(result.alertAttempted, true);
+  assert.equal(result.alertDelivered, true);
   assert.equal(graph.stats().sendCalls, 0);
+});
+
+test('missing draft mailbox identity halts before send when an expected address is configured', async () => {
+  const graph = client();
+  const result = await executeTransactionalGraphJob(job, deps(
+    rpcRepository(), graph, () => true, { expectedMailboxAddress: 'mailbox@example.com' },
+  ));
+  assert.equal(result.state, 'ambiguous_halted');
+  assert.equal(result.alertAttempted, true);
+  assert.equal(graph.stats().sendCalls, 0);
+});
+
+test('draft mailbox identity mismatch halts and reports alert delivery failure without leaking it', async () => {
+  const alertSecret = 'private-webhook-error-value';
+  const graph = client({
+    draftIdentity: {
+      from: 'unexpected@example.com',
+      sender: 'mailbox@example.com',
+      replyTo: ['mailbox@example.com'],
+    },
+  });
+  const result = await executeTransactionalGraphJob(job, deps(
+    rpcRepository(),
+    graph,
+    () => true,
+    {
+      expectedMailboxAddress: 'mailbox@example.com',
+      alert: async () => { throw new Error(alertSecret); },
+    },
+  ));
+  assert.equal(result.state, 'ambiguous_halted');
+  assert.equal(result.alertAttempted, true);
+  assert.equal(result.alertDelivered, false);
+  assert.equal(graph.stats().sendCalls, 0);
+  assert.doesNotMatch(JSON.stringify(result), new RegExp(alertSecret));
 });
 
 test('multiple marker matches halt and never send', async () => {

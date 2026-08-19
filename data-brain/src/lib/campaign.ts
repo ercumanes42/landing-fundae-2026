@@ -50,6 +50,7 @@ interface CampaignRow {
 interface CampaignContactRow {
   id: string;
   external_contact_id: string;
+  email_hash: string;
   hubspot_contact_id?: string | null;
 }
 
@@ -163,7 +164,7 @@ async function getCampaignContact(
 ): Promise<CampaignContactRow> {
   const rows = await selectRows<CampaignContactRow>(
     'campaign_contacts',
-    `select=id,external_contact_id,hubspot_contact_id&campaign_id=eq.${encodeURIComponent(campaignId)}&external_contact_id=eq.${encodeURIComponent(externalContactId)}&limit=1`,
+    `select=id,external_contact_id,email_hash,hubspot_contact_id&campaign_id=eq.${encodeURIComponent(campaignId)}&external_contact_id=eq.${encodeURIComponent(externalContactId)}&limit=1`,
   );
   if (!rows[0]) throw new Error('Unknown campaign contact id');
   return rows[0];
@@ -294,7 +295,7 @@ export async function recordCampaignOperation(input: CampaignOperationInput): Pr
   if (isHubSpotSyncEnabled()) {
     const hubSpotProperties = hubSpotPropertiesForOperation(input.event_name, patch, occurredAt);
     if (Object.keys(hubSpotProperties).length) {
-      await updateHubSpotContact(contact.external_contact_id, hubSpotProperties);
+      await updateHubSpotContact(contact.email_hash, hubSpotProperties);
     }
     if (input.event_name === 'positive_reply') {
       if (!contact.hubspot_contact_id) throw new Error('Positive reply has no unambiguous HubSpot contact association');
@@ -314,8 +315,10 @@ export async function recordCampaignOperation(input: CampaignOperationInput): Pr
 function toHubSpotContact(
   contact: CampaignContactImport,
   externalId: string,
+  leadId: string,
 ): HubSpotCampaignContact {
   return {
+    leadId,
     externalContactId: contact.contact_id,
     externalAccountId: contact.account_id,
     email: contact.email.trim().toLowerCase(),
@@ -386,21 +389,32 @@ export async function importCampaignContacts(request: CampaignImportRequest): Pr
 
   let hubspotSynced = 0;
   if (isHubSpotSyncEnabled()) {
-    const sync = await syncHubSpotCampaignContacts(request.contacts.map((contact) => toHubSpotContact(contact, externalId)));
+    const storedByExternalId = new Map(stored.map((contact) => [contact.external_contact_id, contact]));
+    const hubSpotContacts = request.contacts.map((contact) => {
+      const storedContact = storedByExternalId.get(contact.contact_id);
+      if (!storedContact?.email_hash) throw new Error('Campaign contact is missing canonical lead identity');
+      return toHubSpotContact(contact, externalId, storedContact.email_hash);
+    });
+    const sync = await syncHubSpotCampaignContacts(hubSpotContacts);
     const failuresByContact = new Map<string, string>();
     const companyByContact = new Map(request.contacts.map((contact) => [contact.contact_id, contact.account_id]));
+    const leadByContact = new Map(hubSpotContacts.map((contact) => [contact.externalContactId, contact.leadId]));
     for (const failure of sync.failures) {
       if (failure.stage === 'company') {
         for (const [contactId, accountId] of companyByContact) {
           if (accountId === failure.externalId) failuresByContact.set(contactId, 'partial');
         }
+      } else if (failure.stage === 'contact') {
+        for (const [contactId, leadId] of leadByContact) {
+          if (leadId === failure.externalId) failuresByContact.set(contactId, 'failed');
+        }
       } else {
-        failuresByContact.set(failure.externalId, failure.stage === 'contact' ? 'failed' : 'partial');
+        failuresByContact.set(failure.externalId, 'partial');
       }
     }
     const collisions: string[] = [];
     for (const storedContact of stored) {
-      const hubspotContactId = sync.contactIds.get(storedContact.external_contact_id);
+      const hubspotContactId = sync.contactIds.get(storedContact.email_hash);
       const syncFailure = failuresByContact.get(storedContact.external_contact_id);
       if (storedContact.hubspot_contact_id && hubspotContactId && storedContact.hubspot_contact_id !== hubspotContactId) {
         collisions.push(storedContact.external_contact_id);
@@ -433,7 +447,7 @@ export async function recordHubSpotContactEvent(input: {
 }): Promise<boolean> {
   const contacts = await selectRows<CampaignContactRow & { campaign_id: string }>(
     'campaign_contacts',
-    `select=id,external_contact_id,hubspot_contact_id,campaign_id&hubspot_contact_id=eq.${encodeURIComponent(input.hubspotContactId)}&limit=2`,
+    `select=id,external_contact_id,email_hash,hubspot_contact_id,campaign_id&hubspot_contact_id=eq.${encodeURIComponent(input.hubspotContactId)}&limit=2`,
   );
   if (contacts.length > 1) throw new Error('HubSpot contact correlation is ambiguous');
   const contact = contacts[0];
@@ -474,14 +488,5 @@ export async function recordHubSpotContactEvent(input: {
       crm_value: input.propertyValue || '',
     },
   });
-  if (eventName === 'positive_reply' && isHubSpotSyncEnabled()) {
-    await upsertPositiveReplyTask({
-      campaignExternalId: campaign.external_id,
-      externalContactId: contact.external_contact_id,
-      hubspotContactId: input.hubspotContactId,
-      sourceEventId: input.sourceEventId,
-      occurredAt: input.occurredAt || new Date().toISOString(),
-    });
-  }
   return true;
 }

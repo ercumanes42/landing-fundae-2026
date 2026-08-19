@@ -140,11 +140,14 @@ function validateOperations(rows) {
 
   const blueprints = {
     sender: validateBlueprint('email_sender_blueprint.json', errors),
+    transactional: validateBlueprint('transactional_dispatch_blueprint.json', errors),
     replies: validateBlueprint('reply_monitor_blueprint.json', errors),
     thirdParty: validateBlueprint('landing_events_blueprint.json', errors),
   };
   const sender = blueprints.sender;
-  if (sender.authority?.campaign_state !== 'Data Brain/PostgreSQL' ||
+  if (sender.enabled !== false ||
+      sender.authority?.campaign_state !== 'Data Brain/PostgreSQL' ||
+      sender.authority?.scheduler_only !== 'Make' ||
       sender.authority?.one_tick_one_transition !== true ||
       sender.scenario?.modules?.length !== 1 ||
       sender.scenario.modules[0]?.endpoint !== '/api/internal/graph/campaign-dispatch' ||
@@ -157,9 +160,17 @@ function validateOperations(rows) {
       sender.database_gates?.timezone !== 'Europe/Madrid') {
     errors.push('Sender configuration spec must remain non-importable, OFF and bounded');
   }
-  if (!sender.authority?.forbidden_authorities?.includes('Google Sheets') ||
-      !sender.authority?.forbidden_authorities?.includes('Make Data Store')) {
-    errors.push('Sender must explicitly reject legacy Sheets/Data Store authority');
+  const transactional = blueprints.transactional;
+  if (transactional.enabled !== false ||
+      transactional.authority?.transactional_state !== 'Data Brain/PostgreSQL' ||
+      transactional.authority?.one_tick_one_transition !== true ||
+      transactional.scenario?.modules?.length !== 1 ||
+      transactional.scenario.modules[0]?.endpoint !== '/api/internal/graph/dispatch' ||
+      transactional.scenario.modules[0]?.body !== null ||
+      transactional.feature_gates?.outbound_master !== false ||
+      transactional.feature_gates?.transactional_outlook !== false ||
+      Object.keys(transactional.feature_gates ?? {}).length !== 2) {
+    errors.push('Transactional dispatcher must remain a one-call, OFF scheduler with Data Brain authority');
   }
   return {
     ok: errors.length === 0,
@@ -169,7 +180,7 @@ function validateOperations(rows) {
       workers: 1,
       minimumSpacingSeconds: MIN_SPACING_SECONDS,
       maximumDailySends: MAX_DAILY_SENDS,
-      exactTimingSource: 'Make sequential queue; Excel dates are eligibility times',
+      exactTimingSource: 'Data Brain single-worker reservations; workbook dates are eligibility times',
     },
     lotSlotCounts: Object.fromEntries(
       [...slotGroups.entries()]

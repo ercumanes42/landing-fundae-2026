@@ -33,3 +33,36 @@ test('proxy bypasses dashboard auth only for exact machine paths while handlers 
   assert.match(route, /authorizeGraphWorkerBearerRequest\(request\)/);
   assert.match(route, /content-length/);
 });
+
+test('environment example exposes inbound and Calendly gates fail-closed', () => {
+  const example = readFileSync(new URL('../../.env.example', import.meta.url), 'utf8');
+  assert.match(example, /^INBOUND_MAILBOX_ENABLED=false$/m);
+  assert.match(example, /^INBOUND_MAILBOX_BOOTSTRAP_FROM=""$/m);
+  assert.match(example, /^CALENDLY_WEBHOOK_ENABLED=false$/m);
+  assert.match(example, /^CALENDLY_WEBHOOK_SIGNING_KEY=""$/m);
+  assert.match(example, /^GRAPH_MAILBOX_ADDRESS=""$/m);
+});
+
+test('Graph runtime requires a separate mailbox address and never derives it from user id', () => {
+  const runtime = readFileSync(new URL('./graph-runtime.ts', import.meta.url), 'utf8');
+  assert.match(runtime, /required\('GRAPH_MAILBOX_ADDRESS'\)/);
+  assert.match(runtime, /mailboxAddress,/);
+  assert.match(runtime, /expectedMailboxAddress: mailboxAddress/);
+  assert.doesNotMatch(runtime, /mailboxUserId\.includes\('@'\)/);
+  assert.match(
+    runtime,
+    /executeConfiguredTransactionalGraphJob[\s\S]+if \(!enabled\(\)\)[\s\S]+const tenantId = required/,
+  );
+});
+
+test('private Graph routes expose alert delivery separately from alert attempt', () => {
+  for (const relative of [
+    '../app/api/internal/graph/transactional/route.ts',
+    '../app/api/internal/graph/dispatch/route.ts',
+    '../app/api/internal/graph/campaign-dispatch/route.ts',
+  ]) {
+    const route = readFileSync(new URL(relative, import.meta.url), 'utf8');
+    assert.match(route, /alert_attempted/);
+    assert.match(route, /alert_delivered/);
+  }
+});

@@ -15,12 +15,30 @@ declare
   v_result jsonb;
   v_claim_token uuid;
   v_cursor_hash text;
+  v_smoke_email text := 'HMAC.Smoke@Example.invalid ';
+  v_plain_sha256 text;
+  v_hmac_sha256 text;
 begin
   if not exists (
     select 1 from public.outbound_delivery_control
     where singleton and not master_enabled and not transactional_enabled and not cold_enabled
   ) then
     raise exception using errcode = '55000', message = 'smoke_requires_outbound_off';
+  end if;
+
+  v_plain_sha256 := pg_catalog.encode(extensions.digest(
+    pg_catalog.convert_to(pg_catalog.lower(pg_catalog.btrim(v_smoke_email)),'UTF8'),
+    'sha256'
+  ),'hex');
+  v_hmac_sha256 := pg_catalog.encode(extensions.hmac(
+    pg_catalog.convert_to(pg_catalog.lower(pg_catalog.btrim(v_smoke_email)),'UTF8'),
+    pg_catalog.convert_to('staging-smoke-hmac-key-not-a-secret','UTF8'),
+    'sha256'
+  ),'hex');
+  if fundae_private.is_cold_campaign_hmac_identity(v_smoke_email,v_plain_sha256)
+     or not fundae_private.is_cold_campaign_hmac_identity(v_smoke_email,v_hmac_sha256)
+     or fundae_private.is_cold_campaign_hmac_identity(v_smoke_email,'not-a-hash') then
+    raise exception using errcode = '23514', message = 'hmac_identity_guard_smoke_failed';
   end if;
 
   insert into public.dashboard_principals(actor_hash, role, granted_by_hash)

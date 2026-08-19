@@ -33,6 +33,7 @@ export async function POST(request: Request) {
       reservation_id: result.reservationId,
       duplicate: result.duplicate,
       alert_attempted: result.alertAttempted,
+      alert_delivered: result.alertDelivered ?? null,
     }, { status, headers });
   } catch (error) {
     const invalid = error instanceof SyntaxError ||

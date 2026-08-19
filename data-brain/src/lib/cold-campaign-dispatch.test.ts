@@ -28,6 +28,14 @@ function claim(recovery = false) {
   };
 }
 
+function terminalRecoveryClaim(evidenceHash: string | null) {
+  const value = claim(true);
+  return {
+    ...value,
+    items: [{ ...value.items[0], outbox_state: 'confirmed_sent', outcome_evidence_hash: evidenceHash }],
+  };
+}
+
 const htmlBody = `<p>Campaign message with required identification and unsubscribe <a href="https://example.test/baja?token=${'u'.repeat(43)}">unsubscribe</a></p>`;
 const payloadHash = createHash('sha256').update(JSON.stringify({
   recipient: 'person@example.test', subject: 'Subject', body: htmlBody, attachments: [],
@@ -40,6 +48,7 @@ test('OFF returns before DB or Graph and therefore performs zero network-capable
   const result = await executeColdCampaignTick({
     enabled: () => false, workerId, workerToken, mailboxKeyHash: hash,
     capabilitySecret: 'secret-'.padEnd(40, 's'),
+    alert: async () => undefined,
     rpc: async () => { calls += 1; throw new Error('must not execute'); },
     executeGraph: async () => { calls += 1; throw new Error('must not execute'); },
   });
@@ -52,6 +61,7 @@ test('one tick claims one transition, binds cold reservation, executes Graph and
   const deps: ColdTickDependencies = {
     enabled: () => true, workerId, workerToken, mailboxKeyHash: hash,
     capabilitySecret: 'secret-'.padEnd(40, 's'),
+    alert: async () => undefined,
     rpc: async <T>(name: string) => {
       calls.push(name);
       if (name === 'claim_cold_campaign_dispatch') return claim() as T;
@@ -79,6 +89,7 @@ test('crash replay resumes the same reserved dispatch and never creates a second
   const deps: ColdTickDependencies = {
     enabled: () => true, workerId, workerToken, mailboxKeyHash: hash,
     capabilitySecret: 'secret-'.padEnd(40, 's'),
+    alert: async () => undefined,
     rpc: async <T>(name: string) => {
       if (name === 'claim_cold_campaign_dispatch') return claim(attempts > 0) as T;
       if (name === 'get_claimed_cold_campaign_package') return storedPackage as T;
@@ -110,6 +121,7 @@ test('tampered recipient, subject, body or unsubscribe binding HALTs before rese
     const result = await executeColdCampaignTick({
       enabled: () => true, workerId, workerToken, mailboxKeyHash: hash,
       capabilitySecret: 'secret-'.padEnd(40, 's'),
+      alert: async () => { throw new Error('alert unavailable'); },
       rpc: async <T>(name: string) => {
         calls.push(name);
         if (name === 'claim_cold_campaign_dispatch') return claim() as T;
@@ -120,6 +132,8 @@ test('tampered recipient, subject, body or unsubscribe binding HALTs before rese
       executeGraph: async () => { throw new Error('Graph must not execute'); },
     });
     assert.equal(result.state, 'ambiguous_halted');
+    assert.equal(result.alertAttempted, true);
+    assert.equal(result.alertDelivered, false);
     assert.equal(calls.includes('bind_cold_campaign_reservation'), false);
     assert.equal(calls.at(-1), 'halt_cold_campaign_dispatch');
   }
@@ -141,7 +155,7 @@ test('draft_created cold recovery uses the real Graph worker, sends the same dra
   };
   const result = await executeColdCampaignTick({
     enabled: () => true, workerId, workerToken, mailboxKeyHash: hash,
-    capabilitySecret: 'secret-'.padEnd(40, 's'), rpc,
+    capabilitySecret: 'secret-'.padEnd(40, 's'), alert: async () => undefined, rpc,
     executeGraph: async (job, deliveryPackage) => executeTransactionalGraphJob(job, {
       enabled: () => true,
       capabilitySecret: 'secret-'.padEnd(40, 's'),
@@ -175,6 +189,7 @@ test('an ambiguous payload halt kills the lane so the next tick performs zero re
   const deps: ColdTickDependencies = {
     enabled: () => true, workerId, workerToken, mailboxKeyHash: hash,
     capabilitySecret: 'secret-'.padEnd(40, 's'),
+    alert: async () => undefined,
     rpc: async <T>(name: string) => {
       if (name === 'claim_cold_campaign_dispatch') return (killed
         ? { accepted: false, reason_code: 'master_or_lane_disabled', items: [] }
@@ -190,6 +205,59 @@ test('an ambiguous payload halt kills the lane so the next tick performs zero re
   assert.equal((await executeColdCampaignTick(deps)).reasonCode, 'master_or_lane_disabled');
   assert.equal(reserveCalls, 0);
   assert.equal(graphCalls, 0);
+});
+
+test('cold recovery wrapper alerts for missing evidence and rejected terminal finalization', async () => {
+  for (const mode of ['missing_evidence', 'finalize_rejected'] as const) {
+    let alerts = 0;
+    const result = await executeColdCampaignTick({
+      enabled: () => true, workerId, workerToken, mailboxKeyHash: hash,
+      capabilitySecret: 'secret-'.padEnd(40, 's'),
+      alert: async () => { alerts += 1; },
+      rpc: async <T>(name: string) => {
+        if (name === 'claim_cold_campaign_dispatch') {
+          return terminalRecoveryClaim(mode === 'missing_evidence' ? null : hash) as T;
+        }
+        if (name === 'get_claimed_cold_campaign_package') return storedPackage as T;
+        if (name === 'halt_cold_campaign_dispatch') return { accepted: true } as T;
+        if (name === 'finalize_cold_campaign_dispatch') return { accepted: false } as T;
+        throw new Error(name);
+      },
+      executeGraph: async () => { throw new Error('Graph must not execute during terminal recovery'); },
+    });
+    assert.equal(result.state, 'ambiguous_halted');
+    assert.equal(result.reasonCode, mode === 'missing_evidence' ? 'recovery_evidence_missing' : 'finalize_rejected');
+    assert.equal(result.alertAttempted, true);
+    assert.equal(result.alertDelivered, true);
+    assert.equal(alerts, 1);
+  }
+});
+
+test('cold wrapper alerts when finalization after Graph evidence is rejected', async () => {
+  let alerts = 0;
+  const result = await executeColdCampaignTick({
+    enabled: () => true, workerId, workerToken, mailboxKeyHash: hash,
+    capabilitySecret: 'secret-'.padEnd(40, 's'),
+    alert: async () => { alerts += 1; },
+    rpc: async <T>(name: string) => {
+      if (name === 'claim_cold_campaign_dispatch') return claim() as T;
+      if (name === 'get_claimed_cold_campaign_package') return storedPackage as T;
+      if (name === 'bind_cold_campaign_reservation') return {
+        authorized: true, reservation_id: reservationId, reason_code: 'reserved',
+      } as T;
+      if (name === 'finalize_cold_campaign_dispatch') return { accepted: false } as T;
+      throw new Error(name);
+    },
+    executeGraph: async () => ({
+      state: 'confirmed_sent', reasonCode: 'confirmed_sent', reservationId,
+      duplicate: false, alertAttempted: false, evidenceHash: hash,
+    }),
+  });
+  assert.equal(result.state, 'ambiguous_halted');
+  assert.equal(result.reasonCode, 'finalize_rejected');
+  assert.equal(result.alertAttempted, true);
+  assert.equal(result.alertDelivered, true);
+  assert.equal(alerts, 1);
 });
 test('SQL contract serializes two workers, bounds retries and enforces Madrid day/spacing gates', () => {
   const sql = readFileSync(new URL('../../supabase/migrations/20260819170000_cold_campaign_scheduler.sql', import.meta.url), 'utf8').toLowerCase();

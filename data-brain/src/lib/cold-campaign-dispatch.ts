@@ -34,6 +34,8 @@ export interface ColdTickResult {
   reasonCode: string;
   dispatchId: string | null;
   reservationId: string | null;
+  alertAttempted?: boolean;
+  alertDelivered?: boolean | null;
 }
 
 function isColdTerminalState(state: GraphOutboxState): state is Extract<ColdTickResult['state'], 'confirmed_sent' | 'definitive_failed' | 'suppressed_before_send' | 'ambiguous_halted'> {
@@ -47,7 +49,22 @@ export interface ColdTickDependencies {
   workerToken: string;
   mailboxKeyHash: string;
   capabilitySecret: string;
+  alert: (event: { code: string; reservationHash: string; evidenceHash: string }) => Promise<void>;
   executeGraph: (job: TransactionalGraphJob, deliveryPackage: GraphDeliveryPackage) => Promise<GraphWorkerResult>;
+}
+
+async function attemptCriticalAlert(
+  deps: ColdTickDependencies,
+  code: string,
+  reservationId: string,
+  evidenceHash: string,
+): Promise<{ alertAttempted: true; alertDelivered: boolean }> {
+  try {
+    await deps.alert({ code, reservationHash: sha256(reservationId), evidenceHash });
+    return { alertAttempted: true, alertDelivered: true };
+  } catch {
+    return { alertAttempted: true, alertDelivered: false };
+  }
 }
 
 function derive(secret: string, purpose: string, context: string): Buffer {
@@ -125,7 +142,10 @@ export async function executeColdCampaignTick(deps: ColdTickDependencies): Promi
       p_dispatch_id: item.dispatchId, p_worker_id: deps.workerId, p_worker_token: deps.workerToken,
       p_reason_code: 'PAYLOAD_BINDING_MISMATCH', p_evidence_hash: evidenceHash,
     });
-    return { state: 'ambiguous_halted', reasonCode: 'payload_binding_mismatch', dispatchId: item.dispatchId, reservationId: item.reservationId };
+    const alert = await attemptCriticalAlert(
+      deps, 'AMBIGUOUS_COLD_PAYLOAD_BINDING_MISMATCH', item.reservationId ?? item.dispatchId, evidenceHash,
+    );
+    return { state: 'ambiguous_halted', reasonCode: 'payload_binding_mismatch', dispatchId: item.dispatchId, reservationId: item.reservationId, ...alert };
   }
   const packageHmacSha256 = createHmac('sha256', intakeCapability).update(canonical, 'utf8').digest('hex');
   const deliveryPackage: GraphDeliveryPackage = {
@@ -152,18 +172,27 @@ export async function executeColdCampaignTick(deps: ColdTickDependencies): Promi
   if (item.recoveryRequired && item.outboxState && isColdTerminalState(item.outboxState) &&
       (item.outboxState !== 'suppressed_before_send' || item.draftNeutralized)) {
     if (!item.outcomeEvidenceHash) {
+      const evidenceHash = sha256(`cold-recovery-evidence-missing-v1\0${item.dispatchId}`);
       await deps.rpc('halt_cold_campaign_dispatch', {
         p_dispatch_id: item.dispatchId, p_worker_id: deps.workerId, p_worker_token: deps.workerToken,
-        p_reason_code: 'RECOVERY_EVIDENCE_MISSING', p_evidence_hash: sha256(`cold-recovery-evidence-missing-v1\0${item.dispatchId}`),
+        p_reason_code: 'RECOVERY_EVIDENCE_MISSING', p_evidence_hash: evidenceHash,
       });
-      return { state: 'ambiguous_halted', reasonCode: 'recovery_evidence_missing', dispatchId: item.dispatchId, reservationId };
+      const alert = await attemptCriticalAlert(
+        deps, 'AMBIGUOUS_COLD_RECOVERY_EVIDENCE_MISSING', reservationId, evidenceHash,
+      );
+      return { state: 'ambiguous_halted', reasonCode: 'recovery_evidence_missing', dispatchId: item.dispatchId, reservationId, ...alert };
     }
     const finalized = await deps.rpc<Record<string, unknown>>('finalize_cold_campaign_dispatch', {
       p_dispatch_id: item.dispatchId, p_worker_id: deps.workerId, p_worker_token: deps.workerToken,
       p_outcome: item.outboxState, p_evidence_hash: item.outcomeEvidenceHash,
     });
-    return { state: finalized.accepted === true ? item.outboxState : 'ambiguous_halted',
-      reasonCode: finalized.accepted === true ? 'terminal_recovered' : 'finalize_rejected', dispatchId: item.dispatchId, reservationId };
+    if (finalized.accepted !== true) {
+      const alert = await attemptCriticalAlert(
+        deps, 'AMBIGUOUS_COLD_RECOVERY_FINALIZE_REJECTED', reservationId, item.outcomeEvidenceHash,
+      );
+      return { state: 'ambiguous_halted', reasonCode: 'finalize_rejected', dispatchId: item.dispatchId, reservationId, ...alert };
+    }
+    return { state: item.outboxState, reasonCode: 'terminal_recovered', dispatchId: item.dispatchId, reservationId };
   }
   const workerResult = await deps.executeGraph({
     reservation_id: reservationId, finalize_capability: finalizeCapability,
@@ -185,6 +214,18 @@ export async function executeColdCampaignTick(deps: ColdTickDependencies): Promi
     p_dispatch_id: item.dispatchId, p_worker_id: deps.workerId, p_worker_token: deps.workerToken,
     p_outcome: workerResult.state, p_evidence_hash: workerResult.evidenceHash,
   });
-  if (finalized.accepted !== true) return { state: 'ambiguous_halted', reasonCode: 'finalize_rejected', dispatchId: item.dispatchId, reservationId };
-  return { state: workerResult.state, reasonCode: workerResult.reasonCode, dispatchId: item.dispatchId, reservationId };
+  if (finalized.accepted !== true) {
+    const alert = await attemptCriticalAlert(
+      deps, 'AMBIGUOUS_COLD_FINALIZE_REJECTED', reservationId, workerResult.evidenceHash,
+    );
+    return { state: 'ambiguous_halted', reasonCode: 'finalize_rejected', dispatchId: item.dispatchId, reservationId, ...alert };
+  }
+  return {
+    state: workerResult.state,
+    reasonCode: workerResult.reasonCode,
+    dispatchId: item.dispatchId,
+    reservationId,
+    alertAttempted: workerResult.alertAttempted,
+    alertDelivered: workerResult.alertDelivered ?? null,
+  };
 }

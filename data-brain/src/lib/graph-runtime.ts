@@ -18,6 +18,12 @@ function required(key: Parameters<typeof env>[0], minimum = 1): string {
   return value;
 }
 
+function requiredMailboxAddress(): string {
+  const address = required('GRAPH_MAILBOX_ADDRESS').toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+$/.test(address)) throw new Error('Graph runtime is not configured');
+  return address;
+}
+
 function boundedInteger(key: Parameters<typeof env>[0], fallback: number, minimum: number, maximum: number): number {
   const value = Number(env(key));
   return Number.isSafeInteger(value) ? Math.min(maximum, Math.max(minimum, value)) : fallback;
@@ -93,14 +99,26 @@ async function sendAlert(event: { code: string; reservationHash: string; evidenc
 }
 
 export async function executeConfiguredTransactionalGraphJob(input: unknown) {
+  const enabled = () => isOutboundCapabilityEnabled('TRANSACTIONAL_OUTLOOK_ENABLED');
+  if (!enabled()) {
+    return {
+      state: 'off' as const,
+      reasonCode: 'master_or_lane_disabled',
+      reservationId: null,
+      duplicate: false,
+      alertAttempted: false,
+    };
+  }
   const tenantId = required('GRAPH_TENANT_ID');
   const clientId = required('GRAPH_CLIENT_ID');
   const clientSecret = required('GRAPH_CLIENT_SECRET', 16);
   const mailboxUserId = required('GRAPH_MAILBOX_USER_ID');
+  const mailboxAddress = requiredMailboxAddress();
   const capabilitySecret = required('GRAPH_OUTBOX_CAPABILITY_SECRET', 32);
   const timeoutMs = boundedInteger('GRAPH_REQUEST_TIMEOUT_MS', 10_000, 250, 60_000);
   const client = new SecureMicrosoftGraphClient({
     mailboxUserId,
+    mailboxAddress,
     accessToken: createGraphTokenProvider({ tenantId, clientId, clientSecret, timeoutMs }),
     requestTimeoutMs: timeoutMs,
     readMaxAttempts: boundedInteger('GRAPH_READ_MAX_ATTEMPTS', 4, 1, 8),
@@ -110,11 +128,12 @@ export async function executeConfiguredTransactionalGraphJob(input: unknown) {
     repository: new GraphOutboxRepository(),
     client,
     buildPackage: buildTransactionalDeliveryPackage,
-    enabled: () => isOutboundCapabilityEnabled('TRANSACTIONAL_OUTLOOK_ENABLED'),
+    enabled,
     capabilitySecret,
     markerPollAttempts: boundedInteger('GRAPH_MARKER_POLL_ATTEMPTS', 4, 1, 10),
     sentPollAttempts: boundedInteger('GRAPH_SENT_POLL_ATTEMPTS', 10, 1, 30),
     pollIntervalMs: boundedInteger('GRAPH_POLL_INTERVAL_MS', 2_000, 0, 60_000),
+    expectedMailboxAddress: mailboxAddress,
     alert: sendAlert,
   });
 }
@@ -128,12 +147,14 @@ export async function executeConfiguredGraphDispatchOnce() {
   const clientId = required('GRAPH_CLIENT_ID');
   const clientSecret = required('GRAPH_CLIENT_SECRET', 16);
   const mailboxUserId = required('GRAPH_MAILBOX_USER_ID');
+  const mailboxAddress = requiredMailboxAddress();
   const capabilitySecret = required('GRAPH_OUTBOX_CAPABILITY_SECRET', 32);
   const workerId = required('GRAPH_DISPATCH_WORKER_ID');
   const mailboxKeyHash = required('MAILBOX_IDENTITY_HASH', 64);
   const timeoutMs = boundedInteger('GRAPH_REQUEST_TIMEOUT_MS', 10_000, 250, 60_000);
   const client = new SecureMicrosoftGraphClient({
     mailboxUserId,
+    mailboxAddress,
     accessToken: createGraphTokenProvider({ tenantId, clientId, clientSecret, timeoutMs }),
     requestTimeoutMs: timeoutMs,
     readMaxAttempts: boundedInteger('GRAPH_READ_MAX_ATTEMPTS', 4, 1, 8),
@@ -146,6 +167,7 @@ export async function executeConfiguredGraphDispatchOnce() {
     workerId,
     mailboxKeyHash,
     capabilitySecret,
+    alert: sendAlert,
     buildPackageBySubmission: buildTransactionalDeliveryPackageBySubmission,
     executeReserved: (job, deliveryPackage) => executeTransactionalGraphJob(job, {
       repository,
@@ -156,6 +178,7 @@ export async function executeConfiguredGraphDispatchOnce() {
       markerPollAttempts: boundedInteger('GRAPH_MARKER_POLL_ATTEMPTS', 4, 1, 10),
       sentPollAttempts: boundedInteger('GRAPH_SENT_POLL_ATTEMPTS', 10, 1, 30),
       pollIntervalMs: boundedInteger('GRAPH_POLL_INTERVAL_MS', 2_000, 0, 60_000),
+      expectedMailboxAddress: mailboxAddress,
       alert: sendAlert,
     }),
   });
@@ -168,6 +191,7 @@ export async function executeConfiguredColdCampaignTick() {
   const clientId = required('GRAPH_CLIENT_ID');
   const clientSecret = required('GRAPH_CLIENT_SECRET', 16);
   const mailboxUserId = required('GRAPH_MAILBOX_USER_ID');
+  const mailboxAddress = requiredMailboxAddress();
   const capabilitySecret = required('GRAPH_OUTBOX_CAPABILITY_SECRET', 32);
   const workerId = required('COLD_CAMPAIGN_WORKER_ID');
   const workerSecret = required('GRAPH_WORKER_SECRET', 32);
@@ -176,6 +200,7 @@ export async function executeConfiguredColdCampaignTick() {
   const timeoutMs = boundedInteger('GRAPH_REQUEST_TIMEOUT_MS', 10_000, 250, 60_000);
   const client = new SecureMicrosoftGraphClient({
     mailboxUserId,
+    mailboxAddress,
     accessToken: createGraphTokenProvider({ tenantId, clientId, clientSecret, timeoutMs }),
     requestTimeoutMs: timeoutMs,
     readMaxAttempts: boundedInteger('GRAPH_READ_MAX_ATTEMPTS', 4, 1, 8),
@@ -183,12 +208,13 @@ export async function executeConfiguredColdCampaignTick() {
   });
   const repository = new GraphOutboxRepository();
   return executeColdCampaignTick({
-    rpc: callRpc, enabled, workerId, workerToken, mailboxKeyHash, capabilitySecret,
+    rpc: callRpc, enabled, workerId, workerToken, mailboxKeyHash, capabilitySecret, alert: sendAlert,
     executeGraph: (job, deliveryPackage) => executeTransactionalGraphJob(job, {
       repository, client, buildPackage: async () => deliveryPackage, enabled, capabilitySecret,
       markerPollAttempts: boundedInteger('GRAPH_MARKER_POLL_ATTEMPTS', 4, 1, 10),
       sentPollAttempts: boundedInteger('GRAPH_SENT_POLL_ATTEMPTS', 10, 1, 30),
       pollIntervalMs: boundedInteger('GRAPH_POLL_INTERVAL_MS', 2_000, 0, 60_000),
+      expectedMailboxAddress: mailboxAddress,
       alert: sendAlert,
     }),
   });

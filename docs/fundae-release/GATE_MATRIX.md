@@ -28,18 +28,18 @@ El verificador tiene dos niveles deliberadamente distintos:
 - `STATIC_FIXTURE`: valida configuración no-send y contratos locales de migración/precheck/postcheck/rollback, sin red. Nunca cambia G2 a `PASS`.
 - `NETWORK_G2`: valida mediante Data API que el `service_role` ve tablas/RPC actuales y no ve RPC legacy/internas. Es solo un subgate; no prueba grants de otros roles, RLS efectiva, SQL interno, advisors, backup ni rollback.
 
-La evidencia autoritativa de staging ya existe: baseline reconstruida, precheck, migraciones, postcheck, smoke, advisors, EXPLAIN y rollback forward-safe. Durante la ejecución se detectaron y corrigieron tres clases reales de fallo (`pg_catalog` sobre expresiones especiales, orden prematuro de `REVOKE` y fixture de smoke que no alcanzaba el kill switch). La recuperación fue aditiva por etapas; no hubo retry ciego ni mutación productiva.
+La evidencia autoritativa de staging ya existe: baseline reconstruida, precheck, migraciones, postcheck, smoke, advisors, EXPLAIN y rollback forward-safe. La migración adaptativa HMAC posterior también quedó aplicada y verificada: helper privado, predicado SHA legacy eliminado, SHA simple rechazado, ACL mínimas y outbound OFF. Durante la ejecución se detectaron y corrigieron fallos reales antes de producción, incluido un `pg_catalog.coalesce` inválido que revirtió su transacción completa. La recuperación fue aditiva por etapas; no hubo retry ciego ni mutación productiva.
 
 El pack local consolidado valida el no-op auditado de ADR-0005 y todos sus inputs. `npm run test:supabase-gate-pack` pasa 5/5 y `npm run release:supabase:gates:static` finaliza con `FUNDAE_SUPABASE_GATE_PACK_STATIC_OK`. En staging, precheck/postcheck/smoke/post-rollback terminaron con sus marcadores `*_ok`; los advisors quedaron sin WARN/ERROR, con 39 INFO de RLS sin policy deliberadamente deny-all/service-only, 50 INFO de índices aún no usados por estar el staging vacío y 0 foreign keys sin índice tras la migración de hardening. G2 se mantiene `IN_PROGRESS`, no `PASS`, hasta backup/aplicación productiva autorizada y validación aplicativa de red.
 
-G0-L queda `PASS`. El primer commit selectivo existe en `codex/fundae-release`; G0-CI está `IN_PROGRESS` hasta consolidar las correcciones de staging en un segundo commit y ejecutar GitHub Actions sobre un checkout limpio. Ninguna evidencia local sustituye esa ejecución CI.
+G0-L queda `PASS`. Existen dos commits selectivos en `codex/fundae-release`; G0-CI sigue `IN_PROGRESS` hasta consolidar este último bloque Graph/HubSpot/Make/HMAC y ejecutar GitHub Actions sobre un checkout limpio. Ninguna evidencia local sustituye esa ejecución CI.
 
 ## Snapshot QA local — 2026-08-19
 
 - Manifiesto previo a esta actualización documental: `releaseInputsDigest=b393f401b7a4ef1ffa7f08deb23184b6e9ab301f826b9818c6c304f6e1d60e3c`; 365 archivos tracked y 348 core. La rama es `codex/fundae-release` y su primer commit selectivo es `a76fd5d2c94b23ce924742baef877a84172af2da`.
 - Landing: 26/26 unit, typecheck PASS, build PASS y E2E fresco 16/16 con un worker.
-- Data Brain: 272/272 tests + 1/1 test anti-omisión; setup/readiness 34/34; typecheck, build y `db:verify` STATIC_FIXTURE PASS.
-- Automation: 72/72 PASS. Pins CI: 7/7 PASS. Gate pack tras ADR-0005: 5/5 PASS y runner Static PASS. `git diff --check`: exit 0.
+- Data Brain: 288/288 tests + 1/1 test anti-omisión; setup/readiness 36/36; typecheck, build y `db:verify` STATIC_FIXTURE PASS.
+- Automation: 74/74 PASS. Pins CI: 7/7 PASS. Gate pack tras ADR-0005/HMAC: 5/5 PASS y runner Static PASS. `git diff --check`: exit 0.
 - Staging Supabase: precheck, migraciones, postcheck, smoke, advisors, EXPLAIN y forward rollback PASS; proyecto independiente pausado. No se ejecutaron GitHub CI, `npm ci` limpio, NETWORK_G2 aplicativo, Graph/HubSpot/Make live, deploy ni envíos.
 - Campaña: el reporte agregado sin PII valida 939 únicos, lotes 235/235/235/234 y 4695/4695 cuerpos identificados con `{{unsubscribe_url}}`; mantiene 939 contactos en `PENDIENTE`, rechecks técnicos de exclusión pendientes y autorización de campaña `PENDING`. G7 permanece `BLOCKED`.
 - Legal: Aviso Legal `PASS-LOCAL` con identidad y datos registrales contrastados; Privacidad y Cookies siguen `NO-GO` hasta aprobar finalidades/bases, plazos, encargados/transferencias, DPO/canal de derechos e inventario runtime.

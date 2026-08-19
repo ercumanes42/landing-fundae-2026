@@ -11,6 +11,8 @@ export interface GraphDispatchRunResult {
   reasonCode: string;
   dispatchId: string | null;
   reservationId: string | null;
+  alertAttempted?: boolean;
+  alertDelivered?: boolean | null;
 }
 
 interface GraphDispatchDependencies {
@@ -19,12 +21,27 @@ interface GraphDispatchDependencies {
   workerId: string;
   mailboxKeyHash: string;
   capabilitySecret: string;
+  alert: (event: { code: string; reservationHash: string; evidenceHash: string }) => Promise<void>;
   leaseSeconds?: number;
   buildPackageBySubmission: (input: unknown) => Promise<TransactionalDeliveryPackage>;
   executeReserved: (
     job: TransactionalGraphJob,
     deliveryPackage: TransactionalDeliveryPackage,
   ) => Promise<GraphWorkerResult>;
+}
+
+async function attemptCriticalAlert(
+  deps: GraphDispatchDependencies,
+  code: string,
+  reservationId: string,
+  evidenceHash: string,
+): Promise<{ alertAttempted: true; alertDelivered: boolean }> {
+  try {
+    await deps.alert({ code, reservationHash: sha256(reservationId), evidenceHash });
+    return { alertAttempted: true, alertDelivered: true };
+  } catch {
+    return { alertAttempted: true, alertDelivered: false };
+  }
 }
 
 function derive(secret: string, purpose: string, context: string): Buffer {
@@ -137,9 +154,16 @@ export async function executeGraphDispatchOnce(
       evidenceHash: workerResult.evidenceHash,
     });
     if (!finalized.accepted) {
+      const alert = await attemptCriticalAlert(
+        deps,
+        'AMBIGUOUS_DISPATCH_FINALIZE_REJECTED',
+        reservationId,
+        workerResult.evidenceHash,
+      );
       return {
         state: 'ambiguous_halted', reasonCode: 'dispatch_finalize_rejected',
         dispatchId: item.dispatchId, reservationId,
+        ...alert,
       };
     }
   }
@@ -148,5 +172,7 @@ export async function executeGraphDispatchOnce(
     reasonCode: workerResult.reasonCode,
     dispatchId: item.dispatchId,
     reservationId,
+    alertAttempted: workerResult.alertAttempted,
+    alertDelivered: workerResult.alertDelivered ?? null,
   };
 }

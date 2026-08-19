@@ -124,6 +124,59 @@ begin
       message = 'fundae_release_postcheck_missing_rpc', detail = v_missing_rpc;
   end if;
 
+  if pg_catalog.to_regprocedure(
+    'fundae_private.is_cold_campaign_hmac_identity(text,text)'
+  ) is null then
+    raise exception using errcode = '55000',
+      message = 'fundae_release_postcheck_missing_hmac_identity_helper';
+  end if;
+
+  if exists (
+    select 1
+    from pg_catalog.pg_namespace n
+    cross join lateral pg_catalog.aclexplode(
+      coalesce(n.nspacl,pg_catalog.acldefault('n',n.nspowner))
+    ) acl
+    where n.nspname='fundae_private' and acl.privilege_type='USAGE'
+      and (acl.grantee=0 or acl.grantee in (
+        select oid from pg_catalog.pg_roles
+        where rolname in ('anon','authenticated','service_role')
+      ))
+  ) or exists (
+    select 1
+    from pg_catalog.pg_proc p
+    join pg_catalog.pg_namespace n on n.oid=p.pronamespace
+    cross join lateral pg_catalog.aclexplode(
+      coalesce(p.proacl,pg_catalog.acldefault('f',p.proowner))
+    ) acl
+    where n.nspname='fundae_private'
+      and p.proname='is_cold_campaign_hmac_identity'
+      and acl.privilege_type='EXECUTE'
+      and (acl.grantee=0 or acl.grantee in (
+        select oid from pg_catalog.pg_roles
+        where rolname in ('anon','authenticated','service_role')
+      ))
+  ) then
+    raise exception using errcode = '42501',
+      message = 'fundae_release_postcheck_hmac_helper_exposed';
+  end if;
+
+  if pg_catalog.strpos(
+       pg_catalog.pg_get_functiondef(pg_catalog.to_regprocedure(
+         'public.apply_cold_campaign_provision_batch(text,text,integer,integer,text,text,text,text,jsonb)'
+       )),
+       'not fundae_private.is_cold_campaign_hmac_identity(v_row->>''email'',v_row->>''email_hash'')'
+     ) = 0
+     or pg_catalog.strpos(
+       pg_catalog.pg_get_functiondef(pg_catalog.to_regprocedure(
+         'public.apply_cold_campaign_provision_batch(text,text,integer,integer,text,text,text,text,jsonb)'
+       )),
+       'pg_catalog.encode(extensions.digest(pg_catalog.convert_to(pg_catalog.lower(v_row->>''email''),''UTF8''),''sha256''),''hex'')<>v_row->>''email_hash'''
+     ) <> 0 then
+    raise exception using errcode = '55000',
+      message = 'fundae_release_postcheck_provision_identity_predicate_invalid';
+  end if;
+
   if exists (
     select 1
     from pg_catalog.pg_proc p
@@ -237,6 +290,19 @@ begin
   ) then
     raise exception using errcode = '23514',
       message = 'fundae_release_postcheck_prepared_manifest_count_mismatch';
+  end if;
+
+  if exists (
+    select 1 from public.campaign_contacts c
+    join public.campaigns campaign on campaign.id=c.campaign_id
+    where campaign.external_id='FUNDAE_2026_EMAIL_V1'
+      and c.contact_data->>'email' is not null
+      and not fundae_private.is_cold_campaign_hmac_identity(
+        c.contact_data->>'email',c.email_hash
+      )
+  ) then
+    raise exception using errcode = '23514',
+      message = 'fundae_release_postcheck_legacy_or_invalid_identity_hash';
   end if;
 
   if exists (

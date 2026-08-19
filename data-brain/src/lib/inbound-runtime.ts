@@ -17,6 +17,7 @@ export async function executeConfiguredInboundMailboxTick() {
   const timeoutMs = Math.max(250, Math.min(60_000, Number(env('GRAPH_REQUEST_TIMEOUT_MS')) || 10_000));
   const client = new SecureMicrosoftGraphClient({
     mailboxUserId: required('GRAPH_MAILBOX_USER_ID'),
+    mailboxAddress: required('GRAPH_MAILBOX_ADDRESS'),
     accessToken: createGraphTokenProvider({
       tenantId: required('GRAPH_TENANT_ID'),
       clientId: required('GRAPH_CLIENT_ID'),

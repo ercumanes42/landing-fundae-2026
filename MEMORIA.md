@@ -227,3 +227,12 @@ No afirmar 100%, producción o E2E live hasta: release reproducible; SQL real y 
 - QA local posterior: landing 26/26 + E2E fresco 16/16; automation 72/72; Data Brain 272/272 + anti-omisión 1/1, setup/readiness 34/34, typecheck/build y STATIC_FIXTURE PASS.
 - G2 pasa de `BLOCKED` a `IN_PROGRESS / STAGING_PASS`; no es `PASS` global hasta backup/aplicación productiva autorizada y `NETWORK_G2` aplicativo. G3 continúa `BLOCKED` hasta OAuth/mailbox y 4/4 Graph fresh con confirmación real de Sent Items.
 - No hubo deploy, cambios en producción, Graph/HubSpot/Make live ni envíos. `OUTBOUND_MASTER_ENABLED` y todas las lanes permanecen OFF.
+
+## Cierre Graph, HubSpot, Make y HMAC — 19 de agosto de 2026
+
+- Graph exige identidad completa `from`/`sender`/`replyTo`, separa mailbox ID de address y registra intento/entrega de alertas; las ambigüedades mantienen el halt fail-closed. Make queda scheduler-only, con todos los blueprints OFF, no importables y pendientes de validar contra módulos/conexiones reales.
+- HubSpot usa `fundae_lead_id` HMAC estable entre campañas, asociación default fail-closed y una única tarea lógica por reply positivo. El sandbox continúa bloqueado hasta verificar propiedades, scopes, portal y replay real.
+- El provisioner cold y Supabase quedaron alineados: `20260819155300_cold_campaign_hmac_identity.sql` se aplicó en staging; el helper privado rechaza SHA simple y la función de provisioning usa el guard HMAC. ACL, SECURITY DEFINER, `search_path` vacío, campaña sin hashes legacy y outbound OFF fueron verificados.
+- El primer intento de esta migración falló por `pg_catalog.coalesce`; PostgreSQL revirtió toda la transacción. Se corrigió a la expresión especial `coalesce`, se repitió el gate local 5/5 y el segundo apply terminó correctamente.
+- Snapshot local previo a documentación: Data Brain 288/288 + anti-omisión 1/1, setup/readiness 36/36, typecheck/build PASS; automation 74/74; Graph/cold 42/42; Make 6/6; provisioner HMAC 10/10. El staging volvió a quedar `PAUSED` y nunca se habilitó outbound.
+- G2 permanece `IN_PROGRESS / STAGING_PASS`; G3, G6 y G7 no están autorizados para live. No hubo producción, deploy, OAuth/Graph real, HubSpot sandbox, importación Make ni envíos.

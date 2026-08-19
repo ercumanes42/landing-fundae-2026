@@ -7,11 +7,14 @@ const productionChecklist = fs.readFileSync(
   new URL('../MAKE_PRODUCTION_CHECKLIST.md', import.meta.url),
   'utf8',
 );
+const automationReadme = fs.readFileSync(new URL('../README.md', import.meta.url), 'utf8');
+const operationsValidator = fs.readFileSync(new URL('./validate-operations.mjs', import.meta.url), 'utf8');
 
 test('sender is a non-importable single-call scheduler with Data Brain authority', () => {
   const sender = read('email_sender_blueprint.json');
   assert.equal(sender.importable, false);
   assert.equal(sender.production_ready, false);
+  assert.equal(sender.enabled, false);
   assert.equal(sender.authority.campaign_state, 'Data Brain/PostgreSQL');
   assert.equal(sender.authority.one_tick_one_transition, true);
   assert.equal(sender.scenario.modules.length, 1);
@@ -33,6 +36,42 @@ test('reply monitor distinguishes deterministic replies, NDR and explicit BAJA h
   assert.equal(replies.backend_contract.explicit_baja_emits_global_unsubscribe, true);
 });
 
+test('transactional dispatcher is a non-importable scheduler with no message data', () => {
+  const transactional = read('transactional_dispatch_blueprint.json');
+  assert.equal(transactional.importable, false);
+  assert.equal(transactional.production_ready, false);
+  assert.equal(transactional.enabled, false);
+  assert.equal(transactional.authority.transactional_state, 'Data Brain/PostgreSQL');
+  assert.equal(transactional.authority.one_tick_one_transition, true);
+  assert.equal(transactional.scenario.modules.length, 1);
+  assert.equal(transactional.scenario.modules[0].endpoint, '/api/internal/graph/dispatch');
+  assert.equal(transactional.scenario.modules[0].body, null);
+  assert.equal(transactional.feature_gates.outbound_master, false);
+  assert.equal(transactional.feature_gates.transactional_outlook, false);
+  assert.deepEqual(Object.keys(transactional.feature_gates).sort(), ['outbound_master', 'transactional_outlook']);
+});
+
+test('canonical operations artifacts contain no retired queue or fictitious dispatch gate', () => {
+  const canonical = [
+    productionChecklist,
+    automationReadme,
+    operationsValidator,
+    JSON.stringify(read('email_sender_blueprint.json')),
+    JSON.stringify(read('transactional_dispatch_blueprint.json')),
+  ].join('\n');
+  const retiredDispatchGate = ['TRANSACTIONAL', 'DISPATCH', 'ENABLED'].join('_');
+  assert.equal(canonical.includes(retiredDispatchGate), false);
+  const retiredQueueArtifacts = [
+    automationReadme,
+    operationsValidator,
+    JSON.stringify(read('email_sender_blueprint.json')),
+  ].join('\n');
+  assert.doesNotMatch(
+    retiredQueueArtifacts,
+    /Google Sheets|visible Make queue|Make sequential queue|Make Data Store|Microsoft 365 Email|Watch Emails/i,
+  );
+});
+
 test('Calendly scenario accepts only a confirmed booking correlated through supported UTM fields', () => {
   const calendly = read('landing_events_blueprint.json');
   assert.equal(calendly.importable, false);
@@ -46,12 +85,17 @@ test('Calendly scenario accepts only a confirmed booking correlated through supp
   assert.equal(calendly.backend_contract.event, 'meeting_booked');
 });
 
-test('production checklist never gives Make the HMAC secret or signing authority', () => {
-  assert.match(productionChecklist, /Make nunca almacena, conoce ni calcula[\s>]*\`MAKE_WEBHOOK_SECRET\`/i);
-  assert.match(productionChecklist, /sin parsear, normalizar ni reserializar el body/i);
-  assert.match(productionChecklist, /campaña fría[\s\S]*deben permanecer OFF/i);
+test('production checklist keeps Make scheduler-only and without message authority', () => {
+  assert.match(productionChecklist, /Make no es autoridad de datos ni de entrega/i);
+  assert.match(productionChecklist, /Único módulo: POST \/api\/internal\/graph\/dispatch/i);
+  assert.match(productionChecklist, /Make no recibe PII ni[\s\S]*capabilities/i);
+  assert.match(productionChecklist, /No crear conexiones Outlook, Sheets, Calendly ni Data Store/i);
+  assert.match(productionChecklist, /Body: vacío/i);
+  assert.match(productionChecklist, /OUTBOUND_MASTER_ENABLED=false, COLD_CAMPAIGN_ENABLED=false/i);
   assert.doesNotMatch(productionChecklist, /secreto almacenado como valor\s+protegido/i);
   assert.doesNotMatch(productionChecklist, /\*\*HTTP HMAC/i);
   assert.doesNotMatch(productionChecklist, /HMAC POST/i);
   assert.doesNotMatch(productionChecklist, /Firmar [^\n]+ con HMAC/i);
+  assert.doesNotMatch(productionChecklist, /Microsoft 365 Email/i);
+  assert.doesNotMatch(productionChecklist, /Watch Emails/i);
 });

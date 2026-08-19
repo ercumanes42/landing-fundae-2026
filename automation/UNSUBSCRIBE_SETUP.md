@@ -12,9 +12,10 @@ variable pendiente. La criptografía y el registro de tokens pertenecen a Data B
 El reporte agregado sin PII se conserva en
 `automation/campaign-reports/FUNDAE_2026_CONTROLLED_COPY_REPORT.json`.
 
-## 2. Obtener el enlace desde Data Brain
+## 2. Materialización privada del enlace
 
-Make debe enviar, con el HMAC descrito en `MAKE_SETUP.md`:
+Data Brain materializa el enlace dentro del paquete privado de entrega. Make no llama este endpoint, no sustituye
+el placeholder y nunca recibe la URL ni el token. El contrato interno equivalente es:
 
 `POST /api/campaign/unsubscribe-link`
 
@@ -27,12 +28,12 @@ Make debe enviar, con el HMAC descrito en `MAKE_SETUP.md`:
 ```
 
 Solo se acepta `unsubscribe_url` del origen configurado, ruta fija `/baja`, sin parámetros adicionales y token
-`u1.<43 caracteres base64url>`. Make sustituye el placeholder en memoria. No guarda ni registra la URL/token.
-Cualquier timeout, error o respuesta distinta bloquea el envío.
+`u1.<43 caracteres base64url>`. Data Brain sustituye el placeholder en memoria y Graph recibe el draft final.
+Cualquier timeout, error o respuesta distinta bloquea la autorización.
 
-## 3. Autorizar justo antes de Outlook
+## 3. Autorizar justo antes de Graph
 
-Después de `LOCKED` y de montar el HTML, Make debe firmar y enviar:
+Después de reservar y montar el HTML, el worker de Data Brain ejecuta el segundo stop-check atómico:
 
 `POST /api/campaign/delivery-authorization`
 
@@ -45,7 +46,8 @@ Después de `LOCKED` y de montar el HTML, Make debe firmar y enviar:
 ```
 
 El backend comprueba atómicamente supresión global/local, estado de campaña, ejecución y lease de 120 segundos.
-**Solo `authorized:true` permite llamar a Outlook.** Cualquier otro valor, 2xx ambiguo, timeout o error bloquea.
+**Solo `authorized:true` permite enviar el mismo draft por Microsoft Graph.** Cualquier otro valor, timeout o
+ambigüedad bloquea; nunca se reintenta el envío a ciegas.
 
 ## 4. Gate operativo por contacto
 
@@ -70,4 +72,4 @@ npm run campaign:validate -- --require-ready
 pendientes. No debe fallar por copies, baja ni evidencia individual. Antes del piloto deben probarse endpoint
 de baja, autorización JIT, carrera baja-LOCKED, supresión por `email_hash` entre campañas y escenarios Make
 reales exportados. Los JSON de `automation/make/` siguen siendo especificaciones `importable=false` y
-`production_ready=false`.
+`production_ready=false`. Make solo dispara ticks con body vacío y no participa en el contenido ni la baja.

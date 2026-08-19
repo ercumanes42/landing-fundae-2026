@@ -1,10 +1,14 @@
 import assert from 'node:assert/strict';
+import { createHmac } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, test } from 'node:test';
 
 import { hubSpotPropertiesForOperation, recordCampaignOperation, recordHubSpotContactEvent } from './campaign';
+import { buildLeadId } from './lead-id';
 
 const originalFetch = globalThis.fetch;
 const originalEnv = { ...process.env };
+const LEAD_ID = 'a'.repeat(64);
 
 function json(value: unknown, status = 200): Response {
   return new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json' } });
@@ -57,11 +61,17 @@ test('unsubscribe, opposition, hard bounce and positive reply produce convergent
   });
 });
 
-test('positive reply replay uses task upsert with the same key and never task create', async () => {
+test('primary positive reply and its replay resolve to exactly one logical HubSpot task', async () => {
   let eventExists = false;
   const eventRpcBodies: Array<Record<string, unknown>> = [];
   const taskRequests: Array<{ url: string; body: { inputs: Array<Record<string, unknown>> } }> = [];
-  const contact = { id: 'db-contact-1', external_contact_id: 'lead_001', hubspot_contact_id: '101', campaign_id: 'campaign-db-1' };
+  const contact = {
+    id: 'db-contact-1',
+    external_contact_id: 'lead_001',
+    email_hash: LEAD_ID,
+    hubspot_contact_id: '101',
+    campaign_id: 'campaign-db-1',
+  };
   globalThis.fetch = async (input, init) => {
     const url = String(input);
     if (url.startsWith('https://supabase.invalid/rest/v1/campaigns?')) {
@@ -81,7 +91,7 @@ test('positive reply replay uses task upsert with the same key and never task cr
       return json({ id: 'event-db-1', duplicate });
     }
     if (url.includes('/campaign_contacts?id=eq.') && init?.method === 'PATCH') return json([contact]);
-    if (url.includes('/contacts/lead_001?idProperty=fundae_contact_id')) return json({ id: '101' });
+    if (url.includes(`/contacts/${LEAD_ID}?idProperty=fundae_lead_id`)) return json({ id: '101' });
     if (url.includes('/tasks/batch/upsert')) {
       const body = JSON.parse(String(init?.body));
       taskRequests.push({ url, body });
@@ -106,7 +116,22 @@ test('positive reply replay uses task upsert with the same key and never task cr
   assert.equal(taskRequests.length, 2);
   assert.match(taskRequests[0].url, /tasks\/batch\/upsert$/);
   assert.deepEqual(taskRequests[1].body, taskRequests[0].body);
+  assert.equal(new Set(taskRequests.map(({ body }) => body.inputs[0].id)).size, 1);
   assert.equal(taskRequests.some(({ url }) => url.includes('/tasks/batch/create')), false);
+});
+
+test('capture and campaign import share the same normalized HMAC buildLeadId contract', () => {
+  const ingestSource = readFileSync(
+    new URL('../app/api/leads/ingest/route.ts', import.meta.url),
+    'utf8',
+  );
+  const campaignSource = readFileSync(new URL('./campaign.ts', import.meta.url), 'utf8');
+  assert.match(ingestSource, /const leadId = buildLeadId\(input\.contact\.email\)/);
+  assert.match(campaignSource, /email_hash: buildLeadId\(contact\.email\)/);
+
+  const normalizedEmail = 'person@example.invalid';
+  const expected = createHmac('sha256', 'lead-test-secret').update(normalizedEmail).digest('hex');
+  assert.equal(buildLeadId(' Person@Example.Invalid '), expected);
 });
 
 test('ambiguous HubSpot contact mapping fails before campaign mutation', async () => {
@@ -130,6 +155,44 @@ test('ambiguous HubSpot contact mapping fails before campaign mutation', async (
     occurredAt: '2026-08-19T09:00:00.000Z',
   }), /ambiguous/);
   assert.equal(writes, 0);
+});
+
+test('positive reply echoed from HubSpot records the fact without creating another CRM task', async () => {
+  let taskRequests = 0;
+  const contact = {
+    id: 'db-contact-1',
+    external_contact_id: 'lead_001',
+    email_hash: LEAD_ID,
+    hubspot_contact_id: '101',
+    campaign_id: 'campaign-db-1',
+  };
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    if (url.includes('/campaign_contacts?') && init?.method === 'GET') return json([contact]);
+    if (url.includes('/campaigns?') && init?.method === 'GET') {
+      return json([{ id: 'campaign-db-1', external_id: 'FUNDAE_2026' }]);
+    }
+    if (url.endsWith('/rest/v1/rpc/record_campaign_event_atomic') && init?.method === 'POST') {
+      const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+      assert.equal(body.p_event_name, 'positive_reply');
+      assert.equal(body.p_source_event_id, `hs:${'b'.repeat(64)}`);
+      return json({ id: 'event-db-1' });
+    }
+    if (url.includes('/tasks/')) {
+      taskRequests += 1;
+      return json({});
+    }
+    throw new Error(`Unexpected request ${init?.method || 'GET'} ${url}`);
+  };
+
+  assert.equal(await recordHubSpotContactEvent({
+    hubspotContactId: '101',
+    sourceEventId: `hs:${'b'.repeat(64)}`,
+    propertyName: 'fundae_reply_type',
+    propertyValue: 'positive',
+    occurredAt: '2026-08-19T09:00:00.000Z',
+  }), true);
+  assert.equal(taskRequests, 0);
 });
 
 test('campaign source event replay rejects a different contact or event binding', async () => {

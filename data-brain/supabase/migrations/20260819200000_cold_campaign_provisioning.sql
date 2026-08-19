@@ -145,7 +145,7 @@ begin
        v_row->>'token_hash' !~ '^[a-f0-9]{64}$' or v_row->>'row_sha256' !~ '^[a-f0-9]{64}$' or
        v_row->>'email'<>pg_catalog.lower(v_row->>'email') or
        v_row->>'recipient_email'<>v_row->>'email' or
-       pg_catalog.encode(extensions.digest(pg_catalog.convert_to(pg_catalog.lower(v_row->>'email'),'UTF8'),'sha256'),'hex')<>v_row->>'email_hash' or
+       not fundae_private.is_cold_campaign_hmac_identity(v_row->>'email',v_row->>'email_hash') or
        pg_catalog.strpos(v_row->>'html_body','{{unsubscribe_url}}')>0 then
       raise exception using errcode='22023',message='provision_row_gate_invalid';
     end if;

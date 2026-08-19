@@ -33,6 +33,7 @@ const noopMigrationNormalized = [
 const migrationFiles = [
   '20260818083632_graph_outbox_foundation.sql', noopMigrationName,
   '20260819120000_dashboard_aggregates_rbac.sql', '20260819143000_inbound_reliability.sql',
+  '20260819155300_cold_campaign_hmac_identity.sql',
   '20260819170000_cold_campaign_scheduler.sql', '20260819183000_operational_observability.sql',
   '20260819190000_journey_retention_control.sql', '20260819200000_cold_campaign_provisioning.sql',
   '20260819210000_release_safety_barriers.sql', '20260819220000_advisor_index_hardening.sql',

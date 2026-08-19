@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
@@ -84,10 +84,13 @@ test('Excel serial dates, canonical payload and unit-separator row hash are dete
   }
   const rows = prepareProvisionRows([source], {
     unsubscribeSecret: 'u'.repeat(32), unsubscribeBaseUrl: 'https://example.invalid/',
+    leadHashSecret: 'l'.repeat(32),
   });
   assert.equal(rows.length, 5);
   assert.deepEqual(rows.toSorted((a, b) => a.step - b.step).map((row) => row.scheduled_for), dates);
   assert.ok(rows.every((row) => row.company_size === 'micro'));
+  assert.ok(rows.every((row) =>
+    row.email_hash === createHmac('sha256', 'l'.repeat(32)).update('recipient@example.invalid').digest('hex')));
   for (const row of rows) {
     const canonicalPayload = JSON.stringify({ recipient: row.recipient_email, subject: row.subject, body: row.html_body, attachments: [] });
     assert.equal(row.payload_sha256, hash(canonicalPayload));
@@ -156,4 +159,35 @@ test('SQL import contract is OFF, private, idempotent and collision-safe', () =>
     'alter table public.cold_campaign_provision_control force row level security',
     'revoke execute on function public.apply_cold_campaign_provision_batch',
   ]) assert.ok(sql.includes(marker), `missing provisioning contract: ${marker}`);
+});
+
+test('SQL provisioning accepts HMAC identities and rejects the legacy plain-SHA predicate', () => {
+  const migrationUrl = new URL('../../data-brain/supabase/migrations/20260819155300_cold_campaign_hmac_identity.sql', import.meta.url);
+  const provisioningUrl = new URL('../../data-brain/supabase/migrations/20260819200000_cold_campaign_provisioning.sql', import.meta.url);
+  const schemaUrl = new URL('../../data-brain/supabase/schema.sql', import.meta.url);
+  const migration = readFileSync(migrationUrl, 'utf8').replaceAll('\r\n', '\n');
+  const provisioning = readFileSync(provisioningUrl, 'utf8').replaceAll('\r\n', '\n');
+  const schema = readFileSync(schemaUrl, 'utf8').replaceAll('\r\n', '\n');
+  const legacyPredicate = "pg_catalog.encode(extensions.digest(pg_catalog.convert_to(pg_catalog.lower(v_row->>'email'),'UTF8'),'sha256'),'hex')<>v_row->>'email_hash'";
+  const hmacPredicate = "not fundae_private.is_cold_campaign_hmac_identity(v_row->>'email',v_row->>'email_hash')";
+  const helperBlock = (sql) => sql.match(/-- HMAC_IDENTITY_HELPER_BEGIN\n[\s\S]+?-- HMAC_IDENTITY_HELPER_END/u)?.[0];
+  const schemaProvisioning = schema.slice(schema.indexOf('-- 20260819200000_cold_campaign_provisioning.sql'));
+
+  assert.ok(helperBlock(migration), 'HMAC helper block must exist in the migration');
+  assert.equal(helperBlock(schema), helperBlock(migration), 'schema must mirror the private HMAC helper exactly');
+  assert.ok(provisioning.includes(hmacPredicate));
+  assert.ok(schemaProvisioning.includes(hmacPredicate));
+  assert.equal(provisioning.includes(legacyPredicate), false);
+  assert.equal(schemaProvisioning.includes(legacyPredicate), false);
+});
+
+test('adaptive HMAC migration patches one exact legacy source and fails closed on drift', () => {
+  const sql = readFileSync(new URL('../../data-brain/supabase/migrations/20260819155300_cold_campaign_hmac_identity.sql', import.meta.url), 'utf8').toLowerCase();
+  for (const marker of [
+    'pg_catalog.to_regprocedure(v_signature)', 'pg_catalog.pg_get_functiondef(p.oid)',
+    'v_occurrences<>1', 'cold_campaign_hmac_patch_source_drift',
+    'cold_campaign_hmac_patch_verification_failed',
+    'revoke all on schema fundae_private from public,anon,authenticated,service_role',
+    'revoke all on function fundae_private.is_cold_campaign_hmac_identity',
+  ]) assert.ok(sql.includes(marker), `missing adaptive HMAC marker: ${marker}`);
 });
