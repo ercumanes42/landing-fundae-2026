@@ -19,6 +19,7 @@
     "campaign:provision:materialized:dry-run": "node automation/scripts/provision-cold-campaign.mjs --materialized",
     "campaign:provision:apply": "node automation/scripts/provision-cold-campaign.mjs --apply",
     "campaign:exclusions:check": "node automation/scripts/materialize-campaign-exclusions.mjs",
+    "campaign:exclusions:build-snapshots": "node automation/scripts/materialize-campaign-exclusions.mjs --build-signed-snapshots",
     "campaign:exclusions:materialize": "node automation/scripts/materialize-campaign-exclusions.mjs --materialize-private-copy",
     "test:e2e": "npm run build && playwright test",
     "test:unit": "tsx --test tests/unit/*.test.ts",

@@ -19,6 +19,7 @@ const sqlFiles = [
   'FUNDAE_RELEASE_FORWARD_ROLLBACK_20260819.sql',
   'FUNDAE_RELEASE_POST_ROLLBACK_20260819.sql',
   'CAMPAIGN_SUPPRESSION_SMOKE_20260819.sql',
+  'HUBSPOT_SYNC_OUTBOX_SMOKE_20260820.sql',
 ];
 const noopMigrationName = '20260819072840_cold_campaign_scheduler.sql';
 const noopMigrationPath = join(sqlRoot, 'migrations', noopMigrationName);
@@ -40,6 +41,7 @@ const migrationFiles = [
   '20260819170000_cold_campaign_scheduler.sql', '20260819183000_operational_observability.sql',
   '20260819190000_journey_retention_control.sql', '20260819200000_cold_campaign_provisioning.sql',
   '20260819210000_release_safety_barriers.sql', '20260819220000_advisor_index_hardening.sql',
+  '20260819224739_hubspot_sync_outbox.sql',
   '20260819230000_durable_operational_alert_delivery.sql',
   '20260819233000_transactional_graph_pilot_scope.sql',
   '20260819234000_campaign_terminal_suppression_hardening.sql',
@@ -127,6 +129,11 @@ test('the consolidated SQL gate pack is bounded and explicit', () => {
   assert.match(suppressionSmoke, /rollback;\s*$/i);
   assert.doesNotMatch(suppressionSmoke, /master_enabled\s*=\s*true/i);
   assert.doesNotMatch(suppressionSmoke, /enabled\s*=\s*true/i);
+  const hubspotSmoke = readFileSync(join(sqlRoot, sqlFiles[7]), 'utf8');
+  assert.match(hubspotSmoke, /fundae_release_hubspot_sync_smoke_ok/);
+  assert.match(hubspotSmoke, /hubspot_stale_finalize_not_requeued/);
+  assert.match(hubspotSmoke, /hubspot_master_dominance_failed/);
+  assert.match(hubspotSmoke, /rollback;\s*$/i);
 });
 
 test('the PowerShell runner is fail-closed and never embeds credentials', () => {

@@ -262,3 +262,11 @@ No afirmar 100%, producción o E2E live hasta: release reproducible; SQL real y 
 - QA local: automation 85/85; Data Brain 327/327 + anti-omisión 1/1; typecheck y build PASS; gate pack Supabase 12/12 y Static PASS.
 - Las migraciones `20260819234300_transactional_graph_pilot_alert_hardening.sql` y `20260819234400_campaign_conditional_delivery_hardening.sql` se aplicaron al staging autorizado. Postcheck y smokes Graph/campaña/comportamiento terminaron PASS; advisors 0 WARN/ERROR; todos los controles outbound quedaron false y el proyecto se confirmó `INACTIVE`.
 - No hubo producción, deploy, Graph/HubSpot/Make live ni envíos. Permanecen como gates externos: privacidad/cookies, GitHub CI, NETWORK_G2, OAuth/App RBAC/mailbox Graph, 4/4 real, sandbox HubSpot, rechecks privados de exclusiones y autorización operativa.
+
+## Cierre offline HubSpot y exclusiones — 20 de agosto de 2026
+
+- La campaña ya dispone de un productor determinista que transforma cinco exports privados completos en snapshots firmados, hash-only, ligados a campaña/dataset y con frescura obligatoria. No genera `CLEAR` sin las cinco fuentes reales.
+- HubSpot queda desacoplado mediante `hubspot_sync_outbox`: versión deseada/confirmada, claim con lease, retry, dead-letter, replay idempotente y prioridad de stops. La tabla es RLS/FORCE, sin acceso directo para `service_role`; solo dos RPC acotadas pueden reclamar/finalizar.
+- La migración `20260819224739_hubspot_sync_outbox.sql` se aplicó al staging autorizado. Postcheck y smoke rollback-only devolvieron `fundae_release_postcheck_ok` y `fundae_release_hubspot_sync_smoke_ok`; master, transaccional, cold y HubSpot quedaron OFF, sin claims activos.
+- Advisors: 42 INFO de seguridad y 68 INFO de rendimiento, 0 WARN/ERROR. QA local: Data Brain 337/337 + anti-omisión 1/1, setup 37/37, typecheck/build PASS; automation 87/87; gate pack 12/12 y Static PASS.
+- No hubo producción, deploy, Graph/HubSpot/Make live ni envíos. G3/G6/G7/G8 siguen sin PASS global hasta aportar OAuth/mailbox y 4/4 real, sandbox HubSpot, cinco exports privados frescos, autorización operativa, receptores de alertas y gates de rollout.

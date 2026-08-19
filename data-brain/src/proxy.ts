@@ -21,6 +21,7 @@ const INTERNAL_MACHINE_PATHS = new Set([
   '/api/internal/graph/dispatch',
   '/api/internal/graph/campaign-dispatch',
   '/api/internal/inbound/mailbox',
+  '/api/internal/hubspot/dispatch',
   '/api/internal/observability',
 ]);
 

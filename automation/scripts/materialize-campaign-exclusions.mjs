@@ -16,6 +16,8 @@ export const EXCLUSION_SOURCES = [
 ];
 export const MAX_SNAPSHOT_AGE_SECONDS = 86_400;
 export const TECHNICAL_EVIDENCE_SCHEMA = 'fundae-campaign-technical-evidence-v1';
+export const SOURCE_EXPORT_SCHEMA = 'fundae-campaign-exclusion-source-v1';
+export const SOURCE_BUNDLE_SCHEMA = 'fundae-campaign-exclusion-source-bundle-v1';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const MATERIALIZED_WORKBOOK = path.resolve(
   HERE, '../../data-private/Base_FUNDAE_2026_MATERIALIZADA_OFF_V1.xlsx',
@@ -33,6 +35,12 @@ const SNAPSHOT_KEYS = [
   'records', 'records_sha256', 'signature', 'snapshot_id', 'source',
 ];
 const RECORD_KEYS = ['status', 'subject_sha256'];
+const SOURCE_RECORD_KEYS = ['email', 'status'];
+const SOURCE_EXPORT_KEYS = [
+  'campaign_id', 'captured_at', 'dataset_sha256', 'export_id', 'full_snapshot',
+  'max_age_seconds', 'records', 'schema_version', 'source',
+];
+const SOURCE_BUNDLE_KEYS = ['exports', 'key_id', 'schema_version'];
 const SOURCE_TO_FIELD = {
   unsubscribe: 'unsubscribe status',
   opposition: 'opposition status',
@@ -103,6 +111,107 @@ export function signCampaignExclusionSnapshot(snapshot, snapshotSecret) {
   const records = canonicalRecords(snapshot.records);
   return createHmac('sha256', validatedSecret(snapshotSecret, 'SNAPSHOT_SECRET_INVALID'))
     .update(snapshotSignatureInput(snapshot, records)).digest('hex');
+}
+
+function canonicalSourceRecords(records) {
+  if (!Array.isArray(records)) throw new Error('SOURCE_EXPORT_RECORDS_INVALID');
+  const normalized = records.map((record) => {
+    const email = String(record?.email || '').trim().toLowerCase();
+    if (!exactKeys(record, SOURCE_RECORD_KEYS) || !EMAIL.test(email) ||
+        !['STOP', 'PENDING_RECHECK'].includes(record.status)) {
+      throw new Error('SOURCE_EXPORT_RECORD_INVALID');
+    }
+    return { email, status: record.status };
+  }).sort((left, right) => left.email.localeCompare(right.email));
+  if (new Set(normalized.map((record) => record.email)).size !== normalized.length) {
+    throw new Error('SOURCE_EXPORT_SUBJECT_DUPLICATE');
+  }
+  return normalized;
+}
+
+export function buildCampaignExclusionSnapshot(sourceExport, {
+  leadHashSecret,
+  snapshotSecret,
+  keyId,
+  now = new Date(),
+} = {}) {
+  const nowMs = now instanceof Date ? now.getTime() : Date.parse(now);
+  const capturedAtMs = Date.parse(sourceExport?.captured_at);
+  if (!exactKeys(sourceExport, SOURCE_EXPORT_KEYS) ||
+      sourceExport.schema_version !== SOURCE_EXPORT_SCHEMA ||
+      !EXCLUSION_SOURCES.includes(sourceExport.source) ||
+      sourceExport.full_snapshot !== true ||
+      !SNAPSHOT_ID.test(sourceExport.export_id || '') ||
+      !KEY_ID.test(keyId || '') ||
+      !HASH.test(sourceExport.dataset_sha256 || '') ||
+      typeof sourceExport.campaign_id !== 'string' ||
+      !/^[A-Za-z0-9][A-Za-z0-9_.:-]{2,127}$/.test(sourceExport.campaign_id) ||
+      !Number.isFinite(nowMs) || !Number.isFinite(capturedAtMs) ||
+      capturedAtMs > nowMs + 300_000 ||
+      !Number.isInteger(sourceExport.max_age_seconds) ||
+      sourceExport.max_age_seconds < 1 ||
+      sourceExport.max_age_seconds > MAX_SNAPSHOT_AGE_SECONDS) {
+    throw new Error('SOURCE_EXPORT_METADATA_INVALID');
+  }
+  validatedSecret(leadHashSecret, 'LEAD_HASH_SECRET_INVALID');
+  validatedSecret(snapshotSecret, 'SNAPSHOT_SECRET_INVALID');
+  const records = canonicalSourceRecords(sourceExport.records).map((record) => ({
+    subject_sha256: campaignExclusionSubjectSha256(record.email, leadHashSecret),
+    status: record.status,
+  }));
+  const unsigned = {
+    campaign_id: sourceExport.campaign_id,
+    source: sourceExport.source,
+    snapshot_id: sourceExport.export_id,
+    key_id: keyId,
+    dataset_sha256: sourceExport.dataset_sha256,
+    captured_at: new Date(capturedAtMs).toISOString(),
+    max_age_seconds: sourceExport.max_age_seconds,
+    records_sha256: exclusionRecordsSha256(records),
+    records,
+  };
+  return { ...unsigned, signature: signCampaignExclusionSnapshot(unsigned, snapshotSecret) };
+}
+
+export function buildCampaignExclusionSnapshotBundle(sourceBundle, options = {}) {
+  if (!exactKeys(sourceBundle, SOURCE_BUNDLE_KEYS) ||
+      sourceBundle.schema_version !== SOURCE_BUNDLE_SCHEMA ||
+      !KEY_ID.test(sourceBundle.key_id || '') ||
+      !Array.isArray(sourceBundle.exports) ||
+      sourceBundle.exports.length !== EXCLUSION_SOURCES.length) {
+    throw new Error('SOURCE_BUNDLE_INVALID');
+  }
+  const snapshots = sourceBundle.exports.map((sourceExport) =>
+    buildCampaignExclusionSnapshot(sourceExport, {
+      ...options,
+      keyId: sourceBundle.key_id,
+    }));
+  if (new Set(snapshots.map((snapshot) => snapshot.source)).size !== EXCLUSION_SOURCES.length ||
+      EXCLUSION_SOURCES.some((source) => !snapshots.some((snapshot) => snapshot.source === source)) ||
+      new Set(snapshots.map((snapshot) => snapshot.snapshot_id)).size !== snapshots.length ||
+      new Set(snapshots.map((snapshot) => snapshot.campaign_id)).size !== 1 ||
+      new Set(snapshots.map((snapshot) => snapshot.dataset_sha256)).size !== 1) {
+    throw new Error('SOURCE_BUNDLE_INVALID');
+  }
+  snapshots.sort((left, right) => left.source.localeCompare(right.source));
+  return {
+    schema_version: TECHNICAL_EVIDENCE_SCHEMA,
+    snapshots,
+    report: {
+      schema_version: SOURCE_BUNDLE_SCHEMA,
+      campaign_id_hash: sha256(snapshots[0].campaign_id),
+      dataset_sha256: snapshots[0].dataset_sha256,
+      sources: snapshots.map((snapshot) => ({
+        source: snapshot.source,
+        snapshot_id_hash: sha256(snapshot.snapshot_id),
+        captured_at: snapshot.captured_at,
+        max_age_seconds: snapshot.max_age_seconds,
+        records_sha256: snapshot.records_sha256,
+        records: snapshot.records.length,
+      })),
+      redacted: true,
+    },
+  };
 }
 
 function validateSnapshot(snapshot, nowMs, { campaignId, datasetSha256, snapshotSecret }) {
@@ -338,12 +447,32 @@ function privatePath(variableName) {
 }
 
 async function runCli() {
+  const args = process.argv.slice(2);
+  if (args.some((argument) => !['--build-signed-snapshots', '--materialize-private-copy'].includes(argument)) ||
+      args.includes('--build-signed-snapshots') && args.includes('--materialize-private-copy')) {
+    throw new Error('MATERIALIZATION_ARGUMENTS_INVALID');
+  }
+  if (args.includes('--build-signed-snapshots')) {
+    const sourcePath = privatePath('CAMPAIGN_EXCLUSION_RAW_EXPORTS_FILE');
+    const outputPath = privatePath('CAMPAIGN_EXCLUSIONS_SNAPSHOT_FILE');
+    const sourceBundle = JSON.parse(fs.readFileSync(sourcePath, 'utf8'));
+    const built = buildCampaignExclusionSnapshotBundle(sourceBundle, {
+      leadHashSecret: String(process.env.LEAD_HASH_SECRET || ''),
+      snapshotSecret: String(process.env.CAMPAIGN_EXCLUSION_SNAPSHOT_SECRET || ''),
+    });
+    fs.writeFileSync(
+      outputPath,
+      `${JSON.stringify({ schema_version: built.schema_version, snapshots: built.snapshots }, null, 2)}\n`,
+      { flag: 'wx', mode: 0o600 },
+    );
+    return { ok: true, mode: 'snapshot_build', ...built.report };
+  }
   const snapshotPath = privatePath('CAMPAIGN_EXCLUSIONS_SNAPSHOT_FILE');
   const inputPath = privatePath('CAMPAIGN_OPERATIONAL_FILE');
   const snapshots = JSON.parse(fs.readFileSync(snapshotPath, 'utf8'))?.snapshots;
   const leadHashSecret = String(process.env.LEAD_HASH_SECRET || '');
   const snapshotSecret = String(process.env.CAMPAIGN_EXCLUSION_SNAPSHOT_SECRET || '');
-  const materialize = process.argv.slice(2).includes('--materialize-private-copy');
+  const materialize = args.includes('--materialize-private-copy');
   if (!materialize) {
     const campaign = readCampaignWorkbook(inputPath);
     const validation = validateCampaignRows(campaign.rows, { requireReady: false });

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  buildCampaignExclusionSnapshotBundle,
   campaignExclusionSubjectSha256,
   exclusionRecordsSha256,
   EXCLUSION_SOURCES,
@@ -39,6 +40,30 @@ function snapshot(source, records = [], overrides = {}) {
 
 function completeSnapshots(overrides = {}) {
   return EXCLUSION_SOURCES.map((source) => snapshot(source, overrides[source] || []));
+}
+
+function sourceExport(source, records = [], overrides = {}) {
+  return {
+    schema_version: 'fundae-campaign-exclusion-source-v1',
+    source,
+    export_id: `export-${source}`,
+    campaign_id: campaignId,
+    dataset_sha256: datasetSha256,
+    captured_at: '2026-08-19T11:55:00.000Z',
+    max_age_seconds: 900,
+    full_snapshot: true,
+    records,
+    ...overrides,
+  };
+}
+
+function sourceBundle(overrides = {}) {
+  return {
+    schema_version: 'fundae-campaign-exclusion-source-bundle-v1',
+    key_id: 'test-key-v1',
+    exports: EXCLUSION_SOURCES.map((source) =>
+      sourceExport(source, overrides[source] || [])),
+  };
 }
 
 test('materialization is deterministic and applies STOP > PENDING_RECHECK > CLEAR', () => {
@@ -98,4 +123,49 @@ test('redacted report contains aggregates and evidence but no identifiers or sub
   for (const forbidden of ['contact-alpha', 'alpha@example.invalid', campaignExclusionSubjectSha256('alpha@example.invalid', leadHashSecret), '@']) {
     assert.equal(serialized.includes(forbidden), false);
   }
+});
+
+test('producer converts five complete private exports into deterministic signed hash-only snapshots', () => {
+  const raw = sourceBundle({
+    unsubscribe: [{ email: 'alpha@example.invalid', status: 'STOP' }],
+    opposition: [{ email: 'beta@example.invalid', status: 'PENDING_RECHECK' }],
+  });
+  const built = buildCampaignExclusionSnapshotBundle(raw, {
+    now,
+    leadHashSecret,
+    snapshotSecret,
+  });
+  const replay = buildCampaignExclusionSnapshotBundle({
+    ...raw,
+    exports: [...raw.exports].reverse(),
+  }, { now, leadHashSecret, snapshotSecret });
+  assert.deepEqual(built.snapshots, replay.snapshots);
+  assert.equal(built.snapshots.length, 5);
+  assert.equal(JSON.stringify(built.snapshots).includes('@'), false);
+  assert.equal(JSON.stringify(built.report).includes('alpha'), false);
+  assert.equal(built.report.redacted, true);
+  materializeCampaignExclusions(rows, built.snapshots, context);
+});
+
+test('producer rejects incomplete, non-full, stale-shape and cross-dataset source bundles', () => {
+  const valid = sourceBundle();
+  assert.throws(() => buildCampaignExclusionSnapshotBundle({
+    ...valid,
+    exports: valid.exports.slice(1),
+  }, { now, leadHashSecret, snapshotSecret }), /SOURCE_BUNDLE_INVALID/);
+  assert.throws(() => buildCampaignExclusionSnapshotBundle({
+    ...valid,
+    exports: valid.exports.map((item, index) =>
+      index === 0 ? { ...item, full_snapshot: false } : item),
+  }, { now, leadHashSecret, snapshotSecret }), /SOURCE_EXPORT_METADATA_INVALID/);
+  assert.throws(() => buildCampaignExclusionSnapshotBundle({
+    ...valid,
+    exports: valid.exports.map((item, index) =>
+      index === 0 ? { ...item, dataset_sha256: 'e'.repeat(64) } : item),
+  }, { now, leadHashSecret, snapshotSecret }), /SOURCE_BUNDLE_INVALID/);
+  assert.throws(() => buildCampaignExclusionSnapshotBundle({
+    ...valid,
+    exports: valid.exports.map((item, index) =>
+      index === 0 ? { ...item, unexpected: true } : item),
+  }, { now, leadHashSecret, snapshotSecret }), /SOURCE_EXPORT_METADATA_INVALID/);
 });

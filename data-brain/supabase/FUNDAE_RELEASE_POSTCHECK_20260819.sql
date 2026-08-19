@@ -27,7 +27,8 @@ begin
     'operational_alert_receipts', 'operational_alert_audit',
     'journey_retention_control', 'journey_retention_runs',
     'cold_campaign_provision_control', 'cold_campaign_provision_manifests',
-    'cold_campaign_provision_batches', 'transactional_graph_pilot_runs'
+    'cold_campaign_provision_batches', 'transactional_graph_pilot_runs',
+    'hubspot_sync_outbox'
   ]) required(required_name)
   where pg_catalog.to_regclass('public.' || required_name) is null;
   if v_missing is not null then
@@ -38,7 +39,7 @@ begin
   if not exists (
     select 1 from public.outbound_delivery_control
     where singleton and not master_enabled and not transactional_enabled
-      and not cold_enabled and minimum_spacing_seconds >= 60
+      and not cold_enabled and not hubspot_enabled and minimum_spacing_seconds >= 60
       and cold_daily_limit <= 480 and operating_timezone = 'Europe/Madrid'
   ) or not exists (
     select 1 from public.journey_retention_control
@@ -67,7 +68,8 @@ begin
       'operational_alert_receipts', 'operational_alert_audit',
       'journey_retention_control', 'journey_retention_runs',
       'cold_campaign_provision_control', 'cold_campaign_provision_manifests',
-      'cold_campaign_provision_batches', 'transactional_graph_pilot_runs'
+      'cold_campaign_provision_batches', 'transactional_graph_pilot_runs',
+      'hubspot_sync_outbox'
     ]) and (not c.relrowsecurity or not c.relforcerowsecurity);
   if v_bad_rls is not null then
     raise exception using errcode = '42501',
@@ -90,7 +92,8 @@ begin
         'operational_alert_receipts', 'operational_alert_audit',
         'journey_retention_control', 'journey_retention_runs',
         'cold_campaign_provision_control', 'cold_campaign_provision_manifests',
-        'cold_campaign_provision_batches', 'transactional_graph_pilot_runs'
+        'cold_campaign_provision_batches', 'transactional_graph_pilot_runs',
+        'hubspot_sync_outbox'
       ]) and (
         pg_catalog.has_table_privilege(roles.role_name, c.oid, 'SELECT')
         or pg_catalog.has_table_privilege(roles.role_name, c.oid, 'INSERT')
@@ -124,7 +127,9 @@ begin
     'public.start_transactional_graph_pilot(text,text,text,text[],text,integer)',
     'public.finish_transactional_graph_pilot(text,text,text,text)',
     'public.read_transactional_graph_pilot_ledger(text,text)',
-    'public.record_campaign_event_atomic(text,text,text,timestamptz,text,jsonb,jsonb)'
+    'public.record_campaign_event_atomic(text,text,text,timestamptz,text,jsonb,jsonb)',
+    'public.claim_hubspot_sync_outbox(text,integer,integer)',
+    'public.finalize_hubspot_sync_outbox(uuid,text,uuid,bigint,text,text,text,text)'
   ]) required(signature)
   where pg_catalog.to_regprocedure(signature) is null;
   if v_missing_rpc is not null then
@@ -141,7 +146,9 @@ begin
       'public.authorize_graph_draft_send(uuid,text,text,text)',
       'public.finish_transactional_graph_pilot(text,text,text,text)',
       'public.read_transactional_graph_pilot_ledger(text,text)',
-      'public.emergency_halt_outbound_delivery(text,text)'
+      'public.emergency_halt_outbound_delivery(text,text)',
+      'public.claim_hubspot_sync_outbox(text,integer,integer)',
+      'public.finalize_hubspot_sync_outbox(uuid,text,uuid,bigint,text,text,text,text)'
     ]) required(signature)
     where not pg_catalog.has_function_privilege('service_role', signature, 'EXECUTE')
   ) then
@@ -157,7 +164,8 @@ begin
       'claim_transactional_graph_dispatch',
       'reserve_claimed_transactional_graph_dispatch', 'authorize_graph_draft_send',
       'finish_transactional_graph_pilot', 'read_transactional_graph_pilot_ledger',
-      'emergency_halt_outbound_delivery'
+      'emergency_halt_outbound_delivery', 'claim_hubspot_sync_outbox',
+      'finalize_hubspot_sync_outbox'
     ]) and (not p.prosecdef or not coalesce(
       p.proconfig @> array['search_path=""']::text[], false
     ))
@@ -714,6 +722,28 @@ begin
   ) then
     raise exception using errcode = '23514',
       message = 'fundae_release_postcheck_fk_index_missing';
+  end if;
+
+  if pg_catalog.has_table_privilege(
+       'service_role','public.hubspot_sync_outbox','SELECT'
+     ) or pg_catalog.has_table_privilege(
+       'service_role','public.hubspot_sync_outbox','INSERT'
+     ) or pg_catalog.has_table_privilege(
+       'service_role','public.hubspot_sync_outbox','UPDATE'
+     ) or pg_catalog.has_table_privilege(
+       'service_role','public.hubspot_sync_outbox','DELETE'
+     ) or not exists (
+       select 1 from pg_catalog.pg_trigger t
+       where t.tgrelid='public.campaign_contacts'::regclass
+         and not t.tgisinternal
+         and t.tgname in (
+           'campaign_contacts_enqueue_hubspot_insert',
+           'campaign_contacts_enqueue_hubspot_state'
+         )
+       group by t.tgrelid having pg_catalog.count(*)=2
+     ) then
+    raise exception using errcode = '42501',
+      message = 'fundae_release_postcheck_hubspot_outbox_contract_invalid';
   end if;
 end;
 $$;
