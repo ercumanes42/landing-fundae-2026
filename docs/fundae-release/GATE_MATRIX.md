@@ -5,11 +5,11 @@ Estados: `PENDING`, `IN_PROGRESS`, `PASS`, `FAIL`, `BLOCKED`. Solo `PASS` autori
 | Gate | Criterio verificable | Estado | Evidencia requerida | Autoridad |
 |---|---|---:|---|---|
 | G0-L Baseline local | toolchain fijada, manifiesto schema 2 con core crítico, pins CI y suites focales estáticas | PASS | comandos locales + `releaseInputsDigest` de handoff | técnica |
-| G0-CI Empaquetado | core 100% tracked, checkout limpio reproducible, `npm ci` y CI raíz/Data Brain/automation | IN_PROGRESS | commit selectivo final + GitHub run verde + manifest artifact del commit | técnica |
+| G0-CI Empaquetado | core 100% tracked, checkout limpio reproducible, `npm ci` y CI raíz/Data Brain/automation | PASS | rama publicada, PR #1 y GitHub Actions `32340810589` verde | técnica |
 | G1 Captura segura | captura persiste sin outbound; legacy inert; UX coherente con switches OFF | IN_PROGRESS | unit/integration/E2E capture-only | técnica |
 | G2 Supabase | backup, precheck, migración revisada, staging, postcheck/advisors, rollback smoke | IN_PROGRESS | staging SQL/rollback PASS; faltan backup y apply productivo autorizado, además del subgate aplicativo `NETWORK_G2` | usuario para live |
 | G3 Graph transaccional | 1 reserva=1 draft; ImmutableId; mismo draft enviado; Sent Items confirmado; ambigüedad detiene | BLOCKED | contratos/fault tests y esquema staging PASS; faltan OAuth/mailbox y 4/4 fresh E2E con Sent Items | usuario para live |
-| G4 Journey consentido | contrato completo, seudónimos, unión server-side tras consentimiento, minimización | IN_PROGRESS | contrato/tests y purge SQL staging PASS; faltan política final, activación controlada y prueba de retención con datos sintéticos | técnica |
+| G4 Journey consentido | contrato completo, seudónimos, unión server-side tras consentimiento, minimización | IN_PROGRESS | política final y contrato/tests PASS; purge SQL staging PASS pero sigue OFF hasta producción autorizada | técnica |
 | G5 Dashboard/RBAC | agregados server-side, sin full-table load, claims/mailbox/reservas/tx/campaign/health, auditoría | IN_PROGRESS | UI/contratos y RLS/grants staging PASS; faltan principals y rendimiento con volumen sintético | técnica |
 | G6 HubSpot | upsert idempotente por `lead_id`; tareas/replies; supresiones sincronizadas | IN_PROGRESS | outbox durable versionado, worker/replay y smoke staging PASS; faltan portal/scopes, propiedades y sandbox real | usuario para live |
 | G7 Campaña | 939 únicos elegibles; lotes 235/235/235/234; 5 emails; baja en 4695; stops; worker/rate/timezone | BLOCKED | artefacto 939/4695 y productor firmado de snapshots PASS local; faltan cinco exports privados frescos, materialización final y autorización operativa | técnica/usuario |
@@ -42,7 +42,7 @@ G0-L queda `PASS`. La rama `codex/fundae-release` contiene commits selectivos; G
 - Automation: 85/85 PASS. Candidate/CI contract: 10/10. Pins CI: 7/7. Gate pack: 12/12 y runner Static PASS. `git diff --check`: exit 0.
 - Staging Supabase: piloto Graph acotado, supresión terminal y provisioning v3 aplicados; postcheck y tres smokes rollback-only PASS, outbound OFF y proyecto independiente pausado. Advisors finales: 0 WARN/ERROR y 0 FK sin índice. No se ejecutaron GitHub CI, `npm ci` limpio, NETWORK_G2 aplicativo, Graph/HubSpot/Make live, deploy ni envíos.
 - Campaña: el reporte agregado sin PII valida 939 únicos, lotes 235/235/235/234 y 4695/4695 cuerpos identificados con `{{unsubscribe_url}}`; mantiene 939 contactos en `PENDIENTE`, rechecks técnicos de exclusión pendientes y autorización de campaña `PENDING`. G7 permanece `BLOCKED`.
-- Legal: Aviso Legal `PASS-LOCAL` con identidad y datos registrales contrastados; Privacidad y Cookies siguen `NO-GO` hasta aprobar finalidades/bases, plazos, encargados/transferencias, DPO/canal de derechos e inventario runtime.
+- Legal: Aviso Legal, Privacidad y Cookies `PASS-LOCAL`; consentimiento caduca a 24 meses y E2E demuestra cero analítica antes de aceptar y limpieza al retirar. Producción conserva un bloqueo documental separado.
 
 ## Cierre técnico incremental — 2026-08-20
 

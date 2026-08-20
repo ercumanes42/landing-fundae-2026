@@ -1,99 +1,91 @@
-# Matriz técnica de privacidad, cookies y retención — 2026-08-19
+# Matriz aprobada de privacidad, cookies y retención — 2026-08-20
 
-Estado: `NO-GO` para presentar Privacidad o Cookies como definitivas. Este documento inventaría el comportamiento local verificable; no fija bases jurídicas, plazos legales, encargados, transferencias ni DPD.
+Estado: `PASS-LOCAL`. Decisiones aplicables a esta landing y Data Brain. No habilita producción, campaña ni proveedores que continúan `OFF`.
 
-## Convenciones
+## Responsable
 
-- `PENDIENTE`: requiere una decisión documentada de la persona responsable; no se infiere del código.
-- `OFF`: existe implementación local, pero el switch, scheduler o purga permanece desactivado.
-- `NO VERIFICADO`: la fuente admite la integración, pero no demuestra su configuración ni uso en el despliegue.
-- Un `expires_at` o una lease operativa limita el uso de una credencial o bloqueo; no equivale a borrado físico ni a una política de conservación.
+- Responsable: Gestión de Formación y Selección, S.L. — NIF B13306428.
+- Canal de privacidad y derechos: `administracion@gfs.es`.
+- DPD: no designado para estos tratamientos. Reevaluar si la actividad pasa a observación habitual a gran escala, categorías especiales a gran escala o un supuesto obligatorio.
 
-## Finalidades y datos
+## Finalidad, base y retención
 
-| Flujo técnico | Finalidad técnica observada | Categorías de datos observadas | Base jurídica publicada | Retención técnica actual | Gate |
-| --- | --- | --- | --- | --- | --- |
-| Preferencia de analítica | Recordar aceptar/rechazar | Estado, versión y fecha de decisión | `PENDIENTE` | `localStorage`, sin TTL | Aprobar duración y mecanismo de renovación |
-| Journey web opcional | Funnel, atribución y CRO | IDs seudónimos de journey/sesión, URL y referrer, UTM, dispositivo/viewport, eventos page/video/tool/form/download | `PENDIENTE`; el código exige `accepted`, lo que no sustituye la validación jurídica | Navegador: 30 días renovables para journey; sesión con 30 minutos de inactividad; atribución sin TTL. Servidor: propuesta de 90 días, purga `OFF` | Aprobar finalidad, 90 días, terceros y retirada efectiva |
-| Captación y entrega de recursos | Registrar solicitud y entregar calculadora/PDF/checklist/webinar | Nombre, email, teléfono, cargo, empresa; respuestas de formulario; atribución, journey, scoring y metadatos de entrega | `PENDIENTE` por finalidad | `public.leads` y colas asociadas sin TTL ni purga | Definir base, información, minimización y plazo |
-| Consultas, diagnóstico y reuniones | Responder y gestionar reserva | Identidad/contacto, empresa, mensaje/interés, URL/UTM de reserva y estado de reunión | `PENDIENTE` | Sin TTL local; Calendly/Microsoft conservan además según configuración externa `PENDIENTE` | Aprobar base y retención en cada sistema |
-| Scoring y resumen IA | Priorización y apoyo comercial | Scoring, rol, empresa, interés, respuestas, crédito estimado y journey. El resumen individual excluye nombre/email/teléfono; el analista recibe UUID de lead y atributos categóricos | `PENDIENTE` | Resultado almacenado con el lead, sin TTL separado; política del proveedor `PENDIENTE` | Aprobar campos permitidos, revisión humana y proveedor |
-| Email transaccional | Entregar el recurso solicitado | Email destinatario, plantilla/recurso, adjuntos, IDs de mensaje, hashes, estados y evidencia de Sent Items | `PENDIENTE` | Claims/reservas/outbox/eventos y buzón sin política de borrado local | Aprobar conservación local y del buzón |
-| Campaña comercial | Secuencia de cinco correos y seguimiento | Email directo, nombre, empresa, cargo, IDs externos, hash de email, lote/variante, cuerpo de correo, estados, replies, bounces y reuniones | Premisa operativa de clientes previos/servicios similares aportada; base RGPD, prueba y texto informativo siguen `PENDIENTE` | Contactos, mensajes, ejecuciones y eventos sin TTL ni purga | No activar hasta cerrar información, trazabilidad y exclusiones |
-| Baja, oposición y supresión | Detener envíos y evitar recontacto | Hash de identidad/email, alcance, motivo, fecha; token hash y caducidad opcional | `PENDIENTE` | Sin purga. La expiración del token solo invalida su uso; no borra la supresión | Aprobar conservación mínima/máxima y excepciones a borrado |
-| Reply, NDR y Calendly inbound | Correlacionar y detener secuencia | Hash de evento proveedor, clase, timestamps, IDs internos y evidencia mínima; el ledger local no persiste cuerpo ni dirección del mensaje | `PENDIENTE` | Ledger/alertas/cursor sin TTL; contenido original permanece en proveedor según política `PENDIENTE` | Aprobar retención y acceso a buzón/reservas |
-| HubSpot | CRM comercial y tareas por reply positivo | Contacto, empresa, IDs idempotentes, estados de secuencia/reply/supresión y tarea | `PENDIENTE` | Sin TTL local ni política HubSpot verificada | Aprobar alcance de sync, borrado y contrato |
-| Seguridad y rate limit | Prevenir abuso y limitar llamadas | Hash derivado de clave/IP y contadores de ventana | `PENDIENTE` | Expiración lógica por ventana; RPC puede borrar filas expiradas desde hace 1 día, pero no hay schedule acreditado | Aprobar plazo y ejecutar/verificar cleanup |
-| Observabilidad y administración | Salud, alertas, RBAC y auditoría | Métricas/contadores, hashes de evidencia/actor, rol, acción, ruta y timestamps | `PENDIENTE` | Heartbeats, alertas, receipts y audit logs sin TTL | Aprobar acceso, granularidad y conservación |
-
-## Inventario de navegador
-
-| Clave | Medio | Escritura actual | Caducidad/borrado implementado |
-| --- | --- | --- | --- |
-| `fundae_analytics_consent_v1` | `localStorage` | Al aceptar o rechazar | Sin TTL; una versión ausente, inválida o distinta vuelve a `unknown` y purga identificadores analíticos |
-| `fundae_journey_v2` | `localStorage` | Solo dentro del tracker consentido | 30 días deslizantes; se elimina al rechazar |
-| `fundae_first_touch_v2` | `localStorage` | Solo dentro del tracker consentido | Sin TTL; se elimina al rechazar |
-| `fundae_last_touch_v2` | `localStorage` | Solo dentro del tracker consentido | Sin TTL; se elimina al rechazar |
-| `fundae_session_v2` | `sessionStorage` | Solo dentro del tracker consentido | Se rota tras 30 minutos de inactividad y termina con la sesión; se elimina al rechazar |
-| `fundae_campaign_context_v1` | `sessionStorage` | Contexto UTM de campaña dentro del tracker consentido | Vida de sesión; se elimina al rechazar |
-| `fundae_utm` | `sessionStorage` | Hook presente, sin consumidor/importación localizada | Dormante; sin TTL propio si se conectase |
-| `fundae_pending_leads` | `localStorage` | No se escribe; solo se elimina como residuo legacy | No es una cola activa |
-| `fundae_identity_v1`, `fundae_session_v1`, `fundae_first_touch_v1`, `fundae_last_touch_v1` | Ambos storages | No se escriben; solo figuran en la lista de limpieza | Se eliminan al rechazar o invalidar la versión de consentimiento |
-
-La búsqueda estática no localiza escrituras a `document.cookie` ni carga propia de scripts GA/LinkedIn. `window.gtag` y `window.posthog` se usan si otro runtime los inyecta; además existe envío directo al endpoint PostHog si se configura su key. Por ello, la ausencia de cookies en fuente no sustituye un escaneo del dominio desplegado antes y después de aceptar/rechazar/retirar.
-
-## Datasets servidor y borrado físico
-
-| Dataset | Datos relevantes | Política/TTL local verificado |
+| Tratamiento | Base adoptada | Retención máxima ordinaria |
 | --- | --- | --- |
-| `events` | Journey raw seudónimo y propiedades de interacción | Control propuesto de 90 días; `purge_enabled=false`; sin cron. Es el único borrado de datos de journey implementado |
-| `sessions` y agregados | Sesión, duración, país/dispositivo/browser y conversión | Tabla referenciada por el dashboard; plazo `PENDIENTE`; no hay borrado en las migraciones revisadas |
-| `leads`, `delivery_queue`, intake/reservas/dispatch transaccional | PII, formularios, scores, recursos, estados e idempotencia | Sin TTL/purga |
-| `campaigns`, `campaign_contacts`, `campaign_events`, ejecuciones, payloads y dispatch | PII comercial, cuerpos, estados y eventos | Sin TTL/purga |
-| `campaign_suppressions`, `campaign_unsubscribe_tokens` | Hashes de identidad, motivo y token | Sin purga; `expires_at` del token no elimina la fila |
-| `graph_outbox`, autorizaciones y eventos | IDs/hash de mensaje, estados, evidencias y timestamps | Sin TTL/purga; leases/capabilities no son conservación |
-| `inbound_event_ledger`, alertas y cursores | Hashes/metadatos de Graph/Calendly y correlación interna | Sin TTL/purga |
-| `operational_*`, `dashboard_principals`, `dashboard_audit_log` | Salud, alertas, hashes/roles/auditoría | Sin TTL/purga |
-| `cold_campaign_provision_*` | Manifiestos, hashes, batches y autorización | Sin TTL/purga; expiración solo cierra la capacidad de provisioning |
-| `rate_limit_buckets` | Hash y contador | Caduca para la decisión; cleanup físico por RPC y sin scheduler acreditado |
+| Entrega de calculadora, checklist, webinar o diagnóstico solicitado | Solicitud del interesado y medidas precontractuales | 12 meses desde la última interacción si no hay contratación |
+| Consultas y reuniones | Solicitud y medidas precontractuales | 12 meses; si nace relación contractual, plazos contractuales y legales |
+| Analítica y journey web | Consentimiento previo | Eventos raw: 90 días; identificador de navegador: 30 días renovables |
+| Scoring y resumen IA minimizado | Interés legítimo en priorización y atención, con revisión humana | Con el lead, máximo 24 meses desde la última interacción |
+| Email transaccional | Ejecución de la solicitud | Evidencia y metadatos: 24 meses |
+| Seguimiento comercial | Consentimiento cuando sea exigible; clientes previos y servicios propios similares: interés legítimo + art. 21.2 LSSI | Hasta oposición; registros inactivos, 24 meses desde la última interacción |
+| Seguridad, rate limit y observabilidad | Interés legítimo en seguridad y continuidad | 12 meses |
+| Solicitudes de derechos y reclamaciones | Obligación legal y defensa de reclamaciones | 3 años desde el cierre, salvo litigio |
+| Contratos y facturación | Ejecución contractual y obligación legal | Relación vigente; 6 años mercantil y 4 años tributario, sin perjuicio de otros plazos aplicables |
+| Baja, oposición y hard bounce | Obligación de respetar la oposición e interés legítimo en evitar recontacto | Hash mínimo mientras sea necesario; revisión cada 5 años |
 
-En las migraciones revisadas solo existen dos `DELETE` de mantenimiento: `public.events` mediante la purga acotada y `public.rate_limit_buckets` mediante su RPC de cleanup. No hay prueba local de ejecución en staging o producción.
+Los datos se bloquearán cuando proceda y se eliminarán o anonimizarán al finalizar el plazo. Las copias de seguridad se sobrescribirán conforme a su ciclo ordinario y no se reutilizarán para finalidades activas.
+
+## Almacenamiento del navegador
+
+| Clave | Medio | Categoría | Duración |
+| --- | --- | --- | --- |
+| `fundae_analytics_consent_v1` | `localStorage` | Preferencia necesaria | 24 meses o cambio de versión |
+| `fundae_journey_v2` | `localStorage` | Analítica opcional | 30 días deslizantes |
+| `fundae_session_v2` | `sessionStorage` | Analítica opcional | Sesión; rota tras 30 minutos de inactividad |
+| `fundae_first_touch_v2`, `fundae_last_touch_v2` | `localStorage` | Analítica opcional | Hasta retirada o cambio de política |
+| `fundae_campaign_context_v1` | `sessionStorage` | Analítica opcional | Sesión |
+
+Las claves legacy `fundae_identity_v1`, `fundae_session_v1`, `fundae_first_touch_v1` y `fundae_last_touch_v1` solo figuran para su limpieza. La fuente no escribe `document.cookie`. Aceptar o rechazar se ofrece al mismo nivel; al retirar se purgan los identificadores analíticos.
 
 ## Proveedores y transferencias
 
-| Sistema admitido por la fuente | Datos que podría recibir | Activación acreditada por esta auditoría | Encargado, región, subencargados y transferencia |
-| --- | --- | --- | --- |
-| Vercel/runtime web | Requests, IP/headers y logs según despliegue | Proyecto preparado para Vercel; configuración live no revisada | `PENDIENTE` |
-| Supabase | Todos los datasets persistentes anteriores | Código y migraciones presentes; proyecto/región live no revisados | `PENDIENTE` |
-| Microsoft 365 / Graph | Destinatarios, correos, adjuntos, drafts, Sent Items, replies y NDR | Runtime implementado; switches deben seguir `OFF` | `PENDIENTE` |
-| HubSpot | Contactos, empresas, estados y tareas | Implementado con `HUBSPOT_SYNC_ENABLED=false` por defecto | `PENDIENTE` |
-| Calendly | Datos completos de reserva; localmente solo se conserva correlación mínima | Webhook con switch `false` por defecto; URL pública configurable | `PENDIENTE` |
-| PostHog | Journey seudónimo, URL/referrer, UTM, dispositivo y eventos | Opcional; key/activación live no verificadas. El host EU del ejemplo no prueba región contractual | `PENDIENTE` |
-| Google Analytics (`window.gtag`) | Payload de journey si un script externo lo inyecta | No se carga script en la fuente revisada | `PENDIENTE` o retirar configuración no usada |
-| OpenAI | Proyección de lead y contexto analítico seudónimo/categórico | Llamadas implementadas si existe API key y se invocan las rutas | `PENDIENTE` |
-| Make | Payloads de automatización si se habilita legacy/scheduler | Legacy `OFF`; blueprints operativos aún no acreditados | `PENDIENTE` |
-| Webhook de notificación sin proveedor identificado | La función dormante incluye nombre, email, teléfono, empresa, score y resumen IA; alertas Graph usan hashes | URL opcional; la función de lead prioritario no tiene consumidor localizado | `PENDIENTE`; identificar o eliminar antes de activar |
-| Airtable | Variables e indicador de integración | No se localiza llamada API en código productivo | `PENDIENTE` o retirar configuración no usada |
+| Proveedor/categoría | Uso aprobado | Condición |
+| --- | --- | --- |
+| Vercel | Hosting, edge y logs | Contrato de encargo y configuración de región/logs |
+| Supabase | Base de datos y funciones | Región UE, RLS/grants y contrato de encargo |
+| Microsoft 365 / Graph | Drafts, envíos, replies y NDR | Buzón único, App RBAC y permisos mínimos |
+| HubSpot | CRM, empresas, estados y tareas | Solo tras sandbox, propiedades/scopes y contrato |
+| Calendly | Reserva de reuniones | Enlace/webhook firmado; política propia en su dominio |
+| PostHog | Analítica consentida | Host UE y solo eventos minimizados |
+| OpenAI | Resumen minimizado de leads | Sin nombre, email ni teléfono en la proyección; revisión humana |
+| Make | Orquestación técnica | Scheduler-only, sin autoridad de envío y actualmente `OFF` |
+| Webhook de notificación | Alertas operativas redacted | Receptor identificado, HTTPS y autenticado antes de habilitar |
 
-La dependencia `@google/genai`, los identificadores GA4/LinkedIn y el texto “Hotjar” no demuestran tratamientos activos: no se localizó una llamada productiva correspondiente. Deben retirarse si no forman parte del diseño aprobado o incorporarse al inventario contractual y runtime si se activan.
+Google Analytics, LinkedIn Insight y Airtable no forman parte de la versión aprobada mientras no exista carga o integración productiva verificable. Si se incorporan, requieren actualizar inventario, contratos y consentimiento.
 
-## Decisiones requeridas
+Cuando exista tratamiento fuera del EEE se exigirá una decisión de adecuación o garantías del artículo 46 RGPD, normalmente cláusulas contractuales tipo y medidas complementarias. No se venderán datos ni se comunicarán para finalidades propias de terceros.
 
-1. Aprobar base jurídica e información por cada finalidad, separando entrega solicitada, seguimiento comercial, analítica, IA, seguridad, auditoría y supresión.
-2. Aprobar TTL o criterio para cada dataset y proveedor, incluyendo backups, logs, mailbox, CRM, tokens, auditoría y conservación probatoria de bajas/oposiciones.
-3. Confirmar canal de derechos y procedimiento; documentar si existe DPD sin inferirlo.
-4. Identificar los proveedores realmente contratados, región, subencargados, DPA y mecanismo de transferencia aplicable.
-5. Elegir analítica efectiva; ejecutar inventario live antes/después de aceptar, rechazar y retirar; validar que no haya emisión previa.
-6. Aprobar qué campos pueden salir a OpenAI y al webhook de notificación; confirmar minimización, acceso y política contractual.
-7. Aprobar política de Microsoft 365/Graph para drafts, Sent Items, replies, NDR, adjuntos y auditoría local.
-8. Documentar procedencia/prueba de relación previa de los 939 contactos, categorías y texto de primera comunicación, sin confundir la excepción LSSI con la base RGPD.
-9. Definir propagación de acceso/rectificación/supresión entre Supabase, HubSpot, Microsoft, Calendly, PostHog, Make y backups, preservando solo la supresión estrictamente necesaria cuando proceda.
-10. Aprobar o rechazar la propuesta de 90 días; solo después validar la purga en staging, habilitar su kill switch y crear un scheduler bajo cambio separado.
+## Derechos y transparencia
+
+La primera capa identifica responsable, finalidad y enlace a la política. La casilla de formulario confirma lectura y solicitud; no fuerza un consentimiento genérico. La analítica tiene consentimiento separado. Se permiten acceso, rectificación, supresión, oposición, limitación, portabilidad y retirada; solo se solicitará identificación adicional ante duda razonable. La persona puede reclamar ante la AEPD.
+
+No se adoptan decisiones exclusivamente automatizadas con efectos jurídicos o similares. El scoring y la IA son apoyo sujeto a revisión humana.
+
+## Controles técnicos
+
+- Consentimiento desconocido o rechazado: cero eventos analíticos.
+- Cambio de versión o retirada: limpieza del almacenamiento analítico.
+- Eventos raw: política de 90 días; el job de purga permanece `OFF` hasta autorización de producción.
+- Los únicos borrados físicos de mantenimiento existentes son `public.events` y `public.rate_limit_buckets`; el resto requiere el procedimiento de supresión/anonimización previo a producción.
+- Outbound, Graph, HubSpot, Make, alertas y campaña: switches `OFF` por defecto.
+- Supresiones y bajas prevalecen sobre workbook, CRM y scheduler.
+- Producción exige contratos/configuración reales de los proveedores habilitados y comprobación runtime del dominio.
+
+## Fuentes oficiales
+
+- RGPD, artículos 6, 13, 21, 22 y 46: https://eur-lex.europa.eu/eli/reg/2016/679/oj
+- AEPD, deber de información: https://www.aepd.es/preguntas-frecuentes/2-tus-obligaciones-como-responsable-del-tratamiento/6-el-deber-de-informacion/FAQ-0217-que-informacion-debe-facilitarse-cuando-los-datos-se-obtengan-directamente-del-afectado
+- AEPD, Guía de cookies: https://www.aepd.es/guias/guia-cookies.pdf
+- AEPD, DPD: https://www.aepd.es/preguntas-frecuentes/4-dpd/1-delegado-de-proteccion-de-datos/FAQ-0402-cuando-se-debe-nombrar-un-dpd
+- AEPD, transferencias: https://www.aepd.es/derechos-y-deberes/cumple-tus-deberes/medidas-de-cumplimiento/garantias-transferencias-datos-personales
+- LSSI, artículos 21 y 22: https://www.boe.es/buscar/act.php?id=BOE-A-2002-13758
+- Código de Comercio, artículo 30: https://www.boe.es/buscar/act.php?id=BOE-A-1885-6627#a30
+- Ley General Tributaria, artículo 66: https://www.boe.es/buscar/act.php?id=BOE-A-2003-23186#a66
 
 ## Gates
 
-- `PRIVACY-POLICY`: `NO-GO` hasta cerrar decisiones 1–4 y 6–9.
-- `COOKIE-POLICY`: `NO-GO` hasta cerrar decisión 5 con evidencia del dominio desplegado.
-- `JOURNEY-RETENTION`: implementación local `OFF`; no `PASS` hasta aprobación de 90 días, ejecución en staging, backup/rollback, dry-run, batch aplicado y auditoría.
-- `CAMPAIGN-ACTIVATION`: `NO-GO`; esta matriz no autoriza importación, activación ni envío.
-- `LIVE-EVIDENCE`: ausente; no se hizo deploy, consulta de proveedor, migración ni borrado.
+- `PRIVACY-POLICY`: `PASS-LOCAL`.
+- `COOKIE-POLICY`: `PASS-LOCAL`; exige comprobación runtime antes de producción.
+- `JOURNEY-RETENTION`: política aprobada; ejecución del purge continúa `OFF` hasta cambio productivo autorizado.
+- `CAMPAIGN-ACTIVATION`: `BLOCKED`; requiere datos privados frescos y autorización operativa, no una nueva redacción legal.
+- `PRODUCTION-DEPLOY`: `BLOCKED` hasta autorización separada y marcador documental.

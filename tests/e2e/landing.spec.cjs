@@ -35,12 +35,24 @@ for (const [route, expected] of [
 }
 
 test('mobile layout has no horizontal overflow and consent has equal choices', async ({ page }) => {
+  const analyticsRequests = [];
+  page.on('request', (request) => {
+    if (/posthog|google-analytics|googletagmanager|linkedin/i.test(request.url())) {
+      analyticsRequests.push(request.url());
+    }
+  });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(base + '/calculadora', { waitUntil: 'networkidle' });
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1);
   expect(overflow).toBe(false);
   await expect(page.getByRole('button', { name: 'Rechazar' })).toBeVisible();
   await expect(page.getByRole('button', { name: /Aceptar analítica/i })).toBeVisible();
+  expect(await page.context().cookies()).toEqual([]);
+  expect(await page.evaluate(() => ({
+    local: Object.keys(localStorage).filter((key) => key.startsWith('fundae_')),
+    session: Object.keys(sessionStorage).filter((key) => key.startsWith('fundae_')),
+  }))).toEqual({ local: [], session: [] });
+  expect(analyticsRequests).toEqual([]);
 });
 
 test('privacy preferences remain accessible and withdrawal clears analytics storage', async ({ page }) => {

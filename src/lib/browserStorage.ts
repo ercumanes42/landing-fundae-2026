@@ -3,6 +3,7 @@ export type BrowserStorageCategory = 'preferences' | 'analytics';
 export type BrowserStorageCleanup = 'consent-withdrawal' | 'policy-version-change';
 export type BrowserStorageRetention =
   | 'policy-version'
+  | 'fixed'
   | 'rolling'
   | 'session-idle'
   | 'session'
@@ -26,8 +27,8 @@ export const BROWSER_STORAGE_REGISTRY = {
     key: 'fundae_analytics_consent_v1',
     category: 'preferences',
     storageAreas: ['localStorage'],
-    retention: 'policy-version',
-    ttlMs: null,
+    retention: 'fixed',
+    ttlMs: 730 * DAY_MS,
     cleanup: ['policy-version-change'],
   },
   journey: {

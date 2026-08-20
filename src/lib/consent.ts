@@ -6,7 +6,8 @@ import {
 
 export type AnalyticsConsent = 'unknown' | 'accepted' | 'rejected';
 
-export const ANALYTICS_CONSENT_VERSION = '2026-08-19';
+export const ANALYTICS_CONSENT_VERSION = '2026-08-20';
+export const ANALYTICS_CONSENT_MAX_AGE_MS = 730 * 24 * 60 * 60 * 1000;
 
 const ANALYTICS_CONSENT_KEY = BROWSER_STORAGE_REGISTRY.analyticsConsent.key;
 
@@ -80,7 +81,15 @@ export function getAnalyticsConsent(): AnalyticsConsent {
   } catch {
     return invalidateStoredConsent();
   }
-  if (isStoredConsent(parsed) && parsed.version === ANALYTICS_CONSENT_VERSION) {
+  const consentAgeMs = isStoredConsent(parsed)
+    ? Date.now() - Date.parse(parsed.updated_at)
+    : Number.NaN;
+  if (
+    isStoredConsent(parsed) &&
+    parsed.version === ANALYTICS_CONSENT_VERSION &&
+    consentAgeMs >= 0 &&
+    consentAgeMs <= ANALYTICS_CONSENT_MAX_AGE_MS
+  ) {
     memoryConsent = parsed.state;
     return parsed.state;
   }

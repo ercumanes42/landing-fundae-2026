@@ -29,6 +29,7 @@ test('every analytics identifier is purged on consent withdrawal', () => {
 test('active journey and session TTLs match the tracking contract', () => {
   assert.equal(BROWSER_STORAGE_REGISTRY.journey.ttlMs, 30 * 24 * 60 * 60 * 1000);
   assert.equal(BROWSER_STORAGE_REGISTRY.session.ttlMs, 30 * 60 * 1000);
-  assert.equal(BROWSER_STORAGE_REGISTRY.analyticsConsent.retention, 'policy-version');
+  assert.equal(BROWSER_STORAGE_REGISTRY.analyticsConsent.retention, 'fixed');
+  assert.equal(BROWSER_STORAGE_REGISTRY.analyticsConsent.ttlMs, 730 * 24 * 60 * 60 * 1000);
   assert.deepEqual(BROWSER_STORAGE_REGISTRY.analyticsConsent.storageAreas, ['localStorage']);
 });

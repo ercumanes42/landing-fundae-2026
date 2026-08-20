@@ -115,7 +115,7 @@ export function DiagnosticSection() {
                 <div className="flex items-start gap-2">
                   <input type="checkbox" id="privacyA_diagnostic" name="privacy_accepted" required className="mt-1 accent-[#302B7B] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF206E] focus-visible:ring-offset-2" />
                   <label htmlFor="privacyA_diagnostic" className="text-xs text-gray-500">
-                    He leído y acepto la <a href="/privacidad" className="rounded-sm font-semibold text-[#302B7B] underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF206E]">política de privacidad</a>. Consiento el tratamiento de mis datos para reservar la sesión.
+                    He leído la <a href="/privacidad" className="rounded-sm font-semibold text-[#302B7B] underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF206E]">política de privacidad</a>. Solicito que se usen mis datos para gestionar la sesión.
                   </label>
                 </div>
                 <div className="flex items-start gap-2">

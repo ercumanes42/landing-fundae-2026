@@ -270,3 +270,10 @@ No afirmar 100%, producción o E2E live hasta: release reproducible; SQL real y 
 - La migración `20260819224739_hubspot_sync_outbox.sql` se aplicó al staging autorizado. Postcheck y smoke rollback-only devolvieron `fundae_release_postcheck_ok` y `fundae_release_hubspot_sync_smoke_ok`; master, transaccional, cold y HubSpot quedaron OFF, sin claims activos.
 - Advisors: 42 INFO de seguridad y 68 INFO de rendimiento, 0 WARN/ERROR. QA local: Data Brain 337/337 + anti-omisión 1/1, setup 37/37, typecheck/build PASS; automation 87/87; gate pack 12/12 y Static PASS.
 - No hubo producción, deploy, Graph/HubSpot/Make live ni envíos. G3/G6/G7/G8 siguen sin PASS global hasta aportar OAuth/mailbox y 4/4 real, sandbox HubSpot, cinco exports privados frescos, autorización operativa, receptores de alertas y gates de rollout.
+
+## Cierre legal local — 20 de agosto de 2026
+
+- Aviso Legal, Privacidad y Cookies quedan redactados como versiones vigentes, con identidad y canal corporativos contrastados, bases por finalidad, plazos, categorías de encargados, transferencias, derechos, DPD y decisiones automatizadas.
+- La casilla de formulario confirma lectura/solicitud y no simula un consentimiento genérico. La analítica mantiene consentimiento separado, rechazo equivalente, retirada accesible y caducidad de 24 meses.
+- Evidencia: legal/privacidad 30/30, gate 7/7, typecheck y build PASS; E2E de consentimiento 2/2 demuestra cero cookies/almacenamiento/analítica antes de aceptar y limpieza tras retirar.
+- El marcador de producción permanece `BLOCKED`: este cierre legal local no equivale a merge, deploy, activación de proveedores ni envío.

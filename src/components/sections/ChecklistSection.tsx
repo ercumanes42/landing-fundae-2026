@@ -133,7 +133,7 @@ export function ChecklistSection() {
                 <div className="flex items-start gap-2 mt-4">
                   <input type="checkbox" id="privacyA_checklist" name="privacy_accepted" required className="mt-1 accent-[#302B7B] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF206E] focus-visible:ring-offset-2" />
                   <label htmlFor="privacyA_checklist" className="text-xs text-slate-600">
-                    He leído y acepto la <a href="/privacidad" className="rounded-sm font-semibold text-[#302B7B] underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF206E]">política de privacidad</a>.
+                    He leído la <a href="/privacidad" className="rounded-sm font-semibold text-[#302B7B] underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF206E]">política de privacidad</a>.
                   </label>
                 </div>
                 <div className="pt-2">

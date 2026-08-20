@@ -16,4 +16,4 @@ Reglas: el sistema permanece OFF; `PASS` exige evidencia del árbol exacto; una 
 
 ## Gate legal de despliegue
 
-`npm run release:deploy:gate` es un gate exclusivo de producción y fail-closed. Actualmente termina con código de proceso `1` y el código estable `FUNDAE_LEGAL_DEPLOY_GATE_BLOCKED` porque Privacidad y Cookies siguen en borrador. `npm run test:release-deploy-gate` valida el contrato sin convertir el copy en definitivo; la build y la QA local pueden continuar. `verify:release` con `FUNDAE_RELEASE_TARGET=production`, los pushes a `main` y el `buildCommand` de Vercel para `VERCEL_ENV=production` ejecutan el bloqueo real; los previews no se bloquean por este gate.
+`npm run release:deploy:gate` es un gate exclusivo de producción y fail-closed. Aviso Legal, Privacidad y Cookies ya están verificados localmente, pero el gate continúa devolviendo `FUNDAE_LEGAL_DEPLOY_GATE_BLOCKED pending=documentary-closure`: la aprobación del texto no autoriza producción. `verify:release` con `FUNDAE_RELEASE_TARGET=production`, los pushes a `main` y el `buildCommand` de Vercel para `VERCEL_ENV=production` ejecutan el bloqueo real; los previews siguen disponibles para QA.

@@ -57,6 +57,19 @@ test('stale or legacy consent is invalidated and analytics identifiers are clear
   }
 });
 
+test('expired or future-dated consent is invalidated', () => {
+  for (const updatedAt of ['2024-01-01T00:00:00.000Z', '2099-01-01T00:00:00.000Z']) {
+    localStorage.clear();
+    sessionStorage.clear();
+    localStorage.setItem('fundae_analytics_consent_v1', JSON.stringify({
+      state: 'accepted',
+      version: ANALYTICS_CONSENT_VERSION,
+      updated_at: updatedAt,
+    }));
+    assert.equal(getAnalyticsConsent(), 'unknown');
+  }
+});
+
 test('unknown consent emits nothing until an explicit accepted decision', () => {
   localStorage.clear();
   sessionStorage.clear();

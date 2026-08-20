@@ -1,6 +1,6 @@
 # Verificación pública del Aviso Legal — 2026-08-19
 
-Estado: cierre limitado al Aviso Legal. No es asesoramiento legal ni acredita la vigencia registral actual de la sociedad. Privacidad y Cookies permanecen `NO-GO`.
+Estado: identidad, Aviso Legal, Privacidad y Cookies cerrados localmente. La redacción adopta decisiones conservadoras basadas en el runtime y en fuentes oficiales; no sustituye una revisión jurídica de la actividad completa de la sociedad ni acredita la vigencia registral actual.
 
 Deploy gate: `BLOCKED`
 
@@ -32,19 +32,20 @@ El BORME acredita los actos publicados en sus fechas. No se obtuvo una nota info
 - Advierte que la comprobación pública no equivale a una certificación registral vigente.
 - El pie de página usa la misma razón social para evitar una identidad pública inconsistente.
 
-## Privacidad y Cookies: gaps bloqueantes
+## Decisiones de Privacidad y Cookies
 
-La matriz técnica completa, con finalidades, datasets, almacenamiento, proveedores, retención actual y decisiones pendientes, está en `docs/fundae-release/PRIVACY_RETENTION_MATRIX.md`. Sus estados `PENDIENTE` no constituyen decisiones jurídicas.
+La persona responsable delegó la redacción y adopción de criterios conservadores el 20/08/2026. La política publicada fija:
 
-No deben presentarse como definitivas hasta que la persona responsable confirme documentalmente:
+1. Solicitudes y reuniones: ejecución de la solicitud y medidas precontractuales.
+2. Analítica: consentimiento previo, rechazo equivalente y retirada permanente accesible.
+3. Marketing: consentimiento cuando proceda; para clientes previos, solo servicios propios similares, datos obtenidos lícitamente y oposición sencilla conforme al artículo 21.2 LSSI.
+4. Retención: 12 meses para solicitudes inactivas; 24 meses para evidencia comercial/CRM; 90 días para eventos raw; 12 meses para logs; 3 años para derechos; plazos mercantiles y tributarios cuando exista relación contractual; supresiones durante el tiempo necesario con revisión quinquenal.
+5. Encargados/categorías: Vercel, Supabase, Microsoft 365, HubSpot, Calendly, PostHog, OpenAI y Make solo para funcionalidades efectivamente habilitadas y bajo contrato.
+6. Transferencias: solo bajo decisión de adecuación o garantías apropiadas, incluidas cláusulas contractuales tipo.
+7. DPD: no se designa para estos tratamientos por no encajar, según el alcance actual, en observación habitual a gran escala ni categorías especiales a gran escala. Debe reevaluarse si cambia ese alcance.
+8. Derechos: `administracion@gfs.es`, canal ya publicado por GFS; verificación adicional solo ante duda razonable.
 
-1. Base jurídica por finalidad: entrega de recursos, consultas/reuniones, webinar, scoring y enriquecimiento IA, seguimiento comercial, clientes actuales/anteriores, seguridad, auditoría y supresiones.
-2. Plazo o criterio de conservación para leads, CRM, correos/outbox, replies, NDR, reuniones, campaña, auditoría, logs y listas de supresión. Solo existe un contrato local propuesto para eventos raw de journey a 90 días; su purga sigue `OFF`.
-3. Encargados efectivos, finalidad, región de tratamiento, transferencias y garantías. El código admite Vercel, Supabase, Microsoft 365/Graph, HubSpot, Calendly, PostHog y OpenAI; Make queda diseñado como scheduler y permanece `OFF`. La presencia en código o variables de ejemplo no prueba activación en producción.
-4. Si existe Delegado de Protección de Datos y, si existe, su canal. No se infiere su designación.
-5. Confirmación documental de `administracion@gfs.es` como canal de derechos y procedimiento de identificación proporcionado.
-6. Procedencia y categorías de los datos de clientes actuales/anteriores, junto con la información facilitada en la primera comunicación cuando proceda.
-7. Inventario runtime de cookies y almacenamiento del dominio publicado. La fuente local no carga scripts GA/LinkedIn ni escribe `document.cookie`; sí implementa almacenamiento de consentimiento, journey y atribución, que debe revisarse en el entorno desplegado.
+La matriz técnica vigente está en `docs/fundae-release/PRIVACY_RETENTION_MATRIX.md`.
 
 Referencias oficiales de alcance:
 
@@ -57,7 +58,7 @@ Referencias oficiales de alcance:
 
 | Clave | Medio | Estado/duración implementada |
 | --- | --- | --- |
-| `fundae_analytics_consent_v1` | localStorage | Preferencia hasta cambio o borrado; no tiene caducidad técnica |
+| `fundae_analytics_consent_v1` | localStorage | Preferencia hasta 24 meses, cambio de política o borrado |
 | `fundae_journey_v2` | localStorage | Identificador seudónimo, 30 días renovables |
 | `fundae_first_touch_v2`, `fundae_last_touch_v2` | localStorage | Solo tras aceptar; sin TTL técnico, se eliminan al rechazar |
 | `fundae_session_v2` | sessionStorage | Sesión seudónima con inactividad de 30 minutos |
@@ -68,11 +69,11 @@ La clave legacy `fundae_pending_leads` solo se elimina; el código actual no la 
 ## Gate
 
 - Aviso Legal: `PASS-LOCAL` limitado a evidencia pública.
-- Privacidad: `NO-GO`.
-- Cookies: `NO-GO` hasta inventario del despliegue.
-- Publicación global: `NO-GO` mientras los dos gates anteriores permanezcan abiertos.
-- Matriz técnica: `PASS-LOCAL` como inventario estático; no cambia ningún gate jurídico ni acredita runtime.
+- Privacidad: `PASS-LOCAL` como texto definitivo del producto.
+- Cookies: `PASS-LOCAL` como texto definitivo alineado con el inventario estático.
+- Producción: `BLOCKED` hasta una autorización de despliegue separada y la comprobación runtime del dominio final.
+- Campaña y proveedores: conservan sus gates operativos; cerrar el texto legal no habilita envíos ni integraciones.
 
 ## Control técnico de despliegue
 
-El gate offline `npm run release:deploy:gate` exige que Aviso Legal, Privacidad y Cookies estén marcados explícitamente como `verified` en la fuente y que este documento contenga un único marcador `Deploy gate` con valor `VERIFIED`. Falla cerrado ante estados en borrador, ausentes, duplicados o malformados y mientras el cierre documental siga bloqueado. Vercel ejecuta el mismo gate antes de su build cuando `VERCEL_ENV=production`; los previews y la build local siguen disponibles para QA. A fecha de este documento devuelve `FUNDAE_LEGAL_DEPLOY_GATE_BLOCKED` y código de proceso `1`; no puede usarse una build local o preview como prueba de aptitud para producción.
+El gate offline `npm run release:deploy:gate` exige que Aviso Legal, Privacidad y Cookies estén marcados como `verified` y que este documento contenga un único marcador `Deploy gate: VERIFIED`. Las páginas ya cumplen el primer requisito; el marcador permanece `BLOCKED` para impedir que cerrar la redacción se convierta en autorización de producción. Vercel aplica el mismo gate a `VERCEL_ENV=production`; previews y build local siguen disponibles para QA.

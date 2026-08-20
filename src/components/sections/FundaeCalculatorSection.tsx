@@ -398,7 +398,7 @@ export function FundaeCalculatorSection() {
                   onChange={handleChange}
                 />
                 <span>
-                  Acepto la <a href="/privacidad" className="rounded-sm font-medium text-[#302B7B] underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF206E]">política de privacidad</a>.
+                  He leído la <a href="/privacidad" className="rounded-sm font-medium text-[#302B7B] underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF206E]">política de privacidad</a>.
                 </span>
               </label>
 

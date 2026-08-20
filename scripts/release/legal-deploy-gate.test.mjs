@@ -30,13 +30,13 @@ const pages = {
 `;
 }
 
-test("blocks the repository while any required legal page remains draft", async () => {
+test("keeps production blocked until documentary closure is explicitly authorized", async () => {
   const source = await readFile(legalPagePath, "utf8");
   const verificationDocument = await readFile(legalVerificationPath, "utf8");
   assert.deepEqual(evaluateLegalDeployGate(source, verificationDocument), {
     ok: false,
     code: LEGAL_DEPLOY_GATE_BLOCKED,
-    pending: ["privacidad", "cookies", "documentary-closure"],
+    pending: ["documentary-closure"],
   });
 });
 
@@ -93,7 +93,7 @@ test("CLI returns a stable block code without exposing legal copy", () => {
   assert.equal(result.stdout, "");
   assert.equal(
     result.stderr.trim(),
-    `[legal-deploy-gate] ${LEGAL_DEPLOY_GATE_BLOCKED} pending=privacidad,cookies,documentary-closure`,
+    `[legal-deploy-gate] ${LEGAL_DEPLOY_GATE_BLOCKED} pending=documentary-closure`,
   );
 });
 

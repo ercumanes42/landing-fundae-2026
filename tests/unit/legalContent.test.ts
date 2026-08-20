@@ -13,19 +13,18 @@ test("legal page source is valid text and contains the verified public identity"
   assert.match(source, /administracion@gfs\.es/);
 });
 
-test("the legal notice is verified without promoting privacy or cookies", () => {
+test("all public legal pages are verified and versioned", () => {
   assert.match(source, /"aviso-legal": \{[\s\S]*?verificationStatus: "verified"/);
-  assert.match(source, /privacidad: \{[\s\S]*?verificationStatus: "draft"/);
-  assert.match(source, /cookies: \{[\s\S]*?verificationStatus: "draft"/);
-  assert.match(source, /Contenido contrastado con fuentes públicas/);
-  assert.match(source, /Versión operativa no definitiva/);
+  assert.match(source, /privacidad: \{[\s\S]*?verificationStatus: "verified"/);
+  assert.match(source, /cookies: \{[\s\S]*?verificationStatus: "verified"/);
+  assert.match(source, /Versión vigente/);
 });
 
-test("unverified legal details remain explicit instead of being invented", () => {
-  assert.match(source, /bases jurídicas por finalidad/);
-  assert.match(source, /plazos de conservación/);
-  assert.match(source, /inventario efectivo de encargados y transferencias/);
-  assert.match(source, /delegado de protección de datos/);
-  assert.match(source, /inventario de cookies y almacenamiento/);
-  assert.doesNotMatch(source, /Google Analytics|LinkedIn Insight|Delegado de Protección de Datos:/);
+test("privacy and cookie decisions are explicit and conservative", () => {
+  assert.match(source, /medidas precontractuales/);
+  assert.match(source, /artículo 21\.2 LSSI/);
+  assert.match(source, /Eventos analíticos seudónimos: 90 días/);
+  assert.match(source, /No se ha designado un delegado de protección de datos/);
+  assert.match(source, /24 meses o hasta cambio de política/);
+  assert.match(source, /Aceptar, rechazar o retirar/);
 });

@@ -65,51 +65,67 @@ const CONTENT: Record<LegalPageKind, LegalPageDefinition> = {
   },
   privacidad: {
     title: "Política de privacidad",
-    verificationStatus: "draft",
-    reviewedAt: "19 de agosto de 2026",
+    verificationStatus: "verified",
+    reviewedAt: "20 de agosto de 2026",
     sections: [
       {
-        heading: "Responsable y contacto",
-        body: <p>{CONTACT.legalName} (NIF {CONTACT.taxId}), con domicilio en {CONTACT.address}. El canal mostrado para consultas es <a href={"mailto:" + CONTACT.email}>{CONTACT.email}</a>; debe confirmarse documentalmente como canal de ejercicio de derechos antes de publicar esta política como definitiva.</p>,
+        heading: "Responsable y canal de privacidad",
+        body: <p>{CONTACT.legalName} (NIF {CONTACT.taxId}), con domicilio en {CONTACT.address}, es responsable del tratamiento. Puedes contactar y ejercer tus derechos en <a href={"mailto:" + CONTACT.email}>{CONTACT.email}</a>. No se ha designado un delegado de protección de datos para estos tratamientos.</p>,
       },
       {
-        heading: "Datos y finalidades previstas",
-        body: <p>El sistema está diseñado para tratar los datos facilitados en formularios o reservas y los datos técnicos mínimos necesarios para entregar recursos, responder consultas y gestionar reuniones. La medición opcional solo se activa tras aceptación expresa y usa identificadores seudónimos.</p>,
+        heading: "Datos, procedencia y finalidades",
+        body: <><p>Tratamos los datos que facilitas en formularios o reservas —identificación, contacto, cargo, empresa, respuestas e interés— para entregar el recurso solicitado, responder consultas, gestionar webinars o reuniones y prestar seguimiento comercial relacionado.</p><p>Con consentimiento analítico tratamos eventos de navegación, atribución e identificadores seudónimos. Para campañas a clientes previos usamos exclusivamente datos obtenidos lícitamente de la relación profesional y registramos bajas, oposiciones y rebotes para impedir nuevos envíos.</p></>,
       },
       {
-        heading: "Comunicaciones y exclusiones",
-        body: <p>Las comunicaciones sobre servicios propios similares deben respetar bajas, oposiciones, rebotes permanentes, supresiones y duplicados. Cada comunicación debe identificar al remitente y ofrecer una baja sencilla.</p>,
+        heading: "Legitimación",
+        body: <><p>La entrega de recursos, respuesta a consultas y gestión de reuniones se basa en tu solicitud y en medidas precontractuales. La analítica opcional se basa en tu consentimiento, que puedes retirar sin afectar al uso de la web.</p><p>El seguimiento comercial se basa en el consentimiento cuando sea exigible o, para clientes previos y servicios propios similares, en el interés legítimo y la excepción del artículo 21.2 LSSI. Puedes oponerte siempre, gratuitamente y desde cada mensaje. La seguridad, prevención de abuso, auditoría y defensa de reclamaciones se basan en obligaciones legales y en el interés legítimo del responsable.</p></>,
       },
       {
-        heading: "Información pendiente de validación",
-        body: <p>Antes de publicar una versión definitiva deben aprobarse las bases jurídicas por finalidad, los plazos de conservación, el inventario efectivo de encargados y transferencias, el procedimiento de derechos y la existencia o no de un delegado de protección de datos.</p>,
+        heading: "Conservación",
+        body: <ul className="list-disc space-y-1 pl-5"><li>Solicitudes sin contratación: hasta 12 meses desde la última interacción.</li><li>Clientes y documentación contractual: durante la relación y los plazos legales aplicables; con carácter general, 6 años para documentación mercantil y 4 años para obligaciones tributarias.</li><li>Evidencia de entrega, comunicaciones y CRM: hasta 24 meses desde la última interacción, salvo relación vigente o reclamación.</li><li>Eventos analíticos seudónimos: 90 días; los agregados irreversiblemente anónimos pueden conservarse sin ese límite.</li><li>Logs de seguridad y operación: hasta 12 meses.</li><li>Solicitudes de derechos: hasta 3 años desde su cierre.</li><li>Supresiones y bajas: el mínimo necesario para respetarlas y evitar recontacto; se revisan cada 5 años.</li></ul>,
+      },
+      {
+        heading: "Destinatarios y proveedores",
+        body: <p>Pueden acceder a los datos, bajo contrato y solo para prestar el servicio, proveedores de alojamiento y base de datos (Vercel y Supabase), correo (Microsoft 365), CRM (HubSpot), reservas (Calendly), analítica consentida (PostHog) y apoyo de IA (OpenAI, únicamente con una proyección minimizada). Make puede actuar como orquestador técnico cuando se habilite. No vendemos datos. Si un proveedor trata datos fuera del Espacio Económico Europeo, exigimos una decisión de adecuación o garantías apropiadas, como las cláusulas contractuales tipo de la Comisión Europea.</p>,
+      },
+      {
+        heading: "Derechos",
+        body: <p>Puedes solicitar acceso, rectificación, supresión, oposición, limitación y portabilidad, o retirar un consentimiento, escribiendo a <a href={"mailto:" + CONTACT.email}>{CONTACT.email}</a>. Solo pediremos información adicional para verificar tu identidad cuando exista una duda razonable. También puedes reclamar ante la <a href="https://www.aepd.es" rel="noreferrer">Agencia Española de Protección de Datos</a>.</p>,
       },
       {
         heading: "Decisiones automatizadas",
-        body: <p>La autoevaluación y el lead scoring sirven para orientación y priorización interna. No producen por sí solos efectos jurídicos ni sustituyen una revisión humana.</p>,
+        body: <p>La autoevaluación, el scoring y los resúmenes asistidos por IA sirven para orientación y priorización interna. No adoptamos decisiones exclusivamente automatizadas que produzcan efectos jurídicos o similares; existe revisión humana.</p>,
+      },
+      {
+        heading: "Seguridad y cambios",
+        body: <p>Aplicamos minimización, control de acceso, seudonimización, cifrado en tránsito, trazabilidad y mecanismos de baja. Actualizaremos esta política cuando cambien las finalidades, proveedores o normas y solicitaremos una nueva decisión cuando el cambio afecte al consentimiento.</p>,
       },
     ],
   },
   cookies: {
     title: "Política de cookies",
-    verificationStatus: "draft",
-    reviewedAt: "19 de agosto de 2026",
+    verificationStatus: "verified",
+    reviewedAt: "20 de agosto de 2026",
     sections: [
       {
-        heading: "Almacenamiento necesario",
-        body: <p>El sitio puede utilizar almacenamiento estrictamente necesario para recordar preferencias y mantener funciones solicitadas.</p>,
+        heading: "Qué utiliza esta landing",
+        body: <p>Esta versión no instala cookies publicitarias. Utiliza almacenamiento del navegador para recordar tu preferencia y, solo si aceptas, medir de forma seudónima el uso de la landing. Rechazar no bloquea formularios, recursos ni reuniones.</p>,
+      },
+      {
+        heading: "Inventario",
+        body: <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead><tr><th className="pr-4">Elemento</th><th className="pr-4">Finalidad</th><th>Duración</th></tr></thead><tbody><tr><td className="pr-4"><code>fundae_analytics_consent_v1</code></td><td className="pr-4">Recordar aceptar o rechazar</td><td>24 meses o hasta cambio de política</td></tr><tr><td className="pr-4"><code>fundae_journey_v2</code></td><td className="pr-4">Journey analítico seudónimo</td><td>30 días renovables</td></tr><tr><td className="pr-4"><code>fundae_session_v2</code></td><td className="pr-4">Agrupar eventos de una sesión</td><td>Sesión; rota tras 30 minutos de inactividad</td></tr><tr><td className="pr-4"><code>fundae_first_touch_v2</code> / <code>fundae_last_touch_v2</code></td><td className="pr-4">Atribución de origen</td><td>Hasta retirar el consentimiento o cambiar la política</td></tr><tr><td className="pr-4"><code>fundae_campaign_context_v1</code></td><td className="pr-4">Conservar contexto de campaña</td><td>Sesión</td></tr></tbody></table></div>,
       },
       {
         heading: "Analítica opcional",
-        body: <p>La analítica opcional solo debe activarse después de aceptar. Rechazar no impide usar las herramientas ni enviar formularios. Retirar el consentimiento detiene la emisión de nuevos eventos opcionales.</p>,
+        body: <p>Si aceptas, podemos enviar eventos minimizados a PostHog alojado en la UE o al sistema analítico propio. No enviamos el contenido libre de formularios a la analítica. La landing no carga Google Analytics ni LinkedIn Insight en esta versión. Al seguir un enlace a Calendly, ese tercero aplicará su propia política en su dominio.</p>,
       },
       {
-        heading: "Cambiar la preferencia",
-        body: <p>Puedes borrar las preferencias desde el navegador o usar el control de consentimiento del sitio. Al rechazar, se eliminan los identificadores analíticos guardados por esta landing.</p>,
+        heading: "Aceptar, rechazar o retirar",
+        body: <p>Puedes aceptar o rechazar con opciones equivalentes. El control permanente “Preferencias de privacidad” permite cambiar la decisión en cualquier momento. Al rechazar o retirar el consentimiento se detienen nuevos eventos opcionales y se eliminan los identificadores analíticos de esta landing. También puedes borrar el almacenamiento desde la configuración del navegador.</p>,
       },
       {
-        heading: "Inventario pendiente de validación",
-        body: <p>Antes de publicar una versión definitiva debe verificarse en el dominio desplegado el inventario de cookies y almacenamiento, indicando para cada elemento responsable, finalidad, tipo y duración.</p>,
+        heading: "Responsable y actualización",
+        body: <p>El responsable es {CONTACT.legalName}. La preferencia se renovará como máximo cada 24 meses y antes si cambian las finalidades o proveedores. Para consultas escribe a <a href={"mailto:" + CONTACT.email}>{CONTACT.email}</a>.</p>,
       },
     ],
   },
@@ -127,7 +143,7 @@ export function LegalPage({ kind }: { kind: LegalPageKind }) {
           <p className="text-sm font-bold uppercase tracking-wide text-[#FF206E]">GFS Consulting Group</p>
           <h1 className="mt-2 text-3xl font-bold text-[#302B7B] sm:text-4xl">{page.title}</h1>
           <p className="mt-3 text-sm text-slate-500">
-            {isVerified ? "Contenido contrastado con fuentes públicas" : "Versión operativa no definitiva"} · Revisión: {page.reviewedAt}.
+            {isVerified ? "Versión vigente" : "Versión operativa no definitiva"} · Revisión: {page.reviewedAt}.
           </p>
           <div className="mt-10 space-y-8">
             {page.sections.map((section) => (

@@ -28,27 +28,24 @@ test("privacy matrix covers every current analytics storage identifier", () => {
   assert.match(matrix, /document\.cookie/);
   assert.match(matrix, /30 días deslizantes/);
   assert.match(matrix, /30 minutos de inactividad/);
-  assert.match(matrix, /versión ausente, inválida o distinta vuelve a `unknown`/);
+  assert.match(matrix, /24 meses o cambio de versión/);
 });
 
-test("journey retention is documented as proposed and OFF", () => {
+test("journey retention is approved while physical purge remains OFF", () => {
   assert.match(retentionSql, /raw_event_days integer not null default 90/);
   assert.match(retentionSql, /purge_enabled boolean not null default false/);
-  assert.match(matrix, /Control propuesto de 90 días/);
-  assert.match(matrix, /purge_enabled=false/);
-  assert.match(matrix, /sin cron/i);
-  assert.match(matrix, /LIVE-EVIDENCE[^\n]*ausente/);
+  assert.match(matrix, /Eventos raw: 90 días/);
+  assert.match(matrix, /job de purga permanece `OFF`/);
+  assert.match(matrix, /JOURNEY-RETENTION[^\n]*política aprobada/);
 });
 
-test("the matrix fails closed on legal bases, DPD, processors and transfers", () => {
-  assert.match(matrix, /Base jurídica publicada/);
-  assert.match(matrix, /PENDIENTE/);
-  assert.match(matrix, /documentar si existe DPD sin inferirlo/);
-  assert.match(matrix, /región, subencargados, DPA y mecanismo de transferencia/);
-  assert.doesNotMatch(matrix, /DPD:\s*[^\n]+@/i);
-  assert.match(matrix, /PRIVACY-POLICY[^\n]*NO-GO/);
-  assert.match(matrix, /COOKIE-POLICY[^\n]*NO-GO/);
-  assert.match(matrix, /CAMPAIGN-ACTIVATION[^\n]*NO-GO/);
+test("the matrix records legal bases, DPD decision, processors and transfer safeguards", () => {
+  assert.match(matrix, /medidas precontractuales/);
+  assert.match(matrix, /DPD: no designado/);
+  assert.match(matrix, /cláusulas contractuales tipo/);
+  assert.match(matrix, /PRIVACY-POLICY[^\n]*PASS-LOCAL/);
+  assert.match(matrix, /COOKIE-POLICY[^\n]*PASS-LOCAL/);
+  assert.match(matrix, /CAMPAIGN-ACTIVATION[^\n]*BLOCKED/);
 });
 
 test("all provider surfaces found in current configuration are represented", () => {
@@ -67,8 +64,7 @@ test("all provider surfaces found in current configuration are represented", () 
   ]) {
     assert.ok(matrix.includes(provider), `missing provider ${provider}`);
   }
-  assert.match(matrix, /función dormante incluye nombre, email, teléfono/);
-  assert.match(matrix, /no demuestran tratamientos activos/);
+  assert.match(matrix, /no forman parte de la versión aprobada/);
 });
 
 test("documented physical deletes match the migration inventory", () => {
@@ -83,7 +79,7 @@ test("documented physical deletes match the migration inventory", () => {
   }
 
   assert.deepEqual([...deleteTargets].sort(), ["events", "rate_limit_buckets"]);
-  assert.match(matrix, /solo existen dos `DELETE` de mantenimiento/);
+  assert.match(matrix, /únicos borrados físicos de mantenimiento/);
   assert.match(matrix, /`public\.events`/);
   assert.match(matrix, /`public\.rate_limit_buckets`/);
 });
