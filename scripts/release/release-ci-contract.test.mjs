@@ -5,6 +5,9 @@ import test from 'node:test';
 const workflow = readFileSync(new URL('../../.github/workflows/release-gates.yml', import.meta.url), 'utf8');
 const verifier = readFileSync(new URL('./verify-release.mjs', import.meta.url), 'utf8');
 const packageJson = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8'));
+const dataBrainPackageJson = JSON.parse(
+  readFileSync(new URL('../../data-brain/package.json', import.meta.url), 'utf8'),
+);
 const vercelJson = JSON.parse(readFileSync(new URL('../../vercel.json', import.meta.url), 'utf8'));
 
 const gates = [
@@ -49,6 +52,10 @@ test('the legal deploy gate is enforced only for an explicit production target',
   assert.equal(
     packageJson.scripts['build:vercel'],
     'node scripts/release/legal-deploy-gate.mjs --vercel-production && vite build',
+  );
+  assert.equal(
+    dataBrainPackageJson.scripts['build:vercel'],
+    'node ../scripts/release/legal-deploy-gate.mjs --vercel-production && next build',
   );
   assert.equal(vercelJson.buildCommand, 'npm run build:vercel');
 });
