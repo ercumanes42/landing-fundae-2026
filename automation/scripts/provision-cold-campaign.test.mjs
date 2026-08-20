@@ -37,13 +37,43 @@ const summary = {
 
 test('default dry-run reads the controlled copy, reports every current NO-GO gate and performs zero network', async () => {
   let network = 0;
-  const result = await runProvisioner({ apply: false, fetchImpl: async () => { network += 1; throw new Error('network forbidden'); } });
+  const result = await runProvisioner({
+    apply: false,
+    fetchImpl: async () => { network += 1; throw new Error('network forbidden'); },
+    analyzeImpl: () => ({
+      ready: false,
+      gates: ['VALIDATION_NOT_OK','TECHNICAL_EXCLUSIONS_NOT_CLEAR','TECHNICAL_EVIDENCE_MISSING_OR_DRIFT','CAMPAIGN_NOT_AUTHORIZED'],
+      summary: { contacts: 939, payloads: 4695 },
+    }),
+  });
   assert.equal(result.ready, false);
   assert.deepEqual(result.gates, ['VALIDATION_NOT_OK','TECHNICAL_EXCLUSIONS_NOT_CLEAR','TECHNICAL_EVIDENCE_MISSING_OR_DRIFT','CAMPAIGN_NOT_AUTHORIZED']);
   assert.equal(result.summary.contacts, 939);
   assert.equal(result.summary.payloads, 4695);
   assert.equal(network, 0);
   assert.equal(JSON.stringify(result).includes('@'), false);
+});
+
+test('missing private campaign inputs fail closed without leaking a path or touching network', async () => {
+  let network = 0;
+  const result = await runProvisioner({
+    apply: false,
+    fetchImpl: async () => { network += 1; throw new Error('network forbidden'); },
+    analyzeImpl: () => {
+      const error = new Error('private path must not escape');
+      error.code = 'ENOENT';
+      throw error;
+    },
+  });
+  assert.deepEqual(result, {
+    mode: 'dry-run',
+    ready: false,
+    gates: ['CONTROLLED_INPUT_UNAVAILABLE'],
+    summary: null,
+    exitCode: 2,
+  });
+  assert.equal(network, 0);
+  assert.equal(JSON.stringify(result).includes('private path'), false);
 });
 
 test('gate evaluator rejects hash drift, wrong count/lot and pending exclusion without identifiers', () => {

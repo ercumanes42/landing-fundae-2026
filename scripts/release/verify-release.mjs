@@ -99,6 +99,7 @@ execute('automation static tests', npmCommand, npmArgs(['run', 'test:automation'
 execute('landing E2E with a fresh preview server', npmCommand, npmArgs(['run', 'test:e2e']), {
   CI: '1',
   RELEASE_FRESH_SERVER: '1',
+  VITE_DATA_BRAIN_INGEST_URL: 'http://127.0.0.1:4173',
 });
 execute('Data Brain tests', npmCommand, npmArgs(['--prefix', 'data-brain', 'run', 'test']));
 execute('Data Brain setup tests', npmCommand, npmArgs(['--prefix', 'data-brain', 'run', 'test:setup']));

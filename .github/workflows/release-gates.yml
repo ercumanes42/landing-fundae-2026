@@ -55,6 +55,7 @@ jobs:
         env:
           CI: '1'
           RELEASE_FRESH_SERVER: '1'
+          VITE_DATA_BRAIN_INGEST_URL: http://127.0.0.1:4173
       - name: Generate exact release-core baseline
         run: node scripts/release/baseline-manifest.mjs > "${RUNNER_TEMP}/baseline-manifest.json"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -113,6 +114,8 @@ jobs:
           HUBSPOT_SYNC_ENABLED: 'false'
           OPERATIONAL_OBSERVABILITY_ENABLED: 'false'
           TRANSACTIONAL_PILOT_MODE: 'true'
+          TRANSACTIONAL_GRAPH_PILOT_LIVE_ENABLED: 'false'
+          TRANSACTIONAL_GRAPH_PILOT_TTL_SECONDS: '600'
           TRANSACTIONAL_PILOT_ALLOWLIST_LEAD_IDS: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
           TRANSACTIONAL_LANDING_ORIGIN: https://landing-ci.invalid
           TRANSACTIONAL_WEBINAR_TITLE: CI contract fixture

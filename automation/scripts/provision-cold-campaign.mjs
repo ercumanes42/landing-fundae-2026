@@ -256,11 +256,28 @@ export async function applyProvisionManifest(input, fetchImpl = fetch) {
   });
 }
 
-export async function runProvisioner({ apply = false, useMaterialized = false, fetchImpl = fetch } = {}) {
+export async function runProvisioner({
+  apply = false,
+  useMaterialized = false,
+  fetchImpl = fetch,
+  analyzeImpl = analyzeControlledWorkbook,
+} = {}) {
   const materialized = apply || useMaterialized;
-  const analysis = analyzeControlledWorkbook(materialized
-    ? { workbookPath: MATERIALIZED_WORKBOOK, reportPath: MATERIALIZED_REPORT }
-    : undefined);
+  let analysis;
+  try {
+    analysis = analyzeImpl(materialized
+      ? { workbookPath: MATERIALIZED_WORKBOOK, reportPath: MATERIALIZED_REPORT }
+      : undefined);
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error;
+    return {
+      mode: apply ? 'apply' : 'dry-run',
+      ready: false,
+      gates: ['CONTROLLED_INPUT_UNAVAILABLE'],
+      summary: null,
+      exitCode: 2,
+    };
+  }
   const publicResult = { mode: apply ? 'apply' : 'dry-run', ready: analysis.ready, gates: analysis.gates, summary: analysis.summary };
   if (!analysis.ready) return { ...publicResult, exitCode: 2 };
   if (!apply) return { ...publicResult, exitCode: 0 };
