@@ -28,7 +28,9 @@ test('CI fixtures include the complete no-send Graph pilot and same-origin E2E b
   assert.match(workflow, /TRANSACTIONAL_GRAPH_PILOT_LIVE_ENABLED: 'false'/);
   assert.match(workflow, /TRANSACTIONAL_GRAPH_PILOT_TTL_SECONDS: '600'/);
   assert.match(workflow, /VITE_DATA_BRAIN_INGEST_URL: http:\/\/127\.0\.0\.1:4173/);
+  assert.match(workflow, /VITE_CHECKLIST_PDF_URL: \/checklist_fundae_10_errores\.pdf/);
   assert.match(verifier, /VITE_DATA_BRAIN_INGEST_URL: 'http:\/\/127\.0\.0\.1:4173'/);
+  assert.match(verifier, /VITE_CHECKLIST_PDF_URL: '\/checklist_fundae_10_errores\.pdf'/);
 });
 
 test('the Supabase static gate npm entrypoint is cross-platform', () => {

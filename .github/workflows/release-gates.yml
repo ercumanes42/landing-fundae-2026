@@ -56,6 +56,7 @@ jobs:
           CI: '1'
           RELEASE_FRESH_SERVER: '1'
           VITE_DATA_BRAIN_INGEST_URL: http://127.0.0.1:4173
+          VITE_CHECKLIST_PDF_URL: /checklist_fundae_10_errores.pdf
       - name: Generate exact release-core baseline
         run: node scripts/release/baseline-manifest.mjs > "${RUNNER_TEMP}/baseline-manifest.json"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
