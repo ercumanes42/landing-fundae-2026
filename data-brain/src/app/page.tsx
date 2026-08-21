@@ -5,6 +5,7 @@ import { OperationalDashboard } from './components/OperationalDashboard';
 import {
   dashboardDatasetsForRole,
   normalizeDashboardWindow,
+  parseDashboardCampaignInsights,
   parseDashboardSample,
   parseDashboardSummary,
   type DashboardSampleResponse,
@@ -54,13 +55,24 @@ export default async function DataBrainHome({
   if (!actor.ok) return <OperationalDashboard state="access_denied" />;
 
   try {
-    const summary = parseDashboardSummary(await callRpc('dashboard_get_summary', {
+    const baseSummary = parseDashboardSummary(await callRpc('dashboard_get_summary', {
       p_actor_hash: actor.actorHash,
       p_request_id: requestId('summary'),
       p_from: window.from,
       p_to: window.to,
       p_campaign_id: campaignId(first(params.campaign)),
     }, { environmentScope: 'dashboard' }));
+    const campaignInsights = parseDashboardCampaignInsights(await callRpc('dashboard_get_campaign_insights', {
+      p_actor_hash: actor.actorHash,
+      p_request_id: requestId('campaign-insights'),
+      p_from: window.from,
+      p_to: window.to,
+      p_campaign_id: campaignId(first(params.campaign)),
+    }, { environmentScope: 'dashboard' }));
+    const summary = {
+      ...baseSummary,
+      campaign: { ...baseSummary.campaign, ...campaignInsights },
+    };
 
     let sample: DashboardSampleResponse | null = null;
     let partialError: string | null = null;

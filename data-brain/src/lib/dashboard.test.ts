@@ -5,6 +5,7 @@ import { test } from 'node:test';
 import {
   dashboardDatasetsForRole,
   normalizeDashboardWindow,
+  parseDashboardCampaignInsights,
   parseDashboardSample,
   parseDashboardSummary,
 } from './dashboard-data';
@@ -16,6 +17,18 @@ test('dashboard role matrix limits samples before the RPC boundary', () => {
   ]);
   assert.ok(dashboardDatasetsForRole('auditor').includes('audit'));
   assert.ok(dashboardDatasetsForRole('admin').includes('leads'));
+});
+
+test('campaign insights parser requires Madrid timezone and explicit no-PII contract', () => {
+  const value = {
+    by_variant: {}, performance_by_email: {}, events_by_hour: {},
+    engagement_by_action: {}, conversions: {},
+    metric_contract: { timezone: 'Europe/Madrid', opens_quality: 'directional', pii_included: false },
+  };
+  assert.deepEqual(parseDashboardCampaignInsights(value).conversions, {});
+  assert.throws(() => parseDashboardCampaignInsights({
+    ...value, metric_contract: { ...value.metric_contract, pii_included: true },
+  }));
 });
 
 test('dashboard window is bounded and rejects unsafe pagination', () => {
@@ -66,10 +79,12 @@ test('page and UI contract avoid full-table loaders and expose partial states', 
   const component = readFileSync(new URL('../app/components/OperationalDashboard.tsx', import.meta.url), 'utf8');
   assert.doesNotMatch(page, /selectAllRowsPaged|buildDashboardAggregates|payload&order/);
   assert.match(page, /dashboard_get_summary/);
+  assert.match(page, /dashboard_get_campaign_insights/);
   assert.match(page, /dashboard_get_sample/);
   for (const token of [
     'Claims', 'Mailbox activos', 'Reservas por estado', 'Eventos transaccionales',
     'CAMPAÑA', 'SALUD Y CONTROL', 'partialError', 'Sin datos en este periodo',
+    'Rendimiento por email', 'Actividad por hora', 'Clics y herramientas', 'Conversiones',
   ]) assert.ok(component.includes(token), `UI misses ${token}`);
 });
 
@@ -77,4 +92,11 @@ test('dashboard CSS module scopes reduced-motion selectors to local roots', () =
   const css = readFileSync(new URL('../app/components/OperationalDashboard.module.css', import.meta.url), 'utf8');
   assert.match(css, /prefers-reduced-motion:reduce\)\{\.shell \*,\.stateShell \*/);
   assert.doesNotMatch(css, /prefers-reduced-motion:reduce\)\{\*\{/);
+});
+
+test('global document styles keep long operational dashboards vertically scrollable', () => {
+  const css = readFileSync(new URL('../app/globals.css', import.meta.url), 'utf8');
+  const documentRule = css.match(/html, body\s*\{[\s\S]*?\}/)?.[0] ?? '';
+  assert.match(documentRule, /overflow-y:\s*auto/);
+  assert.doesNotMatch(documentRule, /overflow:\s*hidden/);
 });

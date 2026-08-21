@@ -67,10 +67,14 @@ function display(value: unknown): string {
 
 function Breakdown({ title, value }: { title: string; value: unknown }) {
   const rows = Object.entries(record(value)).sort(([, a], [, b]) => Number(b) - Number(a));
+  const maximum = Math.max(1, ...rows.map(([, amount]) => Number(amount) || 0));
   return <article className={styles.card}>
     <h3>{title}</h3>
     {rows.length ? <dl className={styles.breakdown}>{rows.map(([key, amount]) =>
-      <div key={key}><dt>{key.replaceAll('_', ' ')}</dt><dd>{display(amount)}</dd></div>,
+      <div key={key} className={styles.metricRow}>
+        <dt>{key.replaceAll('_', ' ')}</dt><dd>{display(amount)}</dd>
+        <span className={styles.metricTrack} aria-hidden="true"><span style={{ width: `${Math.max(2, (Number(amount) || 0) / maximum * 100)}%` }} /></span>
+      </div>,
     )}</dl> : <p className={styles.empty}>Sin registros para el periodo.</p>}
   </article>;
 }
@@ -119,7 +123,7 @@ export function OperationalDashboard(props: Props) {
 
   return <main className={styles.shell}>
     <header className={styles.hero}>
-      <div><span>GFS · DATA BRAIN</span><h1>Control operativo FUNDAE</h1><p>Agregados server-side, muestras acotadas y acceso auditado.</p></div>
+      <div><span>GFS · DATA BRAIN</span><h1>Inteligencia de campaña FUNDAE</h1><p>Embudo, comportamiento, rendimiento comercial y control operativo en un solo lugar.</p></div>
       <div className={styles.statuses}>
         <strong>{ROLE_LABELS[summary.meta.role]}</strong>
         <small className={fresh ? styles.ok : styles.warn}>{fresh ? 'Datos frescos' : 'Frescura degradada'} · {freshnessSeconds}s</small>
@@ -151,6 +155,8 @@ export function OperationalDashboard(props: Props) {
         <Breakdown title="Leads por magnet" value={funnel.by_magnet} />
         <Breakdown title="Clasificación" value={funnel.by_classification} />
         <Breakdown title="Scoring 0–39 / 40–59 / 60–79 / 80+" value={funnel.by_score_band} />
+        <Breakdown title="Acciones en landing" value={funnel.events_by_name} />
+        <Breakdown title="Interacción por herramienta" value={journey.by_magnet} />
         <article className={styles.card}><h3>Journey consentido</h3><dl className={styles.breakdown}>
           <div><dt>Visitantes únicos</dt><dd>{display(journey.unique_visitors)}</dd></div>
           <div><dt>Sesiones únicas</dt><dd>{display(journey.unique_sessions)}</dd></div>
@@ -182,12 +188,18 @@ export function OperationalDashboard(props: Props) {
         <article><span>Locks vencidos</span><strong>{display(health.expired_contact_locks)}</strong><small>Worker campaña</small></article>
       </div>
       <div className={styles.grid}>
+        <Breakdown title="Variantes" value={campaign.by_variant} />
         <Breakdown title="Carriles" value={campaign.by_lane} />
         <Breakdown title="Lotes" value={campaign.by_lot} />
         <Breakdown title="Email 1–5" value={campaign.by_step} />
+        <Breakdown title="Rendimiento por email" value={campaign.performance_by_email} />
+        <Breakdown title="Actividad por hora (Madrid)" value={campaign.events_by_hour} />
+        <Breakdown title="Clics y herramientas" value={campaign.engagement_by_action} />
+        <Breakdown title="Conversiones" value={campaign.conversions} />
         <Breakdown title="Ejecuciones" value={campaign.executions_by_status} />
         <Breakdown title="Eventos campaña" value={campaign.events_by_name} />
       </div>
+      <p className={styles.disclaimer}>Las aperturas son orientativas. Clics, descargas, respuestas, reuniones y conversiones usan evidencia confirmada cuando está disponible.</p>
     </section>
 
     <section className={styles.section}><header><span>SALUD Y CONTROL</span><h2>Fail-closed y dependencias</h2></header>

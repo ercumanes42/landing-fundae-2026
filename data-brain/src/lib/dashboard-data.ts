@@ -588,6 +588,20 @@ export function parseDashboardSummary(value: unknown): DashboardSummaryResponse 
   return root as unknown as DashboardSummaryResponse;
 }
 
+export function parseDashboardCampaignInsights(value: unknown): JsonRecord {
+  const root = asRecord(value);
+  for (const section of ['by_variant', 'performance_by_email', 'events_by_hour', 'engagement_by_action', 'conversions']) {
+    if (root[section] === null || typeof root[section] !== 'object' || Array.isArray(root[section])) {
+      throw new Error(`Invalid campaign insights section: ${section}`);
+    }
+  }
+  const contract = asRecord(root.metric_contract);
+  if (contract.pii_included !== false || contract.timezone !== 'Europe/Madrid' || contract.opens_quality !== 'directional') {
+    throw new Error('Invalid campaign insights metric contract');
+  }
+  return root;
+}
+
 export function parseDashboardSample(value: unknown): DashboardSampleResponse {
   const root = asRecord(value);
   if (!DASHBOARD_DATASETS.has(root.dataset as DashboardSampleDataset) ||

@@ -405,6 +405,10 @@ export function writeMaterializedControlledCopy({
       headers.push(field);
     }
   }
+  const usedRange = XLSX.utils.decode_range(sheet['!ref'] || 'A1');
+  usedRange.e.c = Math.max(usedRange.e.c, headers.length - 1);
+  usedRange.e.r = Math.max(usedRange.e.r, grid.length - 1);
+  sheet['!ref'] = XLSX.utils.encode_range(usedRange);
   const byContact = new Map(materialized.rows.map((row) => [text(row, 'contact id'), row]));
   for (let rowIndex = 1; rowIndex < grid.length; rowIndex += 1) {
     const contactId = String(grid[rowIndex]?.[indexes.get('contact id')] || '').trim();
@@ -420,7 +424,11 @@ export function writeMaterializedControlledCopy({
     XLSX.writeFile(campaign.workbook, temporary, { compression: true });
     const validation = validateCampaignRows(readCampaignWorkbook(temporary).rows, { requireReady: false });
     if (!validation.ok || validation.summary.policyCoverage.technicalEvidenceSha256 !== materialized.technicalEvidenceSha256) {
-      throw new Error('MATERIALIZED_COPY_VALIDATION_FAILED');
+      const reason = validation.errors[0] ||
+        (validation.summary.policyCoverage.technicalEvidenceSha256 !== materialized.technicalEvidenceSha256
+          ? 'TECHNICAL_EVIDENCE_HASH_MISMATCH'
+          : 'UNKNOWN');
+      throw new Error(`MATERIALIZED_COPY_VALIDATION_FAILED:${reason}`);
     }
     fs.copyFileSync(temporary, output, fs.constants.COPYFILE_EXCL);
     const controlledReport = {

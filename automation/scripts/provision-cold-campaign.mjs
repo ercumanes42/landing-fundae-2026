@@ -11,6 +11,8 @@ export const CONTROLLED_WORKBOOK = path.resolve(HERE, '../../data-private/Base_F
 export const CONTROLLED_REPORT = path.resolve(HERE, '../campaign-reports/FUNDAE_2026_CONTROLLED_COPY_REPORT.json');
 export const MATERIALIZED_WORKBOOK = path.resolve(HERE, '../../data-private/Base_FUNDAE_2026_MATERIALIZADA_OFF_V1.xlsx');
 export const MATERIALIZED_REPORT = path.resolve(HERE, '../../data-private/FUNDAE_2026_MATERIALIZED_COPY_REPORT.json');
+export const READY_WORKBOOK = path.resolve(HERE, '../../data-private/Base_FUNDAE_2026_READY_OFF_V1.xlsx');
+export const READY_REPORT = path.resolve(HERE, '../../data-private/FUNDAE_2026_READY_OFF_REPORT.json');
 export const EXPECTED_CONTACTS = 939;
 export const EXPECTED_PAYLOADS = 4695;
 export const EXPECTED_LOTS = { A: 235, B: 235, C: 235, D: 234 };
@@ -78,7 +80,8 @@ export function analyzeControlledWorkbook({ workbookPath = CONTROLLED_WORKBOOK, 
   const resolvedReport = path.resolve(reportPath);
   const isControlled = resolvedWorkbook === CONTROLLED_WORKBOOK && resolvedReport === CONTROLLED_REPORT;
   const isMaterialized = resolvedWorkbook === MATERIALIZED_WORKBOOK && resolvedReport === MATERIALIZED_REPORT;
-  if (!isControlled && !isMaterialized) throw new Error('CONTROLLED_INPUT_ONLY');
+  const isReady = resolvedWorkbook === READY_WORKBOOK && resolvedReport === READY_REPORT;
+  if (!isControlled && !isMaterialized && !isReady) throw new Error('CONTROLLED_INPUT_ONLY');
   const report = JSON.parse(fs.readFileSync(resolvedReport, 'utf8'));
   if (!HASH.test(report.controlled_copy_sha256 || '') || !HASH.test(report.logical_dataset_sha256 || '')) throw new Error('REPORT_INVALID');
   const observedHash = fileHash(resolvedWorkbook);
@@ -266,7 +269,7 @@ export async function runProvisioner({
   let analysis;
   try {
     analysis = analyzeImpl(materialized
-      ? { workbookPath: MATERIALIZED_WORKBOOK, reportPath: MATERIALIZED_REPORT }
+      ? { workbookPath: READY_WORKBOOK, reportPath: READY_REPORT }
       : undefined);
   } catch (error) {
     if (error?.code !== 'ENOENT') throw error;
