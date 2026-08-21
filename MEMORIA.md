@@ -310,7 +310,7 @@ Estado de implementación:
 - Evidencia final local: Data Brain 370/370 + anti-omisión 1/1, TypeScript PASS, build Next.js PASS, auditoría npm con 0 vulnerabilidades; gate-pack Supabase 15/15 y Static PASS.
 - Las migraciones de inteligencia v2, campaña y el índice de revenue fueron aplicadas primero en staging. Postcheck y smoke rollback-only devolvieron `fundae_release_postcheck_ok` y `fundae_release_intelligence_v2_smoke_ok`; advisors: 0 WARN/ERROR.
 - Inteligencia v2 y el índice fueron aplicados después en producción. Verificación directa: contrato 2.0, PII=false, tabla pipeline con RLS/FORCE, índice FK presente, 939 contactos y 4.695 ejecuciones preservadas. Master, transaccional y campaña fría continúan OFF.
-- La interfaz aún requiere commit selectivo, push y despliegue Vercel para que estas capacidades aparezcan en la URL productiva.
+- Commit selectivo `9921240` creado y enviado a `codex/fundae-release`; el PR abierto quedó actualizado. Vercel compiló y desplegó correctamente la interfaz en `https://data-brain-2026.vercel.app/`.
 
 ## Pendientes externos antes de cualquier envío
 
