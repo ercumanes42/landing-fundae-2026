@@ -10,7 +10,7 @@ import {
   type DashboardSampleResponse,
 } from '@/lib/dashboard-data';
 import { authenticateDashboardAuthorization } from '@/lib/dashboard-auth';
-import { env, optionalIntegrationStatus, validateEnv } from '@/lib/env';
+import { env, optionalIntegrationStatus, validateDashboardEnv } from '@/lib/env';
 import { callRpc } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
@@ -39,7 +39,7 @@ export default async function DataBrainHome({
 }) {
   const params = searchParams ? await searchParams : {};
   const window = normalizeDashboardWindow(params);
-  const validation = validateEnv();
+  const validation = validateDashboardEnv();
   if (!validation.ok) {
     return <OperationalDashboard state="configuration_error" missing={validation.missing} />;
   }

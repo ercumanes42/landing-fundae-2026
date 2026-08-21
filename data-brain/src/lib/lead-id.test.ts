@@ -5,6 +5,7 @@ import { afterEach, test } from 'node:test';
 import {
   isValidLeadHashSecret,
   leadHashSecret,
+  validateDashboardEnv,
   validateEnv,
 } from './env';
 import { buildLeadId } from './lead-id';
@@ -39,6 +40,20 @@ test('runtime env and buildLeadId fail closed without exposing an invalid secret
   assert.throws(() => leadHashSecret(), /LEAD_HASH_SECRET_INVALID/);
   assert.throws(() => buildLeadId('person@example.invalid'), /LEAD_HASH_SECRET_INVALID/);
   assert.equal(JSON.stringify(validation).includes(invalidSecret), false);
+});
+
+test('dashboard validation is independent from capture identity configuration', () => {
+  Object.assign(process.env, {
+    SUPABASE_URL: 'https://project.supabase.co',
+    SUPABASE_ANON_KEY: '',
+    SUPABASE_SERVICE_ROLE_KEY: 'service-role',
+    LEAD_HASH_SECRET: '',
+    DATA_BRAIN_AUTH_CREDENTIALS: '{"version":1}',
+    DATA_BRAIN_AUTH_PEPPER: 'p'.repeat(32),
+  });
+
+  assert.deepEqual(validateDashboardEnv(), { ok: true });
+  assert.deepEqual(validateEnv(), { ok: false, missing: ['SUPABASE_ANON_KEY', 'LEAD_HASH_SECRET'] });
 });
 
 test('buildLeadId uses the exact validated secret and canonical email', () => {

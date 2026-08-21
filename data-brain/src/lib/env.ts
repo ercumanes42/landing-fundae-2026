@@ -80,6 +80,13 @@ const REQUIRED_ENV: EnvKey[] = [
   'LEAD_HASH_SECRET',
 ];
 
+const DASHBOARD_REQUIRED_ENV: EnvKey[] = [
+  'SUPABASE_URL',
+  'SUPABASE_SERVICE_ROLE_KEY',
+  'DATA_BRAIN_AUTH_CREDENTIALS',
+  'DATA_BRAIN_AUTH_PEPPER',
+];
+
 const LEAD_HASH_SECRET_PLACEHOLDER_PATTERN = /(?:replace[-_ ]?with|change[-_ ]?me|changeme|placeholder|example|xxxxx|your[-_ ]?(?:key|secret|password)|tu[-_ ]?(?:clave|secreto)|secret[-_ ]?here|^todo$)/i;
 export const LEAD_HASH_SECRET_INVALID = 'LEAD_HASH_SECRET_INVALID';
 
@@ -171,6 +178,12 @@ export function validateEnv(): { ok: true } | { ok: false; missing: EnvKey[] } {
   }
   const uniqueMissing = [...new Set(missing)];
   return uniqueMissing.length === 0 ? { ok: true } : { ok: false, missing: uniqueMissing };
+}
+
+/** The read-only dashboard must not depend on capture or outbound secrets. */
+export function validateDashboardEnv(): { ok: true } | { ok: false; missing: EnvKey[] } {
+  const missing = DASHBOARD_REQUIRED_ENV.filter((key) => !env(key));
+  return missing.length === 0 ? { ok: true } : { ok: false, missing };
 }
 
 export function assertEnv(): void {
