@@ -19,20 +19,22 @@ test('dashboard role matrix limits samples before the RPC boundary', () => {
 });
 
 test('dashboard window is bounded and rejects unsafe pagination', () => {
+  const now = new Date('2026-08-19T12:00:00Z');
   const normalized = normalizeDashboardWindow({
-    from: '2026-08-01', to: '2026-08-20', page: '2', dataset: 'graph_events',
-  }, new Date('2026-08-19T12:00:00Z'));
+    from: '2026-08-01', to: '2026-08-19', page: '2', dataset: 'graph_events',
+  }, now);
   assert.equal(normalized.page, 2);
   assert.equal(normalized.dataset, 'graph_events');
   assert.equal(normalized.from, '2026-08-01T00:00:00.000Z');
-  assert.equal(normalized.to, '2026-08-20T00:00:00.000Z');
+  assert.equal(normalized.to, now.toISOString());
 
   const bounded = normalizeDashboardWindow({
     from: '2020-01-01', to: '2026-08-20', page: '999999', dataset: 'private',
-  }, new Date('2026-08-19T12:00:00Z'));
+  }, now);
   assert.equal(bounded.page, 1);
   assert.equal(bounded.dataset, 'reservations');
   assert.equal(Date.parse(bounded.to) - Date.parse(bounded.from), 30 * 86_400_000);
+  assert.ok(Date.parse(bounded.to) <= now.getTime() + 5 * 60_000);
 });
 
 test('summary parser requires complete aggregate and explicit no-PII marker', () => {

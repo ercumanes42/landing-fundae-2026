@@ -533,20 +533,28 @@ export function normalizeDashboardWindow(
 ): DashboardWindow {
   const first = (value: string | string[] | undefined) =>
     Array.isArray(value) ? value[0] : value;
-  const defaultTo = new Date(Date.UTC(
-    now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1,
-  ));
+  const defaultTo = new Date(now);
   const defaultFrom = new Date(defaultTo.getTime() - 30 * 86_400_000);
-  const from = dateOnly(first(raw.from)) ?? defaultFrom.toISOString().slice(0, 10);
-  const to = dateOnly(first(raw.to)) ?? defaultTo.toISOString().slice(0, 10);
-  const fromMs = Date.parse(`${from}T00:00:00.000Z`);
-  const toMs = Date.parse(`${to}T00:00:00.000Z`);
-  const validWindow = toMs > fromMs && toMs - fromMs <= 366 * 86_400_000;
+  const requestedFrom = dateOnly(first(raw.from));
+  const requestedTo = dateOnly(first(raw.to));
+  const today = defaultTo.toISOString().slice(0, 10);
+  const normalizedFrom = requestedFrom
+    ? `${requestedFrom}T00:00:00.000Z`
+    : defaultFrom.toISOString();
+  const normalizedTo = !requestedTo || requestedTo === today
+    ? defaultTo.toISOString()
+    : `${requestedTo}T00:00:00.000Z`;
+  const fromMs = Date.parse(normalizedFrom);
+  const toMs = Date.parse(normalizedTo);
+  const validWindow =
+    toMs > fromMs &&
+    toMs <= defaultTo.getTime() + 5 * 60_000 &&
+    toMs - fromMs <= 366 * 86_400_000;
   const pageValue = Number(first(raw.page));
   const datasetValue = first(raw.dataset);
   return {
-    from: validWindow ? `${from}T00:00:00.000Z` : defaultFrom.toISOString(),
-    to: validWindow ? `${to}T00:00:00.000Z` : defaultTo.toISOString(),
+    from: validWindow ? normalizedFrom : defaultFrom.toISOString(),
+    to: validWindow ? normalizedTo : defaultTo.toISOString(),
     page: Number.isSafeInteger(pageValue) && pageValue > 0 && pageValue <= 4_001
       ? pageValue
       : 1,

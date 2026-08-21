@@ -186,6 +186,15 @@ export function validateDashboardEnv(): { ok: true } | { ok: false; missing: Env
   return missing.length === 0 ? { ok: true } : { ok: false, missing };
 }
 
+export function assertDashboardEnv(): void {
+  const validation = validateDashboardEnv();
+  if (!validation.ok) {
+    throw new Error(
+      `Data Brain missing required dashboard environment variables: ${validation.missing.join(', ')}`,
+    );
+  }
+}
+
 export function assertEnv(): void {
   const validation = validateEnv();
   if (!validation.ok) {

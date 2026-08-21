@@ -60,3 +60,38 @@ test('callRpc rejects unsafe timeout values before network work', () =>
     );
     assert.equal(called, false);
   }));
+
+test('callRpc dashboard scope does not require capture or outbound secrets', async () => {
+  const previousFetch = globalThis.fetch;
+  const keys = [
+    'SUPABASE_URL',
+    'SUPABASE_ANON_KEY',
+    'SUPABASE_SERVICE_ROLE_KEY',
+    'LEAD_HASH_SECRET',
+    'DATA_BRAIN_AUTH_CREDENTIALS',
+    'DATA_BRAIN_AUTH_PEPPER',
+  ];
+  const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+  Object.assign(process.env, {
+    SUPABASE_URL: 'https://supabase.test',
+    SUPABASE_SERVICE_ROLE_KEY: 'sb_secret_dashboard_test',
+    DATA_BRAIN_AUTH_CREDENTIALS: '{"version":1}',
+    DATA_BRAIN_AUTH_PEPPER: 'p'.repeat(32),
+  });
+  delete process.env.SUPABASE_ANON_KEY;
+  delete process.env.LEAD_HASH_SECRET;
+  globalThis.fetch = async () => new Response('{"ok":true}', { status: 200 });
+
+  try {
+    assert.deepEqual(
+      await callRpc('dashboard_test', {}, { environmentScope: 'dashboard' }),
+      { ok: true },
+    );
+  } finally {
+    globalThis.fetch = previousFetch;
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});

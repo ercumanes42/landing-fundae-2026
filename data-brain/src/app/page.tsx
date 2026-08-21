@@ -60,7 +60,7 @@ export default async function DataBrainHome({
       p_from: window.from,
       p_to: window.to,
       p_campaign_id: campaignId(first(params.campaign)),
-    }));
+    }, { environmentScope: 'dashboard' }));
 
     let sample: DashboardSampleResponse | null = null;
     let partialError: string | null = null;
@@ -79,7 +79,7 @@ export default async function DataBrainHome({
           p_to: window.to,
           p_offset: (window.page - 1) * SAMPLE_SIZE,
           p_limit: SAMPLE_SIZE,
-        }));
+        }, { environmentScope: 'dashboard' }));
       } catch (error) {
         console.warn('[Dashboard] bounded sample unavailable', error instanceof Error ? error.message : 'unknown');
         partialError = 'La muestra paginada no está disponible; los agregados siguen siendo válidos.';

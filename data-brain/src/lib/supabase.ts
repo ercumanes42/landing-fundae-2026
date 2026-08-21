@@ -1,4 +1,4 @@
-import { assertEnv, env } from './env';
+import { assertDashboardEnv, assertEnv, env } from './env';
 
 type JsonRecord = Record<string, unknown>;
 export interface SupabasePage<T> {
@@ -266,9 +266,14 @@ export async function selectAllRowsPaged<T = JsonRecord>(
 export async function callRpc<T = JsonRecord>(
   functionName: string,
   args: JsonRecord,
-  options: { timeoutMs?: number; signal?: AbortSignal } = {},
+  options: {
+    timeoutMs?: number;
+    signal?: AbortSignal;
+    environmentScope?: 'full' | 'dashboard';
+  } = {},
 ): Promise<T> {
-  assertEnv();
+  if (options.environmentScope === 'dashboard') assertDashboardEnv();
+  else assertEnv();
 
   const timeoutMs = options.timeoutMs ?? 0;
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 0 || timeoutMs > 60_000) {
