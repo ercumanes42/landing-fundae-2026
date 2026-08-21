@@ -14,7 +14,7 @@ import {
   getLeadStatus,
 } from './leadScoring';
 import { getCampaignTrackingContext, getCurrentTrackingContext, inferLeadMagnet, trackEvent } from './tracking';
-import { config, getWebhookUrl } from '../config';
+import { config } from '../config';
 
 const TIMEOUT_MS = 10_000;
 const LOCAL_STORAGE_KEY = 'fundae_pending_leads';
@@ -96,25 +96,13 @@ async function fetchWithTimeout(
   }
 }
 
-function saveToLocalStorage(payload: LeadData): void {
-  try {
-    const existing = localStorage.getItem(LOCAL_STORAGE_KEY);
-    const queue: LeadData[] = existing ? (JSON.parse(existing) as LeadData[]) : [];
-    queue.push(payload);
-    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(queue));
-  } catch {
-    console.warn('[Data Brain] localStorage fallback failed');
-  }
-}
 
 async function deliverLead(payload: LeadData): Promise<boolean> {
   const dataBrainUrl = buildDataBrainUrl();
-  const fallbackWebhookUrl = getWebhookUrl(payload.form_type);
-  const url = dataBrainUrl || fallbackWebhookUrl;
-  if (!url) return false;
+  if (!dataBrainUrl) return false;
 
   const response = await fetchWithTimeout(
-    url,
+    dataBrainUrl,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -128,28 +116,9 @@ async function deliverLead(payload: LeadData): Promise<boolean> {
 
 export async function flushPendingLeads(): Promise<void> {
   try {
-    const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
-    if (!raw) return;
-
-    const queue: LeadData[] = JSON.parse(raw) as LeadData[];
-    const remaining: LeadData[] = [];
-
-    for (const payload of queue) {
-      try {
-        const delivered = await deliverLead(payload);
-        if (!delivered) remaining.push(payload);
-      } catch {
-        remaining.push(payload);
-      }
-    }
-
-    if (remaining.length > 0) {
-      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(remaining));
-    } else {
-      localStorage.removeItem(LOCAL_STORAGE_KEY);
-    }
+    localStorage.removeItem(LOCAL_STORAGE_KEY);
   } catch {
-    // Best effort only.
+    // Legacy PII queues are removed when storage is available.
   }
 }
 
@@ -168,9 +137,13 @@ function buildPayload(formType: FormType, data: Record<string, unknown>): LeadDa
   const journey = getJourney(data);
   const trackingContext = getCurrentTrackingContext({
     form_type: formType,
-    consent_state: getBool(data, 'privacy_accepted') ? 'accepted' : 'unknown',
   });
   const campaignContext = getCampaignTrackingContext();
+  const sourceUrl = trackingContext?.source_url ?? (
+    typeof window === 'undefined'
+      ? 'https://invalid.local/'
+      : `${window.location.origin}${window.location.pathname}`
+  );
 
   const scoringInput: LeadScoringInput = {
     employee_range: getString(data, 'employee_range'),
@@ -192,21 +165,26 @@ function buildPayload(formType: FormType, data: Record<string, unknown>): LeadDa
 
   return {
     event_version: '1.0',
+    submission_id: getString(data, 'submission_id') ?? formType + '_' + (
+      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(16).slice(2)
+    ),
     form_type: formType,
     lead_magnet: inferLeadMagnet({ form_type: formType }),
     created_at: new Date().toISOString(),
-    source_url: trackingContext.source_url,
-    anonymous_id: trackingContext.anonymous_id,
-    session_id: trackingContext.session_id,
-    utm_source: trackingContext.utm_source,
-    utm_medium: trackingContext.utm_medium,
-    utm_campaign: trackingContext.utm_campaign,
-    utm_content: trackingContext.utm_content,
-    utm_term: trackingContext.utm_term,
-    referrer: trackingContext.referrer,
-    first_touch: trackingContext.first_touch,
-    last_touch: trackingContext.last_touch,
-    tracking_context: trackingContext,
+    source_url: sourceUrl,
+    journey_id: trackingContext?.journey_id,
+    anonymous_id: trackingContext?.journey_id,
+    session_id: trackingContext?.session_id,
+    utm_source: trackingContext?.utm_source,
+    utm_medium: trackingContext?.utm_medium,
+    utm_campaign: trackingContext?.utm_campaign,
+    utm_content: trackingContext?.utm_content,
+    utm_term: trackingContext?.utm_term,
+    referrer: trackingContext?.referrer,
+    first_touch: trackingContext?.first_touch,
+    last_touch: trackingContext?.last_touch,
+    tracking_context: trackingContext ?? undefined,
     campaign_context: campaignContext ?? undefined,
     lead_score: score,
     lead_status: getLeadStatus(score),
@@ -250,10 +228,10 @@ function buildPayload(formType: FormType, data: Record<string, unknown>): LeadDa
     credit_estimate: getCreditEstimate(data),
     journey,
     consent: {
-      privacy_accepted: getBool(data, 'privacy_accepted', true),
+      privacy_accepted: getBool(data, 'privacy_accepted', false),
       marketing_accepted: getBool(data, 'marketing_accepted'),
     },
-    delivery_status: 'queued',
+    delivery_status: 'captured',
     checklist_pdf_url: formType === 'checklist'
       ? (typeof window !== 'undefined' ? (window.location.origin + config.checklistPdfUrl) : config.checklistPdfUrl)
       : undefined,
@@ -278,16 +256,18 @@ export async function submitLead(
   };
 
   trackEvent('form_submit', eventProperties);
-  trackEvent(formCompletionEvent(formType), eventProperties);
-  trackEvent('lead_scored', eventProperties);
-  trackEvent('lead_created', eventProperties);
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
-      const delivered = await deliverLead(payload);
-      if (delivered) {
+      const captured = await deliverLead(payload);
+      if (captured) {
+        trackEvent('form_success', eventProperties);
+        trackEvent(formCompletionEvent(formType), eventProperties);
+        trackEvent('lead_scored', eventProperties);
+        trackEvent('lead_created', eventProperties);
+
         if (config.isDev) {
-          console.log('[Data Brain] Lead delivered', {
+          console.log('[Data Brain] Lead captured', {
             form_type: formType,
             lead_score: payload.lead_score,
             lead_classification: payload.lead_classification,
@@ -304,10 +284,14 @@ export async function submitLead(
     }
   }
 
-  saveToLocalStorage(payload);
+  trackEvent('form_error', {
+    form_type: formType,
+    error: 'delivery_failed',
+  });
+
   return {
     success: false,
-    savedLocally: true,
-    error: 'No se pudo enviar el formulario. Se ha guardado localmente.',
+    savedLocally: false,
+    error: 'No se pudo enviar el formulario. Tus datos no se han guardado; inténtalo de nuevo.',
   };
 }

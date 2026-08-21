@@ -1,21 +1,15 @@
 import { NextResponse } from 'next/server';
 import { assertEnv } from '@/lib/env';
-import { insertRows } from '@/lib/supabase';
+import {
+  JourneyBodyTooLargeError,
+  JourneyInvalidJsonError,
+  readJourneyJson,
+  recordJourneyEventBatch,
+} from '@/lib/journey-ingest';
+import { canonicalizeJourneyEventInput } from '@/lib/tracking-contract';
 import { corsHeaders, isAllowedLandingOrigin, limitRequest } from '@/lib/security';
 
 export const runtime = 'nodejs';
-
-const PII_KEYS = new Set(['email', 'name', 'phone', 'company', 'message', 'contact']);
-
-function sanitizeProperties(properties: Record<string, unknown>): Record<string, unknown> {
-  const clean: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(properties)) {
-    if (PII_KEYS.has(key.toLowerCase())) continue;
-    if (typeof value === 'object' && value !== null) continue;
-    clean[key] = value;
-  }
-  return clean;
-}
 
 export function OPTIONS(request: Request) {
   return new NextResponse(null, { status: 204, headers: corsHeaders(request) });
@@ -26,17 +20,17 @@ export async function POST(request: Request) {
   if (!isAllowedLandingOrigin(request)) {
     return NextResponse.json({ error: 'Origin not allowed' }, { status: 403, headers });
   }
-  const rate = limitRequest(request, 'event-batch', 30, 60_000);
+  const rate = await limitRequest(request, 'event-batch', 30, 60_000, 'fail-closed');
   if (!rate.allowed) {
     return NextResponse.json(
       { error: 'Too many requests' },
-      { status: 429, headers: { ...headers, 'Retry-After': String(rate.retryAfterSeconds) } },
+      { status: rate.reason === 'unavailable' ? 503 : 429, headers: { ...headers, 'Retry-After': String(rate.retryAfterSeconds) } },
     );
   }
 
   try {
     assertEnv();
-    const body = await request.json();
+    const body = await readJourneyJson(request, 256 * 1_024) as { events?: unknown };
     const events = body.events || [];
 
     if (!Array.isArray(events)) {
@@ -49,25 +43,27 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Batch limit is 50 events' }, { status: 400, headers });
     }
 
-    const rows = events.map((e: any) => {
-      const properties = sanitizeProperties(e.properties ?? {});
-      return {
-        event_name: e.event_name,
-        anonymous_id: e.anonymous_id || e.context?.anonymous_id,
-        session_id: e.session_id || e.context?.session_id,
-        lead_magnet: e.lead_magnet || e.context?.lead_magnet,
-        occurred_at: e.occurred_at || e.context?.occurred_at || new Date().toISOString(),
-        context: e.context || {},
-        properties,
-      };
-    });
-
-    if (rows.length > 0) {
-      await insertRows('events', rows);
+    let canonicalEvents;
+    try {
+      canonicalEvents = events.map((event) => canonicalizeJourneyEventInput(event));
+    } catch (error) {
+      return NextResponse.json(
+        { error: error instanceof Error ? error.message : 'Invalid journey event' },
+        { status: 400, headers },
+      );
     }
-
-    return NextResponse.json({ ok: true, count: rows.length }, { headers });
+    const result = await recordJourneyEventBatch(canonicalEvents);
+    return NextResponse.json({ ok: true, ...result }, { headers });
   } catch (error) {
+    if (error instanceof JourneyBodyTooLargeError) {
+      return NextResponse.json({ error: error.message }, { status: 413, headers });
+    }
+    if (error instanceof JourneyInvalidJsonError) {
+      return NextResponse.json({ error: error.message }, { status: 400, headers });
+    }
+    if (error instanceof Error && error.message === 'event_id collision') {
+      return NextResponse.json({ error: error.message }, { status: 409, headers });
+    }
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Unknown event ingest error' },
       { status: 500, headers },

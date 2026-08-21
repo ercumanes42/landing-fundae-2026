@@ -6,17 +6,17 @@ import {
   trackSessionPing, 
   trackScrollMilestone, 
   trackGodModeSectionView, 
-  trackVideoImpression,
-  trackVideoProgress,
-  trackVideoAbandoned,
   trackGodModeCtaClick,
   trackPageExit,
+  trackActiveToolAbandons,
+  trackPageView,
   getCurrentTrackingContext,
 } from '../lib/tracking';
+import { subscribeAnalyticsConsent } from '../lib/consent';
 
 export function useGodModeTracking() {
   const sessionRef = useRef({
-    id: typeof crypto !== 'undefined' ? crypto.randomUUID() : Math.random().toString(),
+    id: '',
     startTime: Date.now(),
     activeSeconds: 0,
     idleSeconds: 0,
@@ -28,30 +28,31 @@ export function useGodModeTracking() {
     ctasClicked: [] as string[],
     magnetsInteracted: [] as string[]
   });
+  const abandonSentRef = useRef(false);
 
-  // MÃ“DULO A â€” Session Init
+  // MODULE A - Session Init
   useEffect(() => {
     const s = sessionRef.current;
     if (typeof window === 'undefined') return;
 
-    const trackingContext = getCurrentTrackingContext();
-    s.id = trackingContext.session_id;
-    const initPayload = {
-      session_id: s.id,
-      utm_source: trackingContext.utm_source,
-      utm_medium: trackingContext.utm_medium,
-      utm_campaign: trackingContext.utm_campaign,
-      utm_content: trackingContext.utm_content,
-      utm_term: trackingContext.utm_term,
-      timestamp_start: new Date().toISOString(),
-      screen_resolution: `${window.screen.width}x${window.screen.height}`,
-      viewport_size: `${window.innerWidth}x${window.innerHeight}`
+    const initialize = () => {
+      const trackingContext = getCurrentTrackingContext();
+      if (!trackingContext) return;
+      s.id = trackingContext.session_id;
+      trackSessionStart({
+        section: 'hero',
+        lead_magnet: trackingContext.lead_magnet,
+      });
+      trackPageView();
     };
-    
-    trackSessionStart(initPayload);
+    initialize();
+    return subscribeAnalyticsConsent((state) => {
+      if (state === 'accepted') initialize();
+      if (state === 'rejected') s.id = '';
+    });
   }, []);
 
-  // MÃ“DULO B â€” Time on Site (activo vs inactivo)
+  // MODULE B - Time on Site (active vs inactive)
   useEffect(() => {
     let idleTimeout: ReturnType<typeof setTimeout>;
     let heartbeatInterval: ReturnType<typeof setInterval>;
@@ -88,10 +89,8 @@ export function useGodModeTracking() {
     heartbeatInterval = setInterval(() => {
       if (document.visibilityState === 'visible') {
         trackSessionPing({
-          session_id: sessionRef.current.id,
           active_seconds: sessionRef.current.activeSeconds,
           idle_seconds: sessionRef.current.idleSeconds,
-          timestamp: new Date().toISOString()
         });
       }
     }, 60000);
@@ -107,7 +106,7 @@ export function useGodModeTracking() {
     };
   }, []);
 
-  // MÃ“DULO C â€” Scroll Depth
+  // MODULE C - Scroll Depth
   useEffect(() => {
     const milestones = new Set([25, 50, 75, 100]);
     const reached = new Set<number>();
@@ -127,11 +126,9 @@ export function useGodModeTracking() {
         if (scrollPct >= m && !reached.has(m)) {
           reached.add(m);
           trackScrollMilestone({
-            session_id: sessionRef.current.id,
             depth_pct: m,
-            timestamp: new Date().toISOString(),
             active_seconds: sessionRef.current.activeSeconds,
-            section_visible: sessionRef.current.lastVisibleSection
+            section: sessionRef.current.lastVisibleSection
           });
         }
       });
@@ -141,7 +138,7 @@ export function useGodModeTracking() {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  // MÃ“DULO D â€” Section Visibility
+  // MODULE D - Section Visibility
   useEffect(() => {
     const sectionTimers = new Map<string, number>();
 
@@ -157,10 +154,9 @@ export function useGodModeTracking() {
             const timeVisibleSecs = Math.round((Date.now() - entryTime) / 1000);
             if (timeVisibleSecs > 0) {
               trackGodModeSectionView({
-                session_id: sessionRef.current.id,
-                section_name: sectionName,
-                time_visible_seconds: timeVisibleSecs,
-                max_scroll_pct_in_section: sessionRef.current.maxScrollPct
+                section: sectionName,
+                active_seconds: timeVisibleSecs,
+                max_scroll_percent: sessionRef.current.maxScrollPct
               });
             }
             sectionTimers.delete(sectionName);
@@ -174,7 +170,7 @@ export function useGodModeTracking() {
     return () => observer.disconnect();
   }, []);
 
-  // MÃ“DULO F â€” CTA Tracking
+  // MODULE F - CTA Tracking
   useEffect(() => {
     const handleCtaClick = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
@@ -184,11 +180,9 @@ export function useGodModeTracking() {
         if (ctaName) {
           sessionRef.current.ctasClicked.push(ctaName);
           trackGodModeCtaClick({
-            session_id: sessionRef.current.id,
-            cta_name: ctaName,
-            section_name: sessionRef.current.lastVisibleSection,
-            timestamp: new Date().toISOString(),
-            active_seconds_at_click: sessionRef.current.activeSeconds
+            cta_id: ctaName,
+            location: sessionRef.current.lastVisibleSection,
+            active_seconds: sessionRef.current.activeSeconds
           });
         }
       }
@@ -198,28 +192,31 @@ export function useGodModeTracking() {
     return () => document.removeEventListener('click', handleCtaClick);
   }, []);
 
-  // MÃ“DULO G â€” Exit & Bounce
+  // MODULE G - Exit & Bounce
   useEffect(() => {
-    const handleExit = () => {
+    const handleExit = (reason: 'pagehide' | 'visibility_hidden') => {
+      if (abandonSentRef.current) return;
+      abandonSentRef.current = true;
+      trackActiveToolAbandons(reason);
       trackPageExit({
-        session_id: sessionRef.current.id,
         active_seconds: sessionRef.current.activeSeconds,
         idle_seconds: sessionRef.current.idleSeconds,
-        last_section_visible: sessionRef.current.lastVisibleSection,
-        max_scroll_depth_pct: sessionRef.current.maxScrollPct,
-        video_seconds_watched: sessionRef.current.videoWatchedSeconds,
-        ctas_clicked: sessionRef.current.ctasClicked,
-        magnets_interacted: sessionRef.current.magnetsInteracted,
-        exit_timestamp: new Date().toISOString()
+        last_section: sessionRef.current.lastVisibleSection,
+        max_scroll_percent: sessionRef.current.maxScrollPct,
+        reason,
       });
     };
 
-    window.addEventListener('beforeunload', handleExit);
-    window.addEventListener('pagehide', handleExit);
+    const handlePageHide = () => handleExit('pagehide');
+    const handleVisibility = () => {
+      if (document.visibilityState === 'hidden') handleExit('visibility_hidden');
+    };
+    window.addEventListener('pagehide', handlePageHide);
+    document.addEventListener('visibilitychange', handleVisibility);
     
     return () => {
-      window.removeEventListener('beforeunload', handleExit);
-      window.removeEventListener('pagehide', handleExit);
+      window.removeEventListener('pagehide', handlePageHide);
+      document.removeEventListener('visibilitychange', handleVisibility);
     };
   }, []);
 }

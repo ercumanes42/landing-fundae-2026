@@ -41,8 +41,9 @@ async function verify() {
     'SUPABASE_SERVICE_ROLE_KEY',
     'LEAD_HASH_SECRET',
     'OPENAI_API_KEY',
-    'DATA_BRAIN_ADMIN_USER',
-    'DATA_BRAIN_ADMIN_PASSWORD',
+    'DATA_BRAIN_AUTH_CREDENTIALS',
+    'DATA_BRAIN_AUTH_PEPPER',
+    'DATA_BRAIN_LEGACY_BASIC_ENABLED',
   ];
 
   let missing = 0;
@@ -52,7 +53,7 @@ async function verify() {
       console.log(`❌ Variable Faltante: ${envKey}`);
       missing++;
     } else {
-      const displayVal = envKey.includes('KEY') || envKey.includes('SECRET') || envKey.includes('PASSWORD')
+      const displayVal = envKey.includes('KEY') || envKey.includes('SECRET') || envKey.includes('PASSWORD') || envKey.includes('AUTH') || envKey.includes('AUTH')
         ? `${val.slice(0, 8)}... (Ocultado)`
         : val;
       console.log(`✓ Variable Cargada: ${envKey} = ${displayVal}`);

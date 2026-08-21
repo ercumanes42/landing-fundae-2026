@@ -1,0 +1,143 @@
+name: Release gates
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-gates-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: 22.18.0
+  NPM_VERSION: 11.11.0
+
+jobs:
+  landing:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm install --global npm@${NPM_VERSION}
+      - run: npm ci
+      - name: Verify reviewed GitHub Actions pins
+        run: npm run release:ci-pins
+      - name: Require every release-core input to be tracked
+        run: node scripts/release/verify-manifest.mjs --require-tracked-core
+      - name: Verify release candidate planner contracts
+        run: npm run test:release-candidate
+      - name: Verify legal deploy gate contracts
+        run: npm run test:release-deploy-gate
+      - name: Enforce production legal deploy gate
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: npm run release:deploy:gate
+      - name: Verify Supabase gate-pack contracts
+        run: npm run test:supabase-gate-pack
+      - name: Verify Supabase static release gates
+        run: npm run release:supabase:gates:static
+      - run: npm run test:unit
+      - run: npm run lint
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - name: E2E against a fresh preview server
+        run: npm run test:e2e
+        env:
+          CI: '1'
+          RELEASE_FRESH_SERVER: '1'
+          VITE_DATA_BRAIN_INGEST_URL: http://127.0.0.1:4173
+          VITE_CHECKLIST_PDF_URL: /checklist_fundae_10_errores.pdf
+      - name: Generate exact release-core baseline
+        run: node scripts/release/baseline-manifest.mjs > "${RUNNER_TEMP}/baseline-manifest.json"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: baseline-manifest
+          path: ${{ runner.temp }}/baseline-manifest.json
+          if-no-files-found: error
+          retention-days: 30
+
+  data-brain:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: data-brain
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: data-brain/package-lock.json
+      - run: npm install --global npm@${NPM_VERSION}
+      - run: npm ci
+      - run: npm run test
+      - run: npm run test:setup
+      - run: npm run lint
+      - run: npm run build
+      - name: Static fixture verification only (does not satisfy G2)
+        run: npm run db:verify
+        env:
+          SUPABASE_URL: https://ci-contract.supabase.co
+          SUPABASE_SERVICE_ROLE_KEY: sb_secret_ci_contract_2f48a65c79d34896b1
+          LEAD_HASH_SECRET: ci_contract_lead_hash_a1f4c9e8d3b76250
+          DATA_BRAIN_ADMIN_USER: ci-release-auditor
+          DATA_BRAIN_ADMIN_PASSWORD: ci_contract_admin_84f2d7c19a63
+          DATA_BRAIN_AUTH_CREDENTIALS: '{"version":1,"kdf":{"name":"PBKDF2-SHA256","iterations":600000},"identities":[{"username":"ci-release-auditor","credentials":[{"key_id":"static-fixture","salt":"AQEBAQEBAQEBAQEBAQEBAQ","digest":"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI"}]}]}'
+          DATA_BRAIN_AUTH_PEPPER: ci_contract_auth_pepper_4d8f27a19b63c50e
+          DATA_BRAIN_LEGACY_BASIC_ENABLED: 'false'
+          DATA_BRAIN_AUTH_MAX_ATTEMPTS: '5'
+          DATA_BRAIN_AUTH_WINDOW_SECONDS: '300'
+          LANDING_ALLOWED_ORIGINS: https://landing-ci.invalid
+          CAMPAIGN_IMPORT_SECRET: ci_contract_campaign_7639a1f4d8b250ec
+          MAKE_WEBHOOK_SECRET: ci_contract_make_f82d61a739c40e5b
+          UNSUBSCRIBE_TOKEN_SECRET: ci_contract_unsubscribe_5d91f47a2c6380eb
+          UNSUBSCRIBE_PUBLIC_BASE_URL: https://data-ci.invalid
+          OUTBOUND_MASTER_ENABLED: 'false'
+          LEGACY_MAKE_DELIVERY_ENABLED: 'false'
+          LEGACY_DELIVERY_RETRY_ENABLED: 'false'
+          MAILBOX_IDENTITY_HASH: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          TRANSACTIONAL_OUTLOOK_ENABLED: 'false'
+          COLD_CAMPAIGN_ENABLED: 'false'
+          COLD_CAMPAIGN_PROVISIONING_ENABLED: 'false'
+          HUBSPOT_SYNC_ENABLED: 'false'
+          OPERATIONAL_OBSERVABILITY_ENABLED: 'false'
+          TRANSACTIONAL_PILOT_MODE: 'true'
+          TRANSACTIONAL_GRAPH_PILOT_LIVE_ENABLED: 'false'
+          TRANSACTIONAL_GRAPH_PILOT_TTL_SECONDS: '600'
+          TRANSACTIONAL_PILOT_ALLOWLIST_LEAD_IDS: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+          TRANSACTIONAL_LANDING_ORIGIN: https://landing-ci.invalid
+          TRANSACTIONAL_WEBINAR_TITLE: CI contract fixture
+          TRANSACTIONAL_WEBINAR_START_AT: '2030-01-15T09:00:00+01:00'
+          TRANSACTIONAL_WEBINAR_DURATION_MINUTES: '45'
+          TRANSACTIONAL_WEBINAR_TIMEZONE: Europe/Madrid
+          TRANSACTIONAL_WEBINAR_ACCESS_NOTE: No live access; validation fixture only
+          MAKE_WEBHOOK_URL: ''
+
+  automation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm install --global npm@${NPM_VERSION}
+      - run: npm ci
+      - name: Static, offline automation contracts
+        run: npm run test:automation

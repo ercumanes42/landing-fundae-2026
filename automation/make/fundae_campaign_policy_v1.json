@@ -1,0 +1,49 @@
+{
+  "schema_version": "1.0.0",
+  "policy_version": "FUNDAE_CUSTOMER_SIMILAR_SERVICES_2026_V1",
+  "status": "approved_scope_operationally_blocked",
+  "scope": {
+    "audience": "current_or_former_customers",
+    "offer": "own_similar_services",
+    "individual_legal_evidence_gate_required": false,
+    "new_consent_gate_required": false,
+    "note": "Internal campaign policy implementing the approved business decision; it is not legal advice."
+  },
+  "technical_exclusions": [
+    "unsubscribe",
+    "opposition",
+    "hard_bounce",
+    "marketing_or_global_suppression",
+    "duplicate_contact"
+  ],
+  "required_contact_fields": {
+    "campaign_policy_version": "FUNDAE_CUSTOMER_SIMILAR_SERVICES_2026_V1",
+    "unsubscribe_status": ["PENDING_RECHECK", "CLEAR", "STOP"],
+    "opposition_status": ["PENDING_RECHECK", "CLEAR", "STOP"],
+    "hard_bounce_status": ["PENDING_RECHECK", "CLEAR", "STOP"],
+    "suppression_status": ["PENDING_RECHECK", "CLEAR", "STOP"],
+    "duplicate_status": ["CLEAR", "STOP"],
+    "campaign_authorization": ["PENDING", "AUTHORIZED", "REVOKED"]
+  },
+  "send_gate": {
+    "required_validation_status": "OK",
+    "required_authorization": "AUTHORIZED",
+    "required_technical_status": "CLEAR",
+    "fail_closed": true,
+    "direct_user_authorization_required": true
+  },
+  "stop_rules": {
+    "reply_human": true,
+    "unsubscribe": true,
+    "opposition": true,
+    "hard_bounce": true,
+    "marketing_or_global_suppression": true,
+    "duplicate_contact": true,
+    "calendly_meeting": true
+  },
+  "switches": {
+    "outbound_master_enabled": false,
+    "campaign_outbound_enabled": false,
+    "make_sender_enabled": false
+  }
+}

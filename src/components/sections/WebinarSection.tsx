@@ -67,7 +67,7 @@ export function WebinarSection() {
                 <li className="flex gap-2"><span className="text-green-500 font-bold">✓</span> Qué es FUNDAE explicado fácil.</li>
                 <li className="flex gap-2"><span className="text-green-500 font-bold">✓</span> Por qué muchas pymes no lo usan.</li>
                 <li className="flex gap-2"><span className="text-green-500 font-bold">✓</span> Qué errores debes evitar.</li>
-                <li className="flex gap-2"><span className="text-green-500 font-bold">✓</span> Revisión de oportunidad en vivo.</li>
+                <li className="flex gap-2"><span className="text-green-500 font-bold">✓</span> Revisión de oportunidad en directo.</li>
                 <li className="flex gap-2"><span className="text-green-500 font-bold">✓</span> Uso en IA, productividad y liderazgo.</li>
                 <li className="flex gap-2"><span className="text-green-500 font-bold">✓</span> Pasos para diagnóstico gratuito.</li>
               </ul>
@@ -83,8 +83,8 @@ export function WebinarSection() {
                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                      </svg>
                    </div>
-                   <h3 className="text-2xl font-bold mb-2">¡Plaza reservada!</h3>
-                   <p className="text-gray-600 mb-6">Te hemos enviado un correo de confirmación. Recibirás el enlace de acceso unas horas antes del evento.</p>
+                   <h3 className="text-2xl font-bold mb-2">Solicitud de plaza registrada</h3>
+                   <p className="text-gray-600 mb-6">Tus datos se han guardado. La confirmación y el enlace solo se mostrarán como enviados cuando el sistema lo verifique.</p>
                    <Button onClick={reset} variant="outline" className="mx-auto">
                      Reservar otra plaza
                    </Button>
@@ -105,22 +105,22 @@ export function WebinarSection() {
                     <Input name="name" required />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Email corporativo</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Correo corporativo</label>
                     <Input type="email" name="email" required />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Empresa</label>
                     <Input name="company" required />
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-4 sm:grid-cols-2">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Cargo</label>
                       <Input name="role" required />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Nº Trab.</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Plantilla</label>
                       <Select name="employee_range" required>
-                        <option value="">Sel.</option>
+                        <option value="">Selecciona</option>
                         <option value="1-5">1-5</option>
                         <option value="6-9">6-9</option>
                         <option value="10-49">10-49</option>
@@ -130,13 +130,13 @@ export function WebinarSection() {
                     </div>
                   </div>
                   <div className="flex items-start gap-2 mt-2">
-                    <input type="checkbox" id="privacyA_webinar" name="privacy_accepted" required className="mt-1" />
+                    <input type="checkbox" id="privacyA_webinar" name="privacy_accepted" required className="mt-1 accent-[#302B7B] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF206E] focus-visible:ring-offset-2" />
                     <label htmlFor="privacyA_webinar" className="text-xs text-gray-500">
-                      He leído y acepto la política de privacidad.
+                      He leído la <a href="/privacidad" className="rounded-sm font-semibold text-[#302B7B] underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF206E]">política de privacidad</a>.
                     </label>
                   </div>
                   <div className="pt-2">
-                    <Button type="submit" className="w-full" disabled={state === "loading"}>
+                    <Button type="submit" className="w-full" disabled={state === "loading"} data-track-cta="webinar_submit">
                       {state === "loading" ? "Registrando..." : "Reservar plaza"}
                     </Button>
                   </div>

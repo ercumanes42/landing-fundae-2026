@@ -20,25 +20,23 @@ import { useEffect } from "react";
 import { trackEvent } from "./lib/tracking";
 import { flushPendingLeads } from "./lib/webhooks";
 import { useGodModeTracking } from "./hooks/useGodModeTracking";
-
-const ROUTE_TO_SECTION: Record<string, string> = {
-  "/calculadora": "calculadora",
-  "/checklist-10-errores": "checklist",
-  "/autodiagnostico": "interactive-checklist",
-  "/webinar": "webinar",
-  "/diagnostico": "diagnostico",
-};
-
-function normalizePath(pathname: string): string {
-  return pathname.replace(/\/+$/, "") || "/";
-}
+import { FUNNEL_ROUTES, LEGAL_PATHS, normalizePath } from "./config/routes";
+import { LegalPage, type LegalPageKind } from "./components/legal/LegalPage";
 
 export default function App() {
   useGodModeTracking();
 
+  const currentPath = normalizePath(window.location.pathname);
+  const currentRoute = FUNNEL_ROUTES[currentPath];
+  const stickySection = currentRoute?.sectionId ?? "calculadora";
+  const stickyLabel = currentRoute?.ctaLabel ?? "Calcular mi estimaci\u00f3n";
+  const legalKind = LEGAL_PATHS.includes(currentPath as (typeof LEGAL_PATHS)[number])
+    ? (currentPath.slice(1) as LegalPageKind)
+    : null;
+
   useEffect(() => {
     const sectionId =
-      ROUTE_TO_SECTION[normalizePath(window.location.pathname)] ??
+      FUNNEL_ROUTES[normalizePath(window.location.pathname)]?.sectionId ??
       window.location.hash.replace("#", "");
 
     trackEvent("page_view", { section: sectionId || "home" });
@@ -50,6 +48,15 @@ export default function App() {
       }, 250);
     }
   }, []);
+
+  if (legalKind) {
+    return (
+      <>
+        <CookieConsentBanner />
+        <LegalPage kind={legalKind} />
+      </>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans pb-20 lg:pb-0">
@@ -80,11 +87,11 @@ export default function App() {
           data-track-cta="mobile_sticky_calculator"
           onClick={() => {
             trackEvent("cta_click", { cta: "mobile_sticky_calculator", section: "sticky" });
-            document.getElementById("calculadora")?.scrollIntoView({ behavior: "smooth" });
+            document.getElementById(stickySection)?.scrollIntoView({ behavior: "smooth" });
           }}
           className="w-full flex h-12 items-center justify-center rounded-lg bg-blue-900 text-base font-semibold text-white shadow-md hover:bg-blue-800 transition-colors"
         >
-          Calcular oportunidad
+          {stickyLabel}
         </button>
       </div>
     </div>

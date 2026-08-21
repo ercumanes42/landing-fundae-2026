@@ -15,3 +15,12 @@ data-brain/.next/
 data-private/
 *.xlsx
 automation/.runtime/
+.codex/
+.playwright-cli/
+.pnpm-store/
+output/
+outputs/
+test-results/
+tmp/
+
+.vercel

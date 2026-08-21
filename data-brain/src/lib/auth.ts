@@ -1,20 +1,18 @@
 import { env } from './env';
+import { authenticateDashboardAuthorization, type DashboardAuthResult } from './dashboard-auth';
 
-export function isBasicAuthValid(request: Request): boolean {
-  const header = request.headers.get('authorization');
-  if (!header?.startsWith('Basic ')) return false;
+export async function authenticateBasicRequest(request: Request): Promise<DashboardAuthResult> {
+  return authenticateDashboardAuthorization({
+    authorization: request.headers.get('authorization'),
+    credentialStore: env('DATA_BRAIN_AUTH_CREDENTIALS'),
+    pepper: env('DATA_BRAIN_AUTH_PEPPER'),
+    legacyEnabled: env('DATA_BRAIN_LEGACY_BASIC_ENABLED'),
+  });
+}
 
-  const decoded = Buffer.from(header.slice('Basic '.length), 'base64').toString('utf8');
-  const separator = decoded.indexOf(':');
-  if (separator === -1) return false;
-
-  const user = decoded.slice(0, separator);
-  const password = decoded.slice(separator + 1);
-
-  return (
-    user === env('DATA_BRAIN_ADMIN_USER') &&
-    password === env('DATA_BRAIN_ADMIN_PASSWORD')
-  );
+/** @deprecated Compatibility name only; credentials come from the v1 digest store. */
+export async function isBasicAuthValid(request: Request): Promise<boolean> {
+  return (await authenticateBasicRequest(request)).ok;
 }
 
 export function basicAuthHeaders(): HeadersInit {

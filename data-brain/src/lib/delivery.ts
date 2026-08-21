@@ -1,18 +1,33 @@
-import { env } from './env';
+import { env, isOutboundCapabilityEnabled } from './env';
 import { insertRow, selectRows, updateById } from './supabase';
 import type { LeadPayload } from './types';
+import { createMakeSignature } from './security';
 
 const RETRY_DELAYS_SECONDS = [0, 60, 300, 900, 3600, 21600];
+
+export class LegacyDeliveryDisabledError extends Error {
+  readonly code: 'LEGACY_MAKE_DELIVERY_DISABLED' | 'LEGACY_DELIVERY_RETRY_DISABLED';
+
+  constructor(code: LegacyDeliveryDisabledError['code']) {
+    super(code === 'LEGACY_MAKE_DELIVERY_DISABLED'
+      ? 'Legacy Make delivery is disabled'
+      : 'Legacy delivery retries are disabled');
+    this.name = 'LegacyDeliveryDisabledError';
+    this.code = code;
+  }
+}
 
 interface DeliveryRow {
   id: string;
   lead_id: string;
+  submission_id: string;
   target: 'make';
   payload: LeadPayload;
   status: 'queued' | 'retrying' | 'delivered' | 'dead_letter';
   attempt_count: number;
   next_attempt_at: string;
   last_error?: string;
+  accepted_by_make_at?: string;
 }
 
 function secondsFromNow(seconds: number): string {
@@ -33,14 +48,38 @@ function nextStatus(attemptCount: number): {
   };
 }
 
+function assertLegacyMakeDeliveryEnabled(): void {
+  if (!isOutboundCapabilityEnabled('LEGACY_MAKE_DELIVERY_ENABLED')) {
+    throw new LegacyDeliveryDisabledError('LEGACY_MAKE_DELIVERY_DISABLED');
+  }
+}
+
+function assertLegacyRetryEnabled(): void {
+  assertLegacyMakeDeliveryEnabled();
+  if (!isOutboundCapabilityEnabled('LEGACY_DELIVERY_RETRY_ENABLED')) {
+    throw new LegacyDeliveryDisabledError('LEGACY_DELIVERY_RETRY_DISABLED');
+  }
+}
+
 async function sendToMake(payload: LeadPayload): Promise<void> {
+  assertLegacyMakeDeliveryEnabled();
   const url = env('MAKE_WEBHOOK_URL');
-  if (!url) return;
+  if (!url) throw new Error('MAKE_WEBHOOK_URL is not configured');
+
+  const secret = env('MAKE_WEBHOOK_SECRET');
+  if (!secret) throw new Error('MAKE_WEBHOOK_SECRET is not configured');
+  const body = JSON.stringify(payload);
+  const timestamp = Math.floor(Date.now() / 1000).toString();
+  const signature = createMakeSignature(body, timestamp, secret);
 
   const response = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Make-Signature': signature,
+      'X-Make-Timestamp': timestamp,
+    },
+    body,
   });
 
   if (!response.ok) {
@@ -51,11 +90,24 @@ async function sendToMake(payload: LeadPayload): Promise<void> {
 export async function enqueueAndAttemptDelivery(
   payload: LeadPayload,
 ): Promise<DeliveryRow> {
+  assertLegacyMakeDeliveryEnabled();
   if (!payload.lead_id) {
     throw new Error('Cannot enqueue delivery without lead_id');
   }
 
+  const existing = await selectRows<DeliveryRow>(
+    'delivery_queue',
+    `select=*&submission_id=eq.${encodeURIComponent(payload.submission_id)}&target=eq.make&limit=1`,
+  );
+  if (existing[0]) {
+    if (existing[0].status === 'queued' || existing[0].status === 'retrying') {
+      return attemptDelivery(existing[0]);
+    }
+    return existing[0];
+  }
+
   const row = await insertRow<DeliveryRow>('delivery_queue', {
+    submission_id: payload.submission_id,
     lead_id: payload.lead_id,
     target: 'make',
     payload,
@@ -68,17 +120,20 @@ export async function enqueueAndAttemptDelivery(
 }
 
 export async function attemptDelivery(row: DeliveryRow): Promise<DeliveryRow> {
+  assertLegacyMakeDeliveryEnabled();
   const attemptCount = row.attempt_count + 1;
 
   try {
     await sendToMake(row.payload);
+    const acceptedAt = new Date().toISOString();
     const updated = await updateById<DeliveryRow>('delivery_queue', row.id, {
       status: 'delivered',
       attempt_count: attemptCount,
-      delivered_at: new Date().toISOString(),
+      delivered_at: acceptedAt,
+      accepted_by_make_at: acceptedAt,
       last_error: null,
     });
-    return updated ?? { ...row, status: 'delivered', attempt_count: attemptCount };
+    return updated ?? { ...row, status: 'delivered', attempt_count: attemptCount, accepted_by_make_at: acceptedAt };
   } catch (error) {
     const next = nextStatus(attemptCount);
     const updated = await updateById<DeliveryRow>('delivery_queue', row.id, {
@@ -104,6 +159,7 @@ export async function retryDueDeliveries(): Promise<{
   delivered: number;
   dead_letter: number;
 }> {
+  assertLegacyRetryEnabled();
   const due = await selectRows<DeliveryRow>(
     'delivery_queue',
     `status=in.(queued,retrying)&next_attempt_at=lte.${encodeURIComponent(

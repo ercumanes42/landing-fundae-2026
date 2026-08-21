@@ -72,13 +72,14 @@ export function DiagnosticSection() {
               </p>
               {config.calendlyUrl && (
                 <Button
+                  data-track-cta="diagnostic_calendar"
                   size="lg"
                   onClick={() => {
                     trackCalendlyRedirect("diagnostic");
                     window.location.href = getCampaignAwareUrl(config.calendlyUrl);
                   }}
                 >
-                  Ir al calendario
+                  Elegir fecha y hora
                 </Button>
               )}
             </div>
@@ -105,28 +106,28 @@ export function DiagnosticSection() {
                   <Input name="company" required placeholder="Nombre de tu empresa" />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Email corporativo *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Correo corporativo *</label>
                   <Input type="email" name="email" required placeholder="nombre@empresa.com" />
                 </div>
               </div>
               
               <div className="border-t border-gray-200 pt-6 mt-6 space-y-4">
                 <div className="flex items-start gap-2">
-                  <input type="checkbox" id="privacyA_diagnostic" name="privacy_accepted" required className="mt-1" />
+                  <input type="checkbox" id="privacyA_diagnostic" name="privacy_accepted" required className="mt-1 accent-[#302B7B] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF206E] focus-visible:ring-offset-2" />
                   <label htmlFor="privacyA_diagnostic" className="text-xs text-gray-500">
-                    He leído y acepto la política de privacidad. Consiento el tratamiento de mis datos para agendar la sesión.
+                    He leído la <a href="/privacidad" className="rounded-sm font-semibold text-[#302B7B] underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF206E]">política de privacidad</a>. Solicito que se usen mis datos para gestionar la sesión.
                   </label>
                 </div>
                 <div className="flex items-start gap-2">
-                  <input type="checkbox" id="marketing_accepted_diagnostic" name="marketing_accepted" className="mt-1" />
+                  <input type="checkbox" id="marketing_accepted_diagnostic" name="marketing_accepted" className="mt-1 accent-[#302B7B] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF206E] focus-visible:ring-offset-2" />
                   <label htmlFor="marketing_accepted_diagnostic" className="text-xs text-gray-500">
                     Acepto recibir comunicaciones comerciales sobre formación y novedades. (Opcional)
                   </label>
                 </div>
                 
                 <div className="flex justify-end pt-4">
-                  <Button type="submit" size="lg" disabled={state === "loading"} className="w-full md:w-auto">
-                    {state === "loading" ? "Enviando..." : "Agendar diagnóstico"}
+                  <Button type="submit" size="lg" disabled={state === "loading"} className="w-full md:w-auto" data-track-cta="diagnostic_submit">
+                    {state === "loading" ? "Enviando..." : "Reservar diagnóstico"}
                   </Button>
                 </div>
               </div>

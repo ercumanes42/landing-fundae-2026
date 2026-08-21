@@ -4,13 +4,12 @@ import { motion } from "motion/react";
 export function InfiniteTicker() {
   // We duplicate the items a few times so the loop is seamless
   const phrases = [
-    "DIAGNÓSTICO ESTRATÉGICO",
-    "MAXIMIZA TU CRÉDITO FUNDAE",
-    "FORMACIÓN BONIFICADA",
-    "SIN RIESGOS",
-    "AUDITORÍA CERTIFICADA",
-    "1.200+ PYMES ACTIVAS",
-    "PARTNERS OFICIALES"
+    "ESTIMACIÓN ORIENTATIVA",
+    "FUENTES OFICIALES",
+    "CONTROL DOCUMENTAL",
+    "RESULTADO ANTES DEL EMAIL",
+    "CUATRO RECURSOS PRÁCTICOS",
+    "REVISIÓN DE 15 MINUTOS"
   ];
 
   return (

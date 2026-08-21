@@ -19,11 +19,11 @@ export interface TrainingAreaOption extends SelectOption {
 // ── Employee ranges ─────────────────────────────────────────────────────
 
 export const EMPLOYEE_RANGES: readonly SelectOption[] = [
-  { value: '1-5', label: '1-5 trabajadores' },
-  { value: '6-9', label: '6-9 trabajadores' },
-  { value: '10-49', label: '10-49 trabajadores' },
-  { value: '50-249', label: '50-249 trabajadores' },
-  { value: '+249', label: 'Más de 249 trabajadores' },
+  { value: '1-5', label: '1-5 personas trabajadoras' },
+  { value: '6-9', label: '6-9 personas trabajadoras' },
+  { value: '10-49', label: '10-49 personas trabajadoras' },
+  { value: '50-249', label: '50-249 personas trabajadoras' },
+  { value: '+249', label: 'Más de 249 personas trabajadoras' },
 ] as const;
 
 // ── Spanish provinces (52) ──────────────────────────────────────────────
@@ -192,12 +192,10 @@ export const LEAD_CLASSIFICATION: readonly LeadClassificationRule[] = [
 // ── FUNDAE national statistics (for StatsSection, copy, etc.) ───────────
 
 export const FUNDAE_STATS = {
-  /** % of companies that do NOT use their credit */
-  creditUnused: 79.5,
   /** % of companies that DO use FUNDAE */
   adoptionRate: 20.5,
   /** % of total national credit actually executed */
-  creditExecuted: 52,
+  creditExecuted: 53.3,
   /** Adoption breakdown by company size */
   adoptionBySize: {
     '1-5': 10,
@@ -225,7 +223,7 @@ export const CALCULATOR_RESULTS: readonly CalculatorResult[] = [
     max: '420',
     bonusPercentage: '100%',
     message:
-      'Todas las empresas disponen de un crédito mínimo anual garantizado por ley de 420 € para formación, independientemente de lo cotizado. Es una cantidad modesta, pero suficiente para acciones formativas puntuales de alto impacto.',
+      'FUNDAE publica un crédito mínimo de 420 € para empresas de 1 a 5 personas. El saldo y la aplicación concreta deben comprobarse en el expediente.',
   },
   {
     range: '6-9',
@@ -233,7 +231,7 @@ export const CALCULATOR_RESULTS: readonly CalculatorResult[] = [
     max: '1.575',
     bonusPercentage: '100%',
     message:
-      'Tu empresa disfruta del tramo máximo de bonificación (100%). Esto significa que puedes recuperar íntegramente todo el dinero cotizado durante el ejercicio anterior en contingencias de formación profesional.',
+      'El tramo aplica el 100% sobre la cuota de Formación Profesional del año anterior. Sin esa cuota no debe mostrarse un importe.',
   },
   {
     range: '10-49',
@@ -241,7 +239,7 @@ export const CALCULATOR_RESULTS: readonly CalculatorResult[] = [
     max: '6.400',
     bonusPercentage: '75%',
     message:
-      'En este tramo de plantilla, FUNDAE permite bonificar el 75% de la cantidad ingresada el año anterior por contingencias de formación profesional. Tienes una bolsa económica importante para implementar planes de formación sólidos.',
+      'En este tramo de plantilla, FUNDAE permite bonificar el 75% de la cantidad ingresada el año anterior por contingencias de formación profesional. El importe depende de la cuota real del año anterior; no equivale al saldo disponible.',
   },
   {
     range: '50-249',
@@ -249,7 +247,7 @@ export const CALCULATOR_RESULTS: readonly CalculatorResult[] = [
     max: '26.000',
     bonusPercentage: '60%',
     message:
-      'Con una bonificación del 60%, el volumen de crédito de tu empresa permite desarrollar programas estratégicos para gran parte del equipo. A pesar de ello, gran parte de las empresas de este tamaño dejan crédito sin consumir.',
+      'El tramo aplica el 60% sobre la cuota de Formación Profesional del año anterior. Sin esa cuota no debe mostrarse un importe, y el resultado no equivale al saldo disponible.',
   },
   {
     range: '+249',
@@ -257,6 +255,6 @@ export const CALCULATOR_RESULTS: readonly CalculatorResult[] = [
     max: 'Más de 21.000',
     bonusPercentage: '50%',
     message:
-      'Aplica el porcentaje de bonificación del 50%. Debido al volumen de cotización y tamaño de la plantilla, hablamos de bolsas de crédito muy significativas que requieren de una gestión y control precisos.',
+      'El tramo aplica el 50% sobre la cuota de Formación Profesional del año anterior. Sin esa cuota no debe mostrarse un importe, y el resultado no equivale al saldo disponible.',
   },
 ] as const;

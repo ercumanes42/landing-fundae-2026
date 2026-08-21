@@ -61,8 +61,10 @@ export interface TouchAttribution extends UTMParams {
 
 export interface TrackingContext {
   readonly event_id: string;
-  readonly event_version: '1.0';
+  readonly event_version: '2.0';
   readonly occurred_at: string;
+  readonly journey_id: string;
+  /** @deprecated Database compatibility alias; always equal to journey_id. */
   readonly anonymous_id: string;
   readonly session_id: string;
   readonly identity_persistence: 'localStorage' | 'memory';
@@ -81,7 +83,8 @@ export interface TrackingContext {
   readonly partner?: string;
   readonly device_type: 'desktop' | 'tablet' | 'mobile' | 'unknown';
   readonly viewport_width: number;
-  readonly consent_state: 'unknown' | 'accepted' | 'rejected';
+  readonly consent_state: 'accepted';
+  readonly consent_version: string;
 }
 
 export interface CampaignTrackingContext {
@@ -91,9 +94,18 @@ export interface CampaignTrackingContext {
 
 export type TrackingEvent =
   | 'page_view'
+  | 'page_abandon'
+  | 'session_start'
+  | 'session_ping'
   | 'section_view'
   | 'scroll_depth'
+  | 'scroll_milestone'
   | 'cta_click'
+  | 'tool_start'
+  | 'tool_step'
+  | 'tool_complete'
+  | 'tool_abandon'
+  | 'resource_download'
   | 'form_start'
   | 'form_step'
   | 'form_submit'
@@ -109,8 +121,11 @@ export type TrackingEvent =
   | 'calendly_click'
   | 'pdf_downloaded'
   | 'video_play'
+  | 'video_start'
+  | 'video_quartile'
   | 'video_progress'
   | 'video_complete'
+  | 'video_abandon'
   | 'faq_toggle'
   | 'exit_intent'
   | 'checklist_submit'
@@ -254,11 +269,13 @@ export interface AISummary {
 }
 
 export interface LeadData {
+  submission_id: string;
   event_version: '1.0';
   form_type: FormType;
   lead_magnet: LeadMagnet;
   created_at: string;
   source_url: string;
+  journey_id?: string;
   anonymous_id?: string;
   session_id?: string;
   utm_source?: string;
@@ -305,7 +322,7 @@ export interface LeadData {
     marketing_accepted: boolean;
   };
   ai_summary?: AISummary;
-  delivery_status?: 'queued' | 'delivered' | 'retrying' | 'dead_letter';
+  delivery_status?: 'captured' | 'queued' | 'delivered' | 'retrying' | 'dead_letter';
   checklist_pdf_url?: string;
 }
 

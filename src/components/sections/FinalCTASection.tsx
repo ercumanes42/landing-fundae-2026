@@ -24,7 +24,7 @@ export function FinalCTASection() {
           transition={{ duration: 0.6 }}
           className="text-3xl font-extrabold tracking-tight text-white md:text-5xl mb-6"
         >
-          ¿Quieres saber si tu empresa está dejando crédito FUNDAE <span className="text-emerald-400">sin usar?</span>
+          ¿Quieres revisar el <span className="text-[#FF206E]">crédito formativo</span> de tu empresa con más claridad?
         </motion.h2>
         <motion.p
           initial={{ opacity: 0, y: 20 }}
@@ -33,7 +33,7 @@ export function FinalCTASection() {
           transition={{ duration: 0.6, delay: 0.15 }}
           className="text-xl text-blue-200 mb-10 max-w-2xl mx-auto"
         >
-          Empieza con una revisión rápida. Sin compromiso.
+          Obtén una estimación inicial o reserva una revisión de 15 minutos para contrastar tu caso.
         </motion.p>
         
         <motion.div
@@ -43,11 +43,11 @@ export function FinalCTASection() {
           transition={{ duration: 0.6, delay: 0.3 }}
           className="flex flex-col sm:flex-row justify-center gap-4"
         >
-          <Button size="lg" variant="primary" onClick={() => scrollTo("calculadora")} className="w-full sm:w-auto">
-            Calcular mi oportunidad
+          <Button size="lg" variant="primary" data-track-cta="final_diagnostic" onClick={() => scrollTo("diagnostico")} className="w-full sm:w-auto">
+            Reservar diagnóstico de 15 min
           </Button>
-          <Button size="lg" variant="outline" className="text-white border-white/20 hover:bg-white/10 hover:text-white w-full sm:w-auto" onClick={() => scrollTo("diagnostico")}>
-            Agendar diagnóstico
+          <Button size="lg" variant="outline" data-track-cta="final_calculator" className="text-white border-white/20 hover:bg-white/10 hover:text-white w-full sm:w-auto" onClick={() => scrollTo("calculadora")}>
+            Calcular una estimación
           </Button>
         </motion.div>
       </div>

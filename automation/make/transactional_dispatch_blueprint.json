@@ -1,0 +1,58 @@
+{
+  "name": "FUNDAE Transactional Dispatch Tick",
+  "kind": "configuration-spec",
+  "importable": false,
+  "production_ready": false,
+  "enabled": false,
+  "reason": "The exact Make HTTP module slug, connection and secret mapping have not been verified in an authorized Make team.",
+  "authority": {
+    "transactional_state": "Data Brain/PostgreSQL",
+    "scheduler_only": "Make",
+    "one_tick_one_transition": true,
+    "forbidden_data": ["recipient", "email body", "attachment", "unsubscribe token"]
+  },
+  "scenario": {
+    "schedule": { "type": "indefinitely", "interval_seconds": 60, "timezone": "Europe/Madrid" },
+    "maximum_concurrent_executions": 1,
+    "modules": [
+      {
+        "position": 1,
+        "app": "HTTP",
+        "module": "UNVERIFIED_EXACT_SLUG",
+        "label": "POST one private Data Brain transactional tick",
+        "method": "POST",
+        "endpoint": "/api/internal/graph/dispatch",
+        "body": null,
+        "headers": ["Authorization: Bearer <secret mapping>", "Content-Length: 0"],
+        "timeout_seconds": 55
+      }
+    ]
+  },
+  "response_contract": {
+    "fields": ["accepted", "state", "reason_code", "dispatch_id", "reservation_id", "alert_attempted", "alert_delivered"],
+    "success_states": ["empty", "confirmed_sent"],
+    "deferred_states": ["off", "deferred"],
+    "halt_states": ["ambiguous_halted"],
+    "never_retry_blindly": true,
+    "http_status_policy": {
+      "200": "complete_execution_without_retry",
+      "409": "controlled_no_progress_wait_for_next_scheduled_tick",
+      "503": "halt_execution_create_incomplete_execution_and_alert_operator"
+    },
+    "retry_policy": {
+      "automatic_retries": 0,
+      "incomplete_executions": true,
+      "retry_requires_operator_review": true
+    }
+  },
+  "feature_gates": {
+    "outbound_master": false,
+    "transactional_outlook": false
+  },
+  "verification_required": [
+    "Verify the exact HTTP module slug and connection in the selected Make team",
+    "Create the scenario inactive and verify an OFF response with zero Graph traffic",
+    "Run the four-resource single-approved-sink sandbox only after direct user authorization",
+    "Keep the scenario inactive until all transactional gates pass"
+  ]
+}

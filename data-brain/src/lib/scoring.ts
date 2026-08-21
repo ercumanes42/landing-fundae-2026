@@ -27,28 +27,19 @@ function scoreFit(data: LeadScoringInput): number {
     '+249': 14,
   };
 
-  let employeeRange = data.employee_range;
-  let roleStr = data.role;
-  let sectorStr = data.sector;
-  let provinceStr = data.province;
-
-  // --- VALORES IMPLÍCITOS DE FIT SEGÚN CAPTADOR ---
-  if (data.form_type === 'diagnostic') {
-    // Diagnóstico de 15 minutos en Calendly (alta intención, no pide trabajadores)
-    if (!employeeRange) employeeRange = '10-49';
-  } else if (data.form_type === 'interactive_checklist') {
-    const explicitEmployeeRange = data.employee_range ?? data.answers?.company_size;
-    employeeRange = explicitEmployeeRange && Object.prototype.hasOwnProperty.call(employeeScores, explicitEmployeeRange)
+  const explicitEmployeeRange =
+    data.employee_range ??
+    (data.form_type === 'interactive_checklist'
+      ? data.answers?.company_size
+      : undefined);
+  const employeeRange =
+    explicitEmployeeRange &&
+    Object.prototype.hasOwnProperty.call(employeeScores, explicitEmployeeRange)
       ? explicitEmployeeRange
       : undefined;
-    roleStr = data.role ?? '';
-  } else if (data.form_type === 'checklist') {
-    // Descarga pasiva del Checklist de errores (no pide cargo)
-    if (!roleStr) roleStr = 'gestor_implicito';
-  }
 
   let score = employeeScores[employeeRange ?? ''] ?? 0;
-  const role = normalize(roleStr);
+  const role = normalize(data.role);
   if (
     containsAny(role, [
       'ceo',
@@ -61,15 +52,14 @@ function scoreFit(data: LeadScoringInput): number {
       'formacion',
       'formación',
       'operaciones',
-      'gestor_implicito',
     ])
   ) {
-    score += (role === 'gestor_implicito') ? 2 : 4;
+    score += 4;
   } else if (role) {
     score += 2;
   }
 
-  const sector = normalize(sectorStr);
+  const sector = normalize(data.sector);
   if (
     [
       'tecnologia',
@@ -86,21 +76,9 @@ function scoreFit(data: LeadScoringInput): number {
     score += 1;
   }
 
-  if (provinceStr) score += 1;
+  if (data.province) score += 1;
 
-  // --- NORMALIZACIÓN DE ESCALA ---
-  // Calculamos el valor máximo factible de sumar en base al diseño del formulario
-  let maxPossibleScore = 25;
-  if (data.form_type === 'checklist') {
-    maxPossibleScore = 21; // employee_range (18) + role implícito (3)
-  } else if (data.form_type === 'webinar') {
-    maxPossibleScore = 22; // employee_range (18) + role (4)
-  } else if (data.form_type === 'diagnostic') {
-    maxPossibleScore = 22; // employee_range implícito (18) + role (4)
-  }
-
-  const normalizedScore = (score / maxPossibleScore) * MAX_DIMENSION_SCORE;
-  return clampDimension(normalizedScore);
+  return clampDimension(score);
 }
 
 function scoreIntent(data: LeadScoringInput): number {
@@ -167,14 +145,7 @@ function scoreUrgency(data: LeadScoringInput): number {
   let usedFundaeVal = data.used_fundae_before;
   let riskVal = data.risk_level;
 
-  // --- VALORES IMPLÍCITOS DE URGENCIA SEGÚN CAPTADOR ---
-  if (data.form_type === 'diagnostic') {
-    // Al pedir consultoría 1a1, la urgencia comercial es inmediata por defecto
-    if (!urgencyVal) urgencyVal = 'inmediato';
-    if (!knowsCreditVal) knowsCreditVal = 'gustaria averiguarlo';
-    if (!usedFundaeVal) usedFundaeVal = 'no';
-    if (!riskVal) riskVal = 'high';
-  } else if (data.form_type === 'interactive_checklist' && data.answers) {
+  if (data.form_type === 'interactive_checklist' && data.answers) {
     const creditVisibility = data.answers.credit_visibility;
     if (!knowsCreditVal && (creditVisibility === 'No todavía' || creditVisibility === 'No lo sé')) {
       knowsCreditVal = 'no';
@@ -183,23 +154,6 @@ function scoreUrgency(data: LeadScoringInput): number {
     const reviewTiming = data.answers.review_timing;
     if (!urgencyVal && reviewTiming === 'Esta semana') urgencyVal = 'inmediato';
     if (!urgencyVal && reviewTiming === 'En los próximos 3 meses') urgencyVal = 'menos de 3 meses';
-  } else if (data.form_type === 'webinar') {
-    // Webinar tiene compromiso temporal implícito
-    if (!urgencyVal) urgencyVal = 'menos de 3 meses';
-    if (!knowsCreditVal) knowsCreditVal = 'gustaria averiguarlo';
-  } else if (data.form_type === 'checklist') {
-    // Cierre de año fiscal FUNDAE en Q4 (Octubre, Noviembre, Diciembre) aumenta urgencia
-    const currentMonth = new Date().getMonth();
-    if (currentMonth >= 9 && !urgencyVal) {
-      urgencyVal = 'menos de 3 meses';
-    }
-  } else if (data.form_type === 'calculator') {
-    // Si calculadora detecta empresa grande, el volumen de crédito en riesgo es urgente
-    const employeeRange = data.employee_range;
-    if ((employeeRange === '50-249' || employeeRange === '+249') && !urgencyVal) {
-      urgencyVal = 'menos de 3 meses';
-      riskVal = 'high';
-    }
   }
 
   const urgency = normalize(urgencyVal);
@@ -229,11 +183,6 @@ function scoreUrgency(data: LeadScoringInput): number {
   if (risk === 'high' || risk.includes('alto')) score += 4;
   if (risk === 'medium' || risk.includes('medio')) score += 2;
 
-  // Si el captador no tiene campos de urgencia ni se dedujo nada (ej. Checklist en Q1/Q2)
-  // le asignamos un valor base neutral mínimo de salvaguarda.
-  if (!urgencyVal && !knowsCreditVal && !usedFundaeVal && !riskVal) {
-    score = 4;
-  }
 
   return clampDimension(score);
 }

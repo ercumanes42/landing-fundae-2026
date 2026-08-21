@@ -92,8 +92,9 @@ export function InteractiveChecklist() {
       {hasStarted && currentBlockIndex < BLOCKS.length && (
         <div className="absolute top-0 right-0 -mt-12">
           <button 
+            type="button"
             onClick={handleReset}
-            className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-900 transition-colors"
+            className="flex min-h-11 items-center gap-1.5 rounded-sm px-2 text-sm text-slate-600 transition-colors hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF206E] focus-visible:ring-offset-2"
           >
             <RotateCcw className="w-4 h-4" />
             Reiniciar

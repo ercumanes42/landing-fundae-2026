@@ -1,11 +1,35 @@
 {
-  "name": "FUNDAE 2026 Landing Events",
+  "name": "FUNDAE 2026 Calendly Confirmed Bookings",
+  "kind": "configuration-spec",
   "importable": false,
-  "modules": [
-    "Calendly confirmed booking webhook",
-    "Google Sheets Search Row by cid",
-    "Google Sheets Update Row meeting_booked",
-    "HTTP signed Data Brain operation"
-  ],
-  "note": "Passive landing events go directly from the landing to Data Brain. This scenario is only for confirmed third-party events."
+  "production_ready": false,
+  "enabled": false,
+  "make_mcp_gate": {
+    "status": "not_applicable_to_delivery",
+    "reason": "Calendly delivers invitee.created directly to Data Brain; Make must not terminate or re-sign provider webhooks. Connection and subscription setup remain interactive gates."
+  },
+  "scenario_plan": {
+    "use_case": "Calendly posts a signed invitee.created webhook directly to Data Brain. Data Brain verifies the raw-body signature, rejects replays and correlates only supported UTM identifiers.",
+    "trigger_type": "provider_webhook",
+    "flow": "Calendly invitee.created -> POST /api/webhooks/calendly -> signed validation -> durable ledger -> meeting stop",
+    "make_modules": [],
+    "module_identifiers_verified": true
+  },
+  "source": {
+    "provider_event": "invitee.created",
+    "signature_header": "calendly-webhook-signature",
+    "contact_id_path": "payload.tracking.utm_content",
+    "campaign_external_id_path": "payload.tracking.utm_campaign",
+    "requires_supported_utm_propagation": true,
+    "arbitrary_cid_query_parameter_is_not_accepted": true,
+    "email_only_match_forbidden": true,
+    "unmatched_goes_to_manual_review": true
+  },
+  "backend_contract": {
+    "endpoint": "/api/webhooks/calendly",
+    "feature_flag": "CALENDLY_WEBHOOK_ENABLED=false",
+    "event": "meeting_booked",
+    "forged_or_stale_signature_rejected": true,
+    "provider_replay_idempotent": true
+  }
 }

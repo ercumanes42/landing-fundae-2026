@@ -1,49 +1,54 @@
-# Make + Outlook 365 Setup
+# Make scheduler setup
 
-## Scenario 1: Email sender
+La guía ejecutable y los criterios de piloto están en `MAKE_PRODUCTION_CHECKLIST.md`. Este archivo resume el
+contrato; no sustituye el blueprint real exportado ni una prueba end-to-end.
 
-1. Scheduler: run at the four approved Madrid time slots.
-2. Google Sheets Search Rows: select only due rows with `next_delivery_status=PENDING`, `validacion_pre_envio=OK`, no response, no hard bounce, no meeting and `paso_actual` from 1 to 5.
-3. Make Data Store Get Record: key `campaign_id:contact_id:paso_actual`. Stop when a non-expired lock exists.
-4. Conditional contact filter: when `habilitado_envio=CONDICIONADO`, inspect the primary contact. Stop the secondary when its primary has replied, booked, unsubscribed, bounced, or stopped.
-5. Google Sheets Update Row: set `next_delivery_status=LOCKED`, `lock_token`, `locked_at`, and `lock_expires_at` before Outlook is called.
-6. Outlook 365 Send Email for step 1; Reply/Send in the stored conversation for steps 2-5.
-7. Make Data Store Put Record after a confirmed Outlook result.
-8. Google Sheets Update Row: store message/conversation IDs, last delivery result, increment `paso_actual`, and set the next step to `PENDING`. Set sequence to `COMPLETED` only after email 5.
-9. POST the signed operational payload to Data Brain `/api/campaign/operations`.
-10. Sleep 45 seconds before the next row.
+## Scenario 1: Cold campaign scheduler (vigente, OFF)
 
-Never retry an unknown Outlook timeout until the message and conversation IDs have been searched. Retry only transient failures at 1 minute, 15 minutes and 1 hour; then route the row to manual review.
+La implementación anterior basada en Google Sheets, Make Data Store y envío directo con Outlook queda **retirada y no operativa**. Se conserva únicamente como historia en Git; no debe reconstruirse ni usarse como rollback.
 
-## Scenario 2: Outlook reply monitor
+El único contrato aprobado es:
 
-1. Watch Outlook inbox.
-2. Match `conversation_id` or `message_id_inicial` to the Google Sheets row.
-3. Classify response: POSITIVA, NEGATIVA, INFORMACION, DERIVACION, REUNION or BAJA.
-4. Set `estado_secuencia=DETENIDA` and clear any active lock.
-5. POST `reply_received` to Data Brain with the Make signature.
-6. Create or update the corresponding HubSpot task/workflow through Data Brain's direct HubSpot sync.
+1. Make programa una sola llamada `POST` con body vacío a `/api/internal/graph/campaign-dispatch`.
+2. La ruta exige `Authorization: Bearer GRAPH_WORKER_SECRET`; Basic no autoriza.
+3. Data Brain decide contacto, paso, copy materializado, baja, stops, cadencia, cuota, idempotencia y recuperación.
+4. Microsoft Graph crea un draft con ImmutableId, envía ese mismo draft y exige evidencia de Sent Items.
+5. Make no usa Google Sheets, Data Store, Router, Outlook ni contiene destinatario, copy, token de baja o lógica de decisión.
+6. `OUTBOUND_MASTER_ENABLED=false`, `COLD_CAMPAIGN_ENABLED=false` y DB `cold_enabled=false` hasta superar gates y recibir autorización directa.
 
-## Scenario 3: Landing events
+`make/email_sender_blueprint.json` sigue siendo `importable=false` y `production_ready=false`: faltan slug/conexión/IDs verificados en Make. Véase `../docs/fundae-release/COLD_CAMPAIGN_SCHEDULER_CONTRACT.md`.
+## Scenario 2: inbound mailbox tick (vigente, OFF)
 
-The landing calls Data Brain directly with the `cid`. Make receives only operational events such as confirmed Calendly booking or Outlook delivery results. Do not pass email addresses in URLs or landing webhook payloads.
+1. Make programa una llamada `POST` con body vacío a `/api/internal/inbound/mailbox` cada 5 minutos.
+2. La ruta exige `Authorization: Bearer GRAPH_WORKER_SECRET`; Basic no autoriza.
+3. Data Brain posee Microsoft Graph delta, cursor CAS, correlación, clasificación, idempotencia y stop rules.
+4. Make no observa Outlook, no recibe cuerpos y no clasifica replies o NDR.
+5. `INBOUND_MAILBOX_ENABLED=false` hasta configurar un bootstrap ISO y superar los gates.
+6. `/baja` resolves the opaque token server-side to `email_hash` and atomically suppresses that identity across
+   campaigns, cancels pending/locked work and emits one idempotent `unsubscribe`.
+7. Never log query strings, tokens or PII; show the same public completion response for valid/repeated/invalid/expired.
 
-## Signed Data Brain Request
+`make/reply_monitor_blueprint.json` permanece `importable=false` y `production_ready=false`.
 
-Use the raw JSON body and calculate `HMAC-SHA256(rawBody, MAKE_WEBHOOK_SECRET)`. Send the lowercase hex result in `X-Make-Signature`.
+## Scenario 3: transactional dispatch tick (vigente, OFF)
 
-```json
-{
-  "campaign_external_id": "FUNDAE_2026_EMAIL_V1",
-  "contact_id": "F26-A-0001",
-  "event_name": "delivery_sent",
-  "source_event_id": "outlook-message-id",
-  "sequence_status": "active",
-  "next_delivery_status": "pending",
-  "last_delivery_status": "sent",
-  "current_step": 2,
-  "next_scheduled_at": "2026-09-08T09:30:00+02:00",
-  "outlook_message_id": "...",
-  "outlook_conversation_id": "..."
-}
-```
+1. La captura pública crea el intent privado en la misma transacción; no llama Make ni Graph.
+2. Make programa una llamada `POST` con body vacío a `/api/internal/graph/dispatch` cada 60 segundos.
+3. Data Brain reclama un intent y ejecuta una transición Graph con draft, ImmutableId y prueba de Sent Items.
+4. Make no recibe payload de lead, destinatario, copy, adjunto, token de baja ni capacidades Graph.
+5. `OUTBOUND_MASTER_ENABLED=false` y `TRANSACTIONAL_OUTLOOK_ENABLED=false` hasta superar los gates y recibir autorización directa para el sandbox 4/4.
+
+`make/transactional_dispatch_blueprint.json` permanece `importable=false` y `production_ready=false`.
+
+## Calendly
+
+Calendly entrega `invitee.created` directamente a `/api/webhooks/calendly`. Data Brain verifica la firma del body
+crudo, evita replay y materializa el stop. Make no termina, re-firma ni correlaciona este webhook.
+
+## Readiness
+
+Follow `UNSUBSCRIBE_SETUP.md` for the separate workbook, legal evidence values and tests. The master remains
+immutable. JSON blueprints remain configuration specifications, not Make exports or proof of production readiness.
+
+Los contratos HMAC, callbacks y conciliación manual de Make/Outlook pertenecen al gateway legacy retirado. No son
+operación final, fallback ni rollback. Los tres escenarios Make vigentes son exclusivamente schedulers privados.

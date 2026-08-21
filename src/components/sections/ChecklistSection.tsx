@@ -26,7 +26,8 @@ export function ChecklistSection() {
       privacy_accepted: privacyAccepted,
     };
     
-    await submit("checklist", data);
+    const result = await submit("checklist", data);
+    if (!result.success) return;
     
     // Auto trigger download
     const pdfUrl = config.checklistPdfUrl;
@@ -43,17 +44,17 @@ export function ChecklistSection() {
         <div className="grid lg:grid-cols-2 gap-12 items-center">
           <div>
             <h2 className="text-3xl font-extrabold tracking-tight sm:text-4xl mb-6">
-              Checklist gratuito: 10 errores que pueden hacerte perder tu crédito FUNDAE
+              Checklist: 10 controles antes de gestionar FUNDAE
             </h2>
             <p className="text-lg text-slate-200 mb-8 leading-relaxed">
-              Una guía rápida para saber qué revisar antes de planificar formación bonificada en tu empresa. Evita sanciones y maximiza tu cotización.
+              Una guía rápida para revisar documentación, plazos y gestión antes de aplicar una bonificación.
             </p>
             <ul className="space-y-4 text-slate-100">
               <li className="flex items-center gap-3">
                 <svg className="h-5 w-5 text-emerald-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                 </svg>
-                <span>Descubre por qué se pierde el 48% del crédito anual.</span>
+                <span>Comprueba qué datos y evidencias conviene tener preparados.</span>
               </li>
               <li className="flex items-center gap-3">
                 <svg className="h-5 w-5 text-emerald-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -78,19 +79,20 @@ export function ChecklistSection() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                   </svg>
                 </div>
-                <h3 className="text-2xl font-bold mb-2">¡Descarga Iniciada!</h3>
+                <h3 className="text-2xl font-bold mb-2">¡Descarga iniciada!</h3>
                 <p className="text-slate-600 mb-8">Tu checklist se está descargando. Si no ocurre automáticamente, haz clic en el botón de abajo.</p>
                 <div className="flex flex-col gap-4">
-                  <Button 
+                  <Button
+                    data-track-cta="checklist_pdf_manual"
                     onClick={() => {
                       trackPdfDownload();
                       window.open(config.checklistPdfUrl, "_blank");
                     }}
-                    className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-4 shadow-lg shadow-emerald-200"
+                    className="w-full bg-[#FF206E] hover:bg-[#FF206E] text-[#050A18] font-bold py-4 shadow-lg shadow-pink-200 hover:shadow-xl"
                   >
-                    📥 Descargar PDF Manualmente
+                    Descargar PDF manualmente
                   </Button>
-                  <button onClick={reset} className="text-sm text-slate-500 underline mt-2 hover:text-slate-700">
+                  <button onClick={reset} className="mt-2 min-h-11 rounded-sm px-2 text-sm text-slate-600 underline hover:text-[#302B7B] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF206E] focus-visible:ring-offset-2">
                     Volver al formulario
                   </button>
                 </div>
@@ -110,7 +112,7 @@ export function ChecklistSection() {
                   <Input name="name" required />
                 </div>
                 <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-1">Email corporativo</label>
+                  <label className="block text-sm font-bold text-slate-700 mb-1">Correo corporativo</label>
                   <Input type="email" name="email" required />
                 </div>
                 <div>
@@ -118,7 +120,7 @@ export function ChecklistSection() {
                   <Input name="company" required />
                 </div>
                 <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-1">Nº de trabajadores</label>
+                  <label className="block text-sm font-bold text-slate-700 mb-1">Tamaño de la plantilla</label>
                   <Select name="employee_range" required>
                     <option value="">Selecciona</option>
                     <option value="1-5">1-5</option>
@@ -129,13 +131,13 @@ export function ChecklistSection() {
                   </Select>
                 </div>
                 <div className="flex items-start gap-2 mt-4">
-                  <input type="checkbox" id="privacyA_checklist" name="privacy_accepted" required className="mt-1" />
+                  <input type="checkbox" id="privacyA_checklist" name="privacy_accepted" required className="mt-1 accent-[#302B7B] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF206E] focus-visible:ring-offset-2" />
                   <label htmlFor="privacyA_checklist" className="text-xs text-slate-600">
-                    He leído y acepto la política de privacidad.
+                    He leído la <a href="/privacidad" className="rounded-sm font-semibold text-[#302B7B] underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF206E]">política de privacidad</a>.
                   </label>
                 </div>
                 <div className="pt-2">
-                  <Button type="submit" variant="primary" className="w-full" disabled={state === "loading"}>
+                  <Button type="submit" variant="primary" className="w-full" disabled={state === "loading"} data-track-cta="checklist_submit">
                     {state === "loading" ? "Procesando solicitud..." : "Descargar checklist corporativo"}
                   </Button>
                 </div>

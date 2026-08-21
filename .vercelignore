@@ -1,0 +1,17 @@
+.env
+.env.*
+!.env.example
+.codex/
+.playwright-cli/
+.pnpm-store/
+automation/
+data-brain/
+data-private/
+node_modules/
+output/
+outputs/
+test-results/
+tests/
+tmp/
+*.xlsx
+*.log

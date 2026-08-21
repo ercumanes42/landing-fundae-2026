@@ -6,13 +6,27 @@
   "scripts": {
     "dev": "next dev --port 3005",
     "build": "next build",
+    "build:vercel": "node ../scripts/release/legal-deploy-gate.mjs --vercel-production && next build",
     "start": "next start --port 3005",
     "lint": "tsc --noEmit",
-    "db:verify": "tsx scripts/verify-setup.ts"
+    "db:verify": "tsx scripts/production-readiness.ts",
+    "db:verify:network": "tsx scripts/production-readiness.ts --network",
+    "test:setup": "tsx --test src/lib/cold-campaign-dispatch.test.ts scripts/setup-validation.test.ts scripts/production-readiness.test.ts",
+    "provision:transactional-pilot": "tsx scripts/provision-transactional-pilot-leads.ts",
+    "pilot:graph:dry-run": "tsx scripts/run-transactional-graph-pilot.ts --dry-run",
+    "pilot:graph:grant-request": "tsx scripts/prepare-transactional-graph-pilot-grant.ts",
+    "pilot:graph:live": "tsx scripts/run-transactional-graph-pilot.ts --live",
+    "provision:outlook-v3-from-v2": "tsx scripts/provision-outlook-v3-from-v2.ts",
+    "provision:outlook-v4-from-v2": "tsx scripts/provision-outlook-v4-from-v2.ts",
+    "reconcile:transactional-mailbox": "tsx scripts/reconcile-transactional-mailbox.ts",
+    "verify:release": "npm run test && npm run test:setup && npm run lint && npm run build && npm run db:verify",
+    "test": "node scripts/run-src-tests.mjs && node --test scripts/test-gate-coverage.test.mjs"
   },
   "dependencies": {
     "chart.js": "^4.5.1",
-    "next": "^16.1.5",
+    "exceljs": "^4.4.0",
+    "next": "16.3.0",
+    "pdf-lib": "^1.17.1",
     "react": "^19.2.4",
     "react-chartjs-2": "^5.3.1",
     "react-dom": "^19.2.4"
@@ -23,5 +37,8 @@
     "@types/react-dom": "^19.2.3",
     "tsx": "^4.23.0",
     "typescript": "^5.9.3"
+  },
+  "overrides": {
+    "uuid": "11.1.1"
   }
 }

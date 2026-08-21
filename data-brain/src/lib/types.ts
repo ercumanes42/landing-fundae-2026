@@ -43,8 +43,9 @@ export interface TouchAttribution {
 
 export interface TrackingContext {
   event_id: string;
-  event_version: '1.0';
+  event_version: '2.0';
   occurred_at: string;
+  journey_id: string;
   anonymous_id: string;
   session_id: string;
   identity_persistence: 'localStorage' | 'memory';
@@ -63,7 +64,13 @@ export interface TrackingContext {
   partner?: string;
   device_type: 'desktop' | 'tablet' | 'mobile' | 'unknown';
   viewport_width: number;
-  consent_state: 'unknown' | 'accepted' | 'rejected';
+  consent_state: 'accepted';
+  consent_version: string;
+}
+
+export interface CampaignTrackingContext {
+  campaign_external_id: string;
+  contact_id: string;
 }
 
 export interface LeadJourneyInput {
@@ -115,11 +122,13 @@ export interface AISummary {
 }
 
 export interface LeadPayload {
+  submission_id: string;
   event_version: '1.0';
   form_type: FormType;
   lead_magnet: LeadMagnet;
   created_at: string;
   source_url: string;
+  journey_id?: string;
   anonymous_id?: string;
   session_id?: string;
   lead_id?: string;
@@ -132,6 +141,7 @@ export interface LeadPayload {
   first_touch?: TouchAttribution;
   last_touch?: TouchAttribution;
   tracking_context?: TrackingContext;
+  campaign_context?: CampaignTrackingContext;
   lead_score: number;
   lead_status: string;
   lead_classification: LeadClassification;
@@ -172,7 +182,9 @@ export interface LeadPayload {
     marketing_accepted: boolean;
   };
   ai_summary?: AISummary;
-  delivery_status?: 'queued' | 'delivered' | 'retrying' | 'dead_letter';
+  delivery_status?: 'captured' | 'queued' | 'delivered' | 'retrying' | 'dead_letter';
+  accepted_by_make_at?: string;
+  email_delivery_status?: 'pending' | 'email_sent' | 'email_failed';
   checklist_pdf_url?: string;
 }
 
@@ -180,4 +192,142 @@ export interface EventPayload {
   event_name: string;
   context: TrackingContext;
   properties: Record<string, unknown>;
+}
+export type DashboardDatasetName =
+  | 'leads'
+  | 'events'
+  | 'deliveryQueue'
+  | 'campaigns'
+  | 'campaignContacts'
+  | 'campaignEvents'
+  | 'campaignExecutions';
+
+export interface DashboardPaginationState {
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+  hasPrevious: boolean;
+  hasMore: boolean;
+}
+
+export interface DashboardDatasetCoverage extends DashboardPaginationState {
+  sourceTotal: number | null;
+  loadedForAggregation: number;
+  aggregateComplete: boolean;
+  pagesFetched: number;
+  sampleSize: number;
+  piiIncluded: false;
+  error: string | null;
+}
+
+export interface DashboardCoverage {
+  leadsMayBeTruncated: boolean;
+  eventsMayBeTruncated: boolean;
+  contactsMayBeTruncated: boolean;
+  campaignEventsMayBeTruncated: boolean;
+  campaignExecutionsMayBeTruncated: boolean;
+  allAggregatesComplete: boolean;
+  datasets: Record<DashboardDatasetName, DashboardDatasetCoverage>;
+  warnings: string[];
+}
+
+export interface DashboardLeadSample {
+  id: string;
+  anonymous_id?: string;
+  lead_classification: LeadClassification;
+  lead_magnet: LeadMagnet;
+  lead_score: number;
+  created_at: string;
+  delivery_status?: string;
+  first_utm_source?: string;
+  first_utm_medium?: string;
+  first_utm_campaign?: string;
+  payload: {
+    anonymous_id?: string;
+    utm_source?: string;
+    utm_medium?: string;
+    utm_campaign?: string;
+    tracking_context?: {
+      utm_source?: string;
+      utm_medium?: string;
+      utm_campaign?: string;
+    };
+    company?: {
+      province?: string;
+      sector?: string;
+      employee_range?: string;
+      used_fundae_before?: string;
+      knows_credit?: string;
+    };
+  };
+}
+
+export interface DashboardEventSample {
+  id: string;
+  event_name: string;
+  anonymous_id?: string;
+  session_id?: string;
+  lead_magnet?: string;
+  occurred_at: string;
+  context: {
+    lead_magnet?: string;
+  };
+  properties: Record<string, string | number | boolean | null>;
+}
+
+export interface DashboardAggregates {
+  totals: {
+    leads: number | null;
+    events: number | null;
+    uniqueVisitors: number | null;
+    videoPlays: number | null;
+    campaignContacts: number | null;
+    campaignEvents: number | null;
+  };
+  averages: {
+    scrollDepth: number | null;
+    timeOnPageSeconds: number | null;
+  };
+  leads: {
+    byClassification: Record<LeadClassification, number>;
+    byMagnet: Record<LeadMagnet, number>;
+    bySource: Record<string, number>;
+    byMedium: Record<string, number>;
+    byCampaign: Record<string, number>;
+    byProvince: Record<string, number>;
+    bySector: Record<string, number>;
+    byCompanySize: Record<string, number>;
+  };
+  events: {
+    byName: Record<string, number>;
+  };
+  deliveryQueue: {
+    byStatus: Record<string, number>;
+  };
+  campaign: {
+    contactsByVariant: Record<string, number>;
+    contactsByMagnet: Record<string, number>;
+    contactsByLot: Record<string, number>;
+    contactsByCompanySize: Record<string, number>;
+    contactsByMarketingLane: Record<string, number>;
+    contactsBySuppressionScope: Record<string, number>;
+    contactsByCurrentStep: Record<string, number>;
+    contactsBySequenceStatus: Record<string, number>;
+    contactsByDeliveryStatus: Record<string, number>;
+    contactsByReplyType: Record<string, number>;
+    eventsByName: Record<string, number>;
+    pipelineValue: number;
+  };
+}
+
+export interface DashboardAnalyticsContract {
+  aggregates: DashboardAggregates;
+  pagination: {
+    leads: DashboardPaginationState;
+    events: DashboardPaginationState;
+    campaignContacts: DashboardPaginationState;
+    campaignEvents: DashboardPaginationState;
+  };
+  coverage: DashboardCoverage;
 }

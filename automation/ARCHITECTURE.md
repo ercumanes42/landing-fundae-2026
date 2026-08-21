@@ -4,7 +4,7 @@
 Excel master (private, immutable)
   -> Google Sheets operational copy
   -> Make Data Store lock + Outlook 365 delivery
-  -> Data Brain signed operations endpoint
+  -> Data Brain signed canonical tracking endpoint
   -> HubSpot contact, company, stage and deal updates
 
 Landing with cid
@@ -19,6 +19,9 @@ Ownership is deliberately separated:
 - Make + Outlook: sends, reply monitoring, bounce handling and sequence stops.
 - HubSpot: commercial CRM and sales process.
 - Data Brain/Supabase: attribution, audit trail, scoring, dashboard and AI summaries.
+
+`/api/campaign/tracking` is the only source for campaign executions and dashboard events. The older
+`/api/campaign/operations` route must not receive a second copy of the same action.
 
 The four campaign variants are Checklist, Calculadora, Webinar and Revision rapida. The diagnosis/Calendly flow is the shared conversion, not a fifth lead magnet.
 

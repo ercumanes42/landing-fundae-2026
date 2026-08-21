@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { assertEnv } from '@/lib/env';
-import { recordCampaignEvent, type CampaignEventInput } from '@/lib/campaign';
+import { recordPublicCampaignEvent, type CampaignEventInput } from '@/lib/campaign';
 import { corsHeaders, isAllowedLandingOrigin, limitRequest } from '@/lib/security';
 
 export const runtime = 'nodejs';
@@ -15,7 +15,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Origin not allowed' }, { status: 403, headers });
   }
 
-  const rate = limitRequest(request, 'campaign-events', 60, 5 * 60_000);
+  const rate = await limitRequest(request, 'campaign-events', 60, 5 * 60_000, 'fail-open');
   if (!rate.allowed) {
     return NextResponse.json(
       { error: 'Too many requests' },
@@ -26,7 +26,7 @@ export async function POST(request: Request) {
   try {
     assertEnv();
     const payload = (await request.json()) as CampaignEventInput;
-    const event = await recordCampaignEvent(payload);
+    const event = await recordPublicCampaignEvent(payload);
     return NextResponse.json({ ok: true, id: event.id }, { headers });
   } catch (error) {
     return NextResponse.json(
