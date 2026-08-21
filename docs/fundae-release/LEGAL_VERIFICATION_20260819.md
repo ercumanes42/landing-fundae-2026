@@ -2,7 +2,7 @@
 
 Estado: identidad, Aviso Legal, Privacidad y Cookies cerrados localmente. La redacción adopta decisiones conservadoras basadas en el runtime y en fuentes oficiales; no sustituye una revisión jurídica de la actividad completa de la sociedad ni acredita la vigencia registral actual.
 
-Deploy gate: `BLOCKED`
+Deploy gate: `VERIFIED`
 
 ## Alcance verificado
 
@@ -71,9 +71,9 @@ La clave legacy `fundae_pending_leads` solo se elimina; el código actual no la 
 - Aviso Legal: `PASS-LOCAL` limitado a evidencia pública.
 - Privacidad: `PASS-LOCAL` como texto definitivo del producto.
 - Cookies: `PASS-LOCAL` como texto definitivo alineado con el inventario estático.
-- Producción: `BLOCKED` hasta una autorización de despliegue separada y la comprobación runtime del dominio final.
+- Producción: `AUTHORIZED` para desplegar el 21 de agosto de 2026; la comprobación runtime del dominio final sigue siendo obligatoria y no habilita envíos.
 - Campaña y proveedores: conservan sus gates operativos; cerrar el texto legal no habilita envíos ni integraciones.
 
 ## Control técnico de despliegue
 
-El gate offline `npm run release:deploy:gate` exige que Aviso Legal, Privacidad y Cookies estén marcados como `verified` y que este documento contenga un único marcador `Deploy gate: VERIFIED`. Las páginas ya cumplen el primer requisito; el marcador permanece `BLOCKED` para impedir que cerrar la redacción se convierta en autorización de producción. Vercel aplica el mismo gate a `VERCEL_ENV=production`; previews y build local siguen disponibles para QA.
+El gate offline `npm run release:deploy:gate` exige que Aviso Legal, Privacidad y Cookies estén marcados como `verified` y que este documento contenga un único marcador `Deploy gate: VERIFIED`. Las páginas cumplen el primer requisito y el titular autorizó separadamente el despliegue de Data Brain el 21 de agosto de 2026. Esta autorización no habilita campañas, Microsoft Graph ni otros envíos. Vercel aplica el mismo gate a `VERCEL_ENV=production`; previews y build local siguen disponibles para QA.

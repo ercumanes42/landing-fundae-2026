@@ -112,13 +112,19 @@ if (isMain) {
   const args = process.argv.slice(2);
   const vercelProductionMode =
     args.length === 1 && args[0] === "--vercel-production";
+  const vercelEnvironment = process.env.VERCEL_ENV ?? "";
   if (args.length > 1 || (args.length === 1 && !vercelProductionMode)) {
     console.error(`[legal-deploy-gate] ${LEGAL_DEPLOY_GATE_ARGUMENTS_INVALID}`);
     process.exitCode = 1;
   } else if (
-    !vercelProductionMode ||
-    !["preview", "development"].includes(process.env.VERCEL_ENV ?? "")
+    vercelProductionMode &&
+    !["production", "preview", "development"].includes(vercelEnvironment)
   ) {
+    console.error(
+      `[legal-deploy-gate] ${LEGAL_DEPLOY_GATE_BLOCKED} pending=deployment-environment`,
+    );
+    process.exitCode = 1;
+  } else if (!vercelProductionMode || vercelEnvironment === "production") {
     const result = await runLegalDeployGate();
     const message = result.ok
       ? `[legal-deploy-gate] ${result.code}`

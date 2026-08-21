@@ -30,13 +30,13 @@ const pages = {
 `;
 }
 
-test("keeps production blocked until documentary closure is explicitly authorized", async () => {
+test("accepts the explicitly authorized production documentary closure", async () => {
   const source = await readFile(legalPagePath, "utf8");
   const verificationDocument = await readFile(legalVerificationPath, "utf8");
   assert.deepEqual(evaluateLegalDeployGate(source, verificationDocument), {
-    ok: false,
-    code: LEGAL_DEPLOY_GATE_BLOCKED,
-    pending: ["documentary-closure"],
+    ok: true,
+    code: LEGAL_DEPLOY_GATE_OK,
+    pending: [],
   });
 });
 
@@ -83,21 +83,18 @@ test("blocks verified page flags until documentary closure is explicit and unamb
   }
 });
 
-test("CLI returns a stable block code without exposing legal copy", () => {
+test("CLI returns a stable authorization code without exposing legal copy", () => {
   const result = spawnSync(process.execPath, [gatePath], {
     cwd: rootDirectory,
     encoding: "utf8",
   });
 
-  assert.equal(result.status, 1);
-  assert.equal(result.stdout, "");
-  assert.equal(
-    result.stderr.trim(),
-    `[legal-deploy-gate] ${LEGAL_DEPLOY_GATE_BLOCKED} pending=documentary-closure`,
-  );
+  assert.equal(result.status, 0);
+  assert.equal(result.stderr, "");
+  assert.equal(result.stdout.trim(), `[legal-deploy-gate] ${LEGAL_DEPLOY_GATE_OK}`);
 });
 
-test("Vercel previews skip the production-only legal gate without weakening production", () => {
+test("Vercel previews skip the authorized production gate and unknown environments fail closed", () => {
   const preview = spawnSync(process.execPath, [gatePath, "--vercel-production"], {
     cwd: rootDirectory,
     encoding: "utf8",
@@ -112,8 +109,9 @@ test("Vercel previews skip the production-only legal gate without weakening prod
     encoding: "utf8",
     env: { ...process.env, VERCEL_ENV: "production" },
   });
-  assert.equal(production.status, 1);
-  assert.match(production.stderr, new RegExp(LEGAL_DEPLOY_GATE_BLOCKED));
+  assert.equal(production.status, 0);
+  assert.equal(production.stderr, "");
+  assert.match(production.stdout, new RegExp(LEGAL_DEPLOY_GATE_OK));
 
   for (const value of [undefined, "prodution"]) {
     const env = { ...process.env };
@@ -126,6 +124,7 @@ test("Vercel previews skip the production-only legal gate without weakening prod
     });
     assert.equal(failClosed.status, 1);
     assert.match(failClosed.stderr, new RegExp(LEGAL_DEPLOY_GATE_BLOCKED));
+    assert.match(failClosed.stderr, /pending=deployment-environment/);
   }
 });
 
