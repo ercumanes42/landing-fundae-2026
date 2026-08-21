@@ -20,6 +20,7 @@ const sqlFiles = [
   'FUNDAE_RELEASE_POST_ROLLBACK_20260819.sql',
   'CAMPAIGN_SUPPRESSION_SMOKE_20260819.sql',
   'HUBSPOT_SYNC_OUTBOX_SMOKE_20260820.sql',
+  'DATA_BRAIN_INTELLIGENCE_V2_SMOKE_20260821.sql',
 ];
 const noopMigrationName = '20260819072840_cold_campaign_scheduler.sql';
 const noopMigrationPath = join(sqlRoot, 'migrations', noopMigrationName);
@@ -49,7 +50,9 @@ const migrationFiles = [
   '20260819234200_transactional_graph_pilot_authorization_fk_index.sql',
   '20260819234300_transactional_graph_pilot_alert_hardening.sql',
   '20260819234400_campaign_conditional_delivery_hardening.sql',
+  '20260821105809_data_brain_intelligence_v2.sql',
   '20260821123000_dashboard_campaign_insights.sql',
+  '20260821130000_dashboard_revenue_fk_index.sql',
 ];
 
 function schemaMigrationMirror(schema, migrationName) {
@@ -135,6 +138,17 @@ test('the consolidated SQL gate pack is bounded and explicit', () => {
   assert.match(hubspotSmoke, /hubspot_stale_finalize_not_requeued/);
   assert.match(hubspotSmoke, /hubspot_master_dominance_failed/);
   assert.match(hubspotSmoke, /rollback;\s*$/i);
+  const intelligenceSmoke = readFileSync(join(sqlRoot,
+    'DATA_BRAIN_INTELLIGENCE_V2_SMOKE_20260821.sql'), 'utf8');
+  assert.match(intelligenceSmoke, /fundae_release_intelligence_v2_smoke_ok/);
+  assert.match(intelligenceSmoke, /dashboard_pipeline_version_conflict/);
+  assert.match(intelligenceSmoke, /dashboard_get_intelligence_v2/);
+  assert.match(intelligenceSmoke, /'time_series'/);
+  assert.match(intelligenceSmoke, /rollback;\s*$/i);
+  assert.doesNotMatch(intelligenceSmoke,
+    /\b(update|insert into)\s+public\.outbound_delivery_control\b/i);
+  assert.doesNotMatch(intelligenceSmoke,
+    /\b(update|insert into)\s+public\.cold_campaign_provision_control\b/i);
 });
 
 test('the PowerShell runner is fail-closed and never embeds credentials', () => {
@@ -150,6 +164,29 @@ test('the PowerShell runner is fail-closed and never embeds credentials', () => 
   assert.doesNotMatch(runner, /PGPASSWORD\s*=/i);
   assert.doesNotMatch(runner, /postgres(?:ql)?:\/\//i);
   for (const migration of migrationFiles) assert.match(runner, new RegExp(migration.replaceAll('.', '\\.'), 'u'));
+  assert.ok(
+    runner.indexOf('20260821105809_data_brain_intelligence_v2.sql') <
+      runner.indexOf('20260821123000_dashboard_campaign_insights.sql'),
+    'intelligence v2 migration must run before campaign insights',
+  );
+  assert.ok(
+    runner.indexOf('20260821123000_dashboard_campaign_insights.sql') <
+      runner.indexOf('20260821130000_dashboard_revenue_fk_index.sql'),
+    'revenue FK index must run after intelligence v2',
+  );
+  assert.match(runner, /DATA_BRAIN_INTELLIGENCE_V2_SMOKE_20260821\.sql/);
+});
+
+test('the revenue foreign-key index migration is exact, mirrored and gated', () => {
+  const migrationName = '20260821130000_dashboard_revenue_fk_index.sql';
+  const migration = readFileSync(join(sqlRoot, 'migrations', migrationName), 'utf8')
+    .replaceAll('\r\n', '\n').trim();
+  const schema = readFileSync(join(sqlRoot, 'schema.sql'), 'utf8').replaceAll('\r\n', '\n');
+  assert.equal(schemaMigrationMirror(schema, migrationName), migration);
+  assert.match(migration, /campaign_revenue_pipeline_contact_idx/);
+  assert.match(migration, /campaign_contact_id/);
+  assert.match(readFileSync(join(sqlRoot, 'FUNDAE_RELEASE_POSTCHECK_20260819.sql'), 'utf8'),
+    /campaign_revenue_pipeline_contact_idx/);
 });
 
 test('the transactional Graph pilot SQL is exact-scoped, redacted and mirrored', () => {
@@ -294,6 +331,31 @@ test('campaign insight analytics are read-only, private and mirrored', () => {
   assert.match(migration, /revoke all[\s\S]*?from public, anon, authenticated/i);
   assert.match(migration, /grant execute[\s\S]*?to service_role/i);
   assert.doesNotMatch(migration, /\b(insert|update|delete)\s+into\s+public\.(campaign_contacts|campaign_events|campaign_executions)\b/i);
+});
+
+test('data brain intelligence v2 is private, service-only, mirrored and postchecked', () => {
+  const migrationName = '20260821105809_data_brain_intelligence_v2.sql';
+  const migration = readFileSync(join(sqlRoot, 'migrations', migrationName), 'utf8')
+    .replaceAll('\r\n', '\n').trim();
+  const schema = readFileSync(join(sqlRoot, 'schema.sql'), 'utf8').replaceAll('\r\n', '\n');
+  const postcheck = readFileSync(join(sqlRoot, 'FUNDAE_RELEASE_POSTCHECK_20260819.sql'), 'utf8');
+  assert.equal(schemaMigrationMirror(schema, migrationName), migration);
+  assert.match(migration, /create table fundae_private\.campaign_revenue_pipeline/i);
+  assert.match(migration, /enable row level security[\s\S]*?force row level security/i);
+  assert.match(migration, /dashboard_get_intelligence_v2/i);
+  assert.match(migration, /dashboard_upsert_revenue_pipeline/i);
+  assert.match(migration, /'time_series'/);
+  assert.match(migration, /'pii_included', false/i);
+  assert.doesNotMatch(migration,
+    /\b(update|insert into)\s+public\.outbound_delivery_control\b/i);
+  for (const marker of [
+    'fundae_release_postcheck_intelligence_table_missing',
+    'fundae_release_postcheck_intelligence_rls_invalid',
+    'fundae_release_postcheck_intelligence_table_acl_invalid',
+    'fundae_release_postcheck_intelligence_rpc_missing',
+    'fundae_release_postcheck_intelligence_rpc_acl_invalid',
+    'fundae_release_postcheck_intelligence_rpc_security_invalid',
+  ]) assert.match(postcheck, new RegExp(marker));
 });
 
 test('the npm entrypoint selects a platform PowerShell without embedding credentials', () => {

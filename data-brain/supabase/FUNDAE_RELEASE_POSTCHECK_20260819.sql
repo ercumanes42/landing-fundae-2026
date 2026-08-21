@@ -105,6 +105,99 @@ begin
       message = 'fundae_release_postcheck_public_table_privilege';
   end if;
 
+  if pg_catalog.to_regclass(
+       'fundae_private.campaign_revenue_pipeline'
+     ) is null then
+    raise exception using errcode = '55000',
+      message = 'fundae_release_postcheck_intelligence_table_missing';
+  end if;
+
+  if not exists (
+    select 1
+    from pg_catalog.pg_class c
+    join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'fundae_private'
+      and c.relname = 'campaign_revenue_pipeline'
+      and c.relkind = 'r'
+      and c.relrowsecurity
+      and c.relforcerowsecurity
+  ) then
+    raise exception using errcode = '42501',
+      message = 'fundae_release_postcheck_intelligence_rls_invalid';
+  end if;
+
+  if exists (
+    select 1
+    from pg_catalog.pg_class c
+    join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+    cross join lateral pg_catalog.aclexplode(
+      coalesce(c.relacl, pg_catalog.acldefault('r', c.relowner))
+    ) acl
+    left join pg_catalog.pg_roles roles on roles.oid = acl.grantee
+    where n.nspname = 'fundae_private'
+      and c.relname = 'campaign_revenue_pipeline'
+      and (acl.grantee = 0 or roles.rolname in (
+        'anon', 'authenticated', 'service_role'
+      ))
+  ) then
+    raise exception using errcode = '42501',
+      message = 'fundae_release_postcheck_intelligence_table_acl_invalid';
+  end if;
+
+  if pg_catalog.to_regprocedure(
+       'public.dashboard_get_intelligence_v2(text,text,timestamptz,timestamptz,uuid,jsonb)'
+     ) is null or pg_catalog.to_regprocedure(
+       'public.dashboard_upsert_revenue_pipeline(text,text,uuid,uuid,text,numeric,numeric,numeric,date,text,uuid,text,bigint)'
+     ) is null then
+    raise exception using errcode = '55000',
+      message = 'fundae_release_postcheck_intelligence_rpc_missing';
+  end if;
+
+  if not pg_catalog.has_function_privilege(
+       'service_role',
+       'public.dashboard_get_intelligence_v2(text,text,timestamptz,timestamptz,uuid,jsonb)',
+       'EXECUTE'
+     ) or not pg_catalog.has_function_privilege(
+       'service_role',
+       'public.dashboard_upsert_revenue_pipeline(text,text,uuid,uuid,text,numeric,numeric,numeric,date,text,uuid,text,bigint)',
+       'EXECUTE'
+     ) or exists (
+       select 1
+       from pg_catalog.pg_proc p
+       join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+       cross join lateral pg_catalog.aclexplode(
+         coalesce(p.proacl, pg_catalog.acldefault('f', p.proowner))
+       ) acl
+       left join pg_catalog.pg_roles roles on roles.oid = acl.grantee
+       where n.nspname = 'public'
+         and p.proname in (
+           'dashboard_get_intelligence_v2',
+           'dashboard_upsert_revenue_pipeline'
+         )
+         and (acl.grantee = 0 or roles.rolname in ('anon', 'authenticated'))
+         and acl.privilege_type = 'EXECUTE'
+     ) then
+    raise exception using errcode = '42501',
+      message = 'fundae_release_postcheck_intelligence_rpc_acl_invalid';
+  end if;
+
+  if exists (
+    select 1
+    from pg_catalog.pg_proc p
+    join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public'
+      and p.proname in (
+        'dashboard_get_intelligence_v2',
+        'dashboard_upsert_revenue_pipeline'
+      )
+      and (not p.prosecdef or not coalesce(
+        p.proconfig @> array['search_path=""']::text[], false
+      ))
+  ) then
+    raise exception using errcode = '42501',
+      message = 'fundae_release_postcheck_intelligence_rpc_security_invalid';
+  end if;
+
   select pg_catalog.string_agg(signature, ', ' order by signature)
   into v_missing_rpc
   from pg_catalog.unnest(array[
@@ -717,8 +810,12 @@ begin
       ,'graph_outbox_mailbox_draft_immutable_idx'
       ,'transactional_graph_pilot_one_active_idx'
       ,'transactional_dispatch_pilot_run_idx'
+      ,'campaign_revenue_pipeline_contact_idx'
     ]) as expected(index_name)
-    where pg_catalog.to_regclass('public.' || expected.index_name) is null
+    where coalesce(
+      pg_catalog.to_regclass('public.' || expected.index_name),
+      pg_catalog.to_regclass('fundae_private.' || expected.index_name)
+    ) is null
   ) then
     raise exception using errcode = '23514',
       message = 'fundae_release_postcheck_fk_index_missing';

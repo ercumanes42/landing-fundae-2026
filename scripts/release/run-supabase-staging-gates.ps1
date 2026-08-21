@@ -34,7 +34,9 @@ $migrationFiles = @(
   '20260819234200_transactional_graph_pilot_authorization_fk_index.sql',
   '20260819234300_transactional_graph_pilot_alert_hardening.sql',
   '20260819234400_campaign_conditional_delivery_hardening.sql',
-  '20260821123000_dashboard_campaign_insights.sql'
+  '20260821105809_data_brain_intelligence_v2.sql',
+  '20260821123000_dashboard_campaign_insights.sql',
+  '20260821130000_dashboard_revenue_fk_index.sql'
 ) | ForEach-Object { Join-Path $migrationRoot $_ }
 $precheck = Join-Path $sqlRoot 'FUNDAE_RELEASE_PRECHECK_20260819.sql'
 $postcheck = Join-Path $sqlRoot 'FUNDAE_RELEASE_POSTCHECK_20260819.sql'
@@ -42,9 +44,10 @@ $behaviorSmoke = Join-Path $sqlRoot 'FUNDAE_RELEASE_BEHAVIOR_SMOKE_20260819.sql'
 $pilotSmoke = Join-Path $sqlRoot 'TRANSACTIONAL_GRAPH_PILOT_SMOKE_20260819.sql'
 $suppressionSmoke = Join-Path $sqlRoot 'CAMPAIGN_SUPPRESSION_SMOKE_20260819.sql'
 $hubspotSmoke = Join-Path $sqlRoot 'HUBSPOT_SYNC_OUTBOX_SMOKE_20260820.sql'
+$intelligenceSmoke = Join-Path $sqlRoot 'DATA_BRAIN_INTELLIGENCE_V2_SMOKE_20260821.sql'
 $forwardRollback = Join-Path $sqlRoot 'FUNDAE_RELEASE_FORWARD_ROLLBACK_20260819.sql'
 $postRollback = Join-Path $sqlRoot 'FUNDAE_RELEASE_POST_ROLLBACK_20260819.sql'
-$allFiles = @($precheck) + $migrationFiles + @($postcheck, $behaviorSmoke, $pilotSmoke, $suppressionSmoke, $hubspotSmoke, $forwardRollback, $postRollback)
+$allFiles = @($precheck) + $migrationFiles + @($postcheck, $behaviorSmoke, $pilotSmoke, $suppressionSmoke, $hubspotSmoke, $intelligenceSmoke, $forwardRollback, $postRollback)
 
 function Get-LowerSha256([string]$Value) {
   $sha = [System.Security.Cryptography.SHA256]::Create()
@@ -127,6 +130,7 @@ if ($Mode -eq 'ApplyAndSmoke') {
   Invoke-GateSql $pilotSmoke
   Invoke-GateSql $suppressionSmoke
   Invoke-GateSql $hubspotSmoke
+  Invoke-GateSql $intelligenceSmoke
   Write-Output 'FUNDAE_SUPABASE_STAGING_APPLY_AND_SMOKE_OK'
   exit 0
 }

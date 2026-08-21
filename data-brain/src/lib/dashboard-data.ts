@@ -453,6 +453,7 @@ export function buildDashboardAggregates(input: {
 }
 
 export type DashboardRole = 'admin' | 'operator' | 'auditor' | 'read_only';
+export type DashboardView = 'summary' | 'campaign' | 'journey' | 'revenue' | 'operations';
 export type DashboardSampleDataset =
   | 'leads'
   | 'events'
@@ -496,11 +497,60 @@ export interface DashboardSampleResponse {
   rows: JsonRecord[];
 }
 
+export interface DashboardIntelligenceResponse {
+  meta: {
+    role: DashboardRole;
+    generated_at: string;
+    from: string;
+    to: string;
+    campaign_id: string | null;
+    filters: JsonRecord;
+    timezone: 'Europe/Madrid';
+    pii_included: false;
+  };
+  overview: JsonRecord;
+  funnel: JsonRecord[];
+  by_email: JsonRecord[];
+  by_copy: JsonRecord[];
+  by_campaign: JsonRecord[];
+  by_variant: JsonRecord[];
+  by_hour: JsonRecord[];
+  time_series: JsonRecord[];
+  cohorts: JsonRecord;
+  traffic: JsonRecord;
+  tools: JsonRecord[];
+  abandonment_by_section: JsonRecord[];
+  high_intent_contacts: JsonRecord[];
+  journey: JsonRecord;
+  pipeline: {
+    totals: JsonRecord;
+    by_stage: JsonRecord[];
+    by_source?: JsonRecord[];
+    by_campaign?: JsonRecord[];
+    by_outcome_reason?: JsonRecord[];
+  };
+  quality: JsonRecord;
+  anomalies: JsonRecord[];
+  recommendations: unknown[];
+  available_filters: JsonRecord;
+  metric_contract: JsonRecord;
+}
+
 export interface DashboardWindow {
   from: string;
   to: string;
   page: number;
   dataset: DashboardSampleDataset;
+  view: DashboardView;
+  filters: {
+    emailStep: number | null;
+    variant: string | null;
+    lot: string | null;
+    hour: number | null;
+    companySize: string | null;
+    tool: string | null;
+    copyKey: string | null;
+  };
 }
 
 const DASHBOARD_DATASETS = new Set<DashboardSampleDataset>([
@@ -510,6 +560,14 @@ const DASHBOARD_DATASETS = new Set<DashboardSampleDataset>([
 const DASHBOARD_ROLES = new Set<DashboardRole>([
   'admin', 'operator', 'auditor', 'read_only',
 ]);
+const DASHBOARD_VIEWS = new Set<DashboardView>([
+  'summary', 'campaign', 'journey', 'revenue', 'operations',
+]);
+
+function dashboardFilterToken(value: string | undefined): string | null {
+  if (!value || !/^[a-z0-9][a-z0-9_.:-]{0,79}$/i.test(value)) return null;
+  return value;
+}
 
 export function dashboardDatasetsForRole(role: DashboardRole): DashboardSampleDataset[] {
   if (role === 'read_only') return [];
@@ -552,6 +610,9 @@ export function normalizeDashboardWindow(
     toMs - fromMs <= 366 * 86_400_000;
   const pageValue = Number(first(raw.page));
   const datasetValue = first(raw.dataset);
+  const viewValue = first(raw.view);
+  const emailStepValue = Number(first(raw.email_step));
+  const hourValue = Number(first(raw.hour));
   return {
     from: validWindow ? normalizedFrom : defaultFrom.toISOString(),
     to: validWindow ? normalizedTo : defaultTo.toISOString(),
@@ -561,6 +622,22 @@ export function normalizeDashboardWindow(
     dataset: DASHBOARD_DATASETS.has(datasetValue as DashboardSampleDataset)
       ? datasetValue as DashboardSampleDataset
       : 'reservations',
+    view: DASHBOARD_VIEWS.has(viewValue as DashboardView)
+      ? viewValue as DashboardView
+      : 'summary',
+    filters: {
+      emailStep: Number.isSafeInteger(emailStepValue) && emailStepValue >= 1 && emailStepValue <= 5
+        ? emailStepValue
+        : null,
+      variant: dashboardFilterToken(first(raw.variant)),
+      lot: dashboardFilterToken(first(raw.lot)),
+      hour: Number.isSafeInteger(hourValue) && hourValue >= 0 && hourValue <= 23
+        ? hourValue
+        : null,
+      companySize: dashboardFilterToken(first(raw.company_size)),
+      tool: dashboardFilterToken(first(raw.tool)),
+      copyKey: dashboardFilterToken(first(raw.copy_key)),
+    },
   };
 }
 
@@ -600,6 +677,65 @@ export function parseDashboardCampaignInsights(value: unknown): JsonRecord {
     throw new Error('Invalid campaign insights metric contract');
   }
   return root;
+}
+
+const FORBIDDEN_INTELLIGENCE_KEYS = new Set([
+  'email_address', 'recipient_email', 'full_name', 'phone', 'phone_number',
+  'raw_payload', 'payload', 'subject', 'body_html', 'body_text',
+]);
+
+function assertNoIntelligencePii(value: unknown): void {
+  if (Array.isArray(value)) {
+    value.forEach(assertNoIntelligencePii);
+    return;
+  }
+  if (value === null || typeof value !== 'object') return;
+  for (const [key, child] of Object.entries(value as JsonRecord)) {
+    if (FORBIDDEN_INTELLIGENCE_KEYS.has(key.toLowerCase())) {
+      throw new Error(`Dashboard intelligence contains forbidden field: ${key}`);
+    }
+    assertNoIntelligencePii(child);
+  }
+}
+
+export function parseDashboardIntelligence(value: unknown): DashboardIntelligenceResponse {
+  const root = asRecord(value);
+  const meta = asRecord(root.meta);
+  const contract = asRecord(root.metric_contract);
+  const pipeline = asRecord(root.pipeline);
+  const arraySections = [
+    'funnel', 'by_email', 'by_copy', 'by_campaign', 'by_variant', 'by_hour',
+    'time_series', 'tools', 'abandonment_by_section', 'high_intent_contacts',
+    'anomalies', 'recommendations',
+  ];
+  const objectSections = ['overview', 'cohorts', 'traffic', 'journey', 'pipeline', 'quality', 'available_filters', 'metric_contract'];
+
+  if (!DASHBOARD_ROLES.has(meta.role as DashboardRole) ||
+      meta.timezone !== 'Europe/Madrid' || meta.pii_included !== false ||
+      typeof meta.generated_at !== 'string' || typeof meta.from !== 'string' ||
+      typeof meta.to !== 'string' || contract.version !== '2.0' ||
+      contract.timezone !== 'Europe/Madrid' || contract.pii_included !== false ||
+      contract.external_crm_required !== false) {
+    throw new Error('Invalid dashboard intelligence contract');
+  }
+  for (const section of arraySections) {
+    if (!Array.isArray(root[section]) || root[section].length > 1_000) {
+      throw new Error(`Invalid dashboard intelligence array: ${section}`);
+    }
+  }
+  for (const section of objectSections) {
+    if (root[section] === null || typeof root[section] !== 'object' || Array.isArray(root[section])) {
+      throw new Error(`Invalid dashboard intelligence section: ${section}`);
+    }
+  }
+  if (!Array.isArray(pipeline.by_stage) ||
+      (pipeline.by_source !== undefined && !Array.isArray(pipeline.by_source)) ||
+      (pipeline.by_campaign !== undefined && !Array.isArray(pipeline.by_campaign)) ||
+      (pipeline.by_outcome_reason !== undefined && !Array.isArray(pipeline.by_outcome_reason))) {
+    throw new Error('Invalid dashboard intelligence pipeline');
+  }
+  assertNoIntelligencePii(root);
+  return root as unknown as DashboardIntelligenceResponse;
 }
 
 export function parseDashboardSample(value: unknown): DashboardSampleResponse {

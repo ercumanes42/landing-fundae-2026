@@ -277,3 +277,51 @@ No afirmar 100%, producción o E2E live hasta: release reproducible; SQL real y 
 - La casilla de formulario confirma lectura/solicitud y no simula un consentimiento genérico. La analítica mantiene consentimiento separado, rechazo equivalente, retirada accesible y caducidad de 24 meses.
 - Evidencia: legal/privacidad 30/30, gate 7/7, typecheck y build PASS; E2E de consentimiento 2/2 demuestra cero cookies/almacenamiento/analítica antes de aceptar y limpieza tras retirar.
 - El marcador de producción permanece `BLOCKED`: este cierre legal local no equivale a merge, deploy, activación de proveedores ni envío.
+
+## Estado operativo confirmado — 21 de agosto de 2026
+
+- Data Brain está desplegado en producción en `https://data-brain-2026.vercel.app/` y el acceso administrativo funciona.
+- La base productiva contiene 939 contactos de campaña y 4.695 ejecuciones planificadas: cinco emails por contacto. Distribución por lotes/variantes: 235/235/235/234.
+- Los controles `master`, `transactional` y `cold campaign` permanecen en `OFF`. La carga de la campaña no autoriza ni provoca envíos.
+- Make llama correctamente a `POST /api/internal/graph/dispatch` con Bearer y recibe `409 master_or_lane_disabled`, la respuesta segura esperada mientras todo está OFF.
+- El dashboard actual muestra agregados de leads, journey, campaña, transaccional y salud, pero sigue siendo una página larga y todavía no cumple la experiencia analítica Data Brain 2.0.
+- Problemas visibles actuales: atribución `Unknown` en eventos históricos, ausencia de tasas y comparaciones normalizadas, pipeline interno sin gestión completa y escasa jerarquía entre negocio y operación.
+- La exclusividad del buzón Graph de Joaquín no está configurada porque la cuenta actual no tiene privilegios Exchange suficientes y el administrador está ausente. No debe activarse Graph hasta cerrar ese acceso y validar un piloto real acotado.
+
+## Data Brain 2.0 — cierre local del 21 de agosto de 2026
+
+Objetivo aprobado:
+
+1. Reorganizar la interfaz en cinco vistas: Resumen, Campaña, Journey, Revenue y Operaciones.
+2. Unificar atribución por contacto seudonimizado, email, copy, variante, lote, hora, enlace, sesión, herramienta y conversión.
+3. Mostrar tasas reales y embudos, no solo cantidades: entrega, rebote, clic, respuesta, reunión, oportunidad y venta.
+4. Añadir tiempo activo, scroll, inicio/pasos/abandono/finalización por herramienta y latencias entre email, interacción, reunión y venta.
+5. Crear pipeline interno independiente de HubSpot: Interesado, Cualificado, Reunión, Oportunidad, Ganado y Perdido; con importes, probabilidad, fecha prevista y origen atribuido.
+6. Incorporar comparación de cohortes, lift, intervalos de confianza, muestra mínima, anomalías y recomendaciones `mantener/revisar/detener`.
+7. Añadir filtros por fecha, email, copy, variante, lote, hora, empresa y herramienta, manteniendo PII fuera de agregados.
+
+Estado de implementación:
+
+- Interfaz reorganizada en cinco vistas: Resumen, Campaña, Journey, Revenue y Operaciones, con filtros persistentes, navegación responsive, accesibilidad y estados vacíos accionables.
+- Visualizaciones nativas sin animación ni datos inventados: barras, embudos, donut, radar y línea temporal. Cada gráfica aparece solo cuando la estructura y muestra disponibles son adecuadas; las tablas conservan los valores exactos.
+- Migración aditiva `20260821105809_data_brain_intelligence_v2.sql`: agregados por email, variante, hora, lote, empresa, enlace, herramienta y día Madrid; calidad de atribución; pipeline interno privado con etapas, importes, probabilidad, origen y resultado; RLS/FORCE, RPC service-only y RBAC.
+- Motor estadístico local: tasas seguras, lift, Wilson 95 %, muestra mínima, anomalías robustas y recomendaciones explicables; no convierte diferencias pequeñas o sin muestra en conclusiones.
+- Exportación autenticada y limitada a CSV y Excel real `.xlsx`, con filtros/periodo, hojas de negocio, valores tipados, bloqueo de PII y neutralización de fórmulas. `npm audit` queda en cero vulnerabilidades tras fijar la dependencia transitiva `uuid`.
+- Evidencia final local: Data Brain 370/370 + anti-omisión 1/1, TypeScript PASS, build Next.js PASS, auditoría npm con 0 vulnerabilidades; gate-pack Supabase 15/15 y Static PASS.
+- Las migraciones de inteligencia v2, campaña y el índice de revenue fueron aplicadas primero en staging. Postcheck y smoke rollback-only devolvieron `fundae_release_postcheck_ok` y `fundae_release_intelligence_v2_smoke_ok`; advisors: 0 WARN/ERROR.
+- Inteligencia v2 y el índice fueron aplicados después en producción. Verificación directa: contrato 2.0, PII=false, tabla pipeline con RLS/FORCE, índice FK presente, 939 contactos y 4.695 ejecuciones preservadas. Master, transaccional y campaña fría continúan OFF.
+- La interfaz aún requiere commit selectivo, push y despliegue Vercel para que estas capacidades aparezcan en la URL productiva.
+
+## Pendientes externos antes de cualquier envío
+
+- Microsoft Graph: credenciales finales, permisos mínimos, limitación al buzón correcto y piloto 4/4 con Sent Items confirmado.
+- Exclusiones de campaña: snapshots privados frescos y autorización operativa final.
+- Alertas: receptor real configurado y prueba de entrega.
+- Mantener Make, campaña y Graph OFF hasta que esos gates tengan evidencia real.
+
+## Regla de continuidad
+
+- No afirmar que la campaña está lista para enviar solo porque los 939/4.695 están cargados.
+- No activar ni enviar durante el desarrollo del Data Brain 2.0.
+- No incluir secretos, datos privados, outputs ni los runbooks legacy en commits selectivos.
+- Antes de cerrar Data Brain 2.0: demostrar requisito por requisito con migración/espejo, tests, typecheck, build, gates estáticos y revisión visual.
