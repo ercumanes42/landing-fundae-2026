@@ -49,6 +49,7 @@ const migrationFiles = [
   '20260819234200_transactional_graph_pilot_authorization_fk_index.sql',
   '20260819234300_transactional_graph_pilot_alert_hardening.sql',
   '20260819234400_campaign_conditional_delivery_hardening.sql',
+  '20260821123000_dashboard_campaign_insights.sql',
 ];
 
 function schemaMigrationMirror(schema, migrationName) {
@@ -280,6 +281,19 @@ test('conditional contacts bind their parent and are stopped at claim and JIT au
   assert.match(migration, /CONDITIONAL_GRAPH_INVALID/i);
   assert.match(migration, /master_enabled=false[\s\S]*?transactional_enabled=false[\s\S]*?cold_enabled=false/i);
   assert.match(migration, /revoke execute[\s\S]*?pre_conditional_20260819[\s\S]*?service_role/i);
+});
+
+test('campaign insight analytics are read-only, private and mirrored', () => {
+  const migrationName = '20260821123000_dashboard_campaign_insights.sql';
+  const migration = readFileSync(join(sqlRoot, 'migrations', migrationName), 'utf8').replaceAll('\r\n', '\n').trim();
+  const schema = readFileSync(join(sqlRoot, 'schema.sql'), 'utf8').replaceAll('\r\n', '\n');
+  assert.equal(schemaMigrationMirror(schema, migrationName), migration);
+  assert.match(migration, /dashboard_get_campaign_insights/i);
+  assert.match(migration, /security definer set search_path = ''/i);
+  assert.match(migration, /'pii_included', false/i);
+  assert.match(migration, /revoke all[\s\S]*?from public, anon, authenticated/i);
+  assert.match(migration, /grant execute[\s\S]*?to service_role/i);
+  assert.doesNotMatch(migration, /\b(insert|update|delete)\s+into\s+public\.(campaign_contacts|campaign_events|campaign_executions)\b/i);
 });
 
 test('the npm entrypoint selects a platform PowerShell without embedding credentials', () => {

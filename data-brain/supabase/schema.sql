@@ -11241,7 +11241,8 @@ where singleton;
 
 commit;
 
-+-- PII-free campaign analysis for Data Brain. Read-only and service-role gated.
+-- 20260821123000_dashboard_campaign_insights.sql
+-- PII-free campaign analysis for Data Brain. Read-only and service-role gated.
 begin;
 
 set local lock_timeout = '10s';
